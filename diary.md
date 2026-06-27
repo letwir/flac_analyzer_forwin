@@ -75,3 +75,5 @@
 > Hypothesis: Go HTTP server can cleanly replace the direct python execution in run_batch.ps1.
 > Tried: Generated main.go with HTTP listener, modified run_batch.ps1 to POST. llama2coder binary stuck due to Markdown link in URL, fallback to write_to_file.
 > Correctness: Successfully passed dummy integration test with pwsh.
+
+### 2026-06-28 01:51:00 > WORM shared memory implemented via VirtualProtect (PAGE_READONLY). Test passes. llama2coder failed due to URL formatting so manually wrote Go syscalls.
