@@ -393,4 +393,13 @@
     - **参照**:
       - [multiprocessing.shared_memory — Shared memory for direct access across processes](https://docs.python.org/3/library/multiprocessing.shared_memory.html)
   </api>
+  <api id="FUNCTIONAL_SHARED_MEMORY_ARCH">
+    <title>Functional Programming and Shared Memory Architecture in Category Theory</title>
+    - **概要**: 関数型プログラミングにおいて共有メモリ（Shared Memory）は強力な「可変状態（Mutable State）」であり、参照透過性（Referential Transparency）を破壊し、並行処理における非決定性（Nondeterminism）を生む原因となる。圏論的アーキテクチャでは、これを純粋な関数（Morphism）と副作用（Effect）に分離して扱う必要がある。
+    - **圏論的モデル化とState/IO Monad**: 
+      - 共有メモリに対するアタッチおよび読み書きは、純粋な `A -> B` の関数合成ではなく、`A -> IO[B]` または `A -> State[S, B]` のようにモナド（Monad）で包み込むことで、副作用の境界を明示的に隔離する。
+    - **設計の修正案 (Implementation Proposals)**:
+      1. **Message Passing over Shared Memory (Actor Model パターン)**: 共有メモリをミュータブルなグローバル状態としてではなく、所有権（Ownership）をプロセス間で移譲する「ゼロコピー・チャネル」上のメッセージとして扱う。GoからPythonへ共有メモリ名（ポインタ）を渡し、書き込み完了後に所有権を移行する。
+      2. **WORM (Write-Once, Read-Many) / 線形型的運用**: Demucsが共有メモリに波形を書き込んだ瞬間から、そのメモリ領域を Immutable（不変）として凍結する。Librosa 等の後続プロセスはこれを Read-Only で参照することで、データ競合を理論上排除し参照透過性を保つ。
+  </api>
 </knowledge>
