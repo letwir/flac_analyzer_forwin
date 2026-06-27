@@ -1,0 +1,27 @@
+# Analyzer.py用
+psutil
+librosa
+numpy
+soundfile
+# onnxruntimeはsetupスクリプトでインストールする。
+soxr
+mutagen
+pykakasi
+
+# 高速化
+onnx
+# AMD iGPU
+#onnxruntime-directml
+# RTX
+#onnxruntime-gpu
+#nvidia-cudnn
+demucs-onnx
+scipy
+numba
+
+# pb convert用
+tensorflow
+tf2onnx
+
+--extra-index-url https://download.pytorch.org/whl/cu132
+psycopg2-binary

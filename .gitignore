@@ -1,0 +1,10 @@
+**.flac
+__pycache__
+.git
+.vscode
+.venv/
+models/**
+testFLAC/
+tests/
+改変前/
+*.zip

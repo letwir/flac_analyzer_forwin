@@ -1,0 +1,9 @@
+# for Windows11
+## essentia is 3.11, not for 3.13-
+py -3.11 -m venv .venv
+. .\.venv\Scripts\activate
+python.exe -m pip install --upgrade pip
+
+# for 7735HS ROCm
+pip install --index-url https://rocm.nightlies.amd.com/whl-multi-arch/ "rocm[libraries,device-gfx1035]"
+
