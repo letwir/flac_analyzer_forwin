@@ -181,19 +181,15 @@ foreach ($genreMain in $genreMains) {
                 continue
             }
 
-            # プロセス起動 (python.exe を呼び出し)
+            # Goオーケストレーターのキューへ投下
             try {
-                $pyArgs = @("$flacPath", "--resume")
-                if ($Rough) {
-                    $pyArgs += "--rough"
-                }
-                & python $targetScript @pyArgs
-
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Host "⚠️ プロセスがエラー終了いたしましたわ (ExitCode: $LASTEXITCODE)" -ForegroundColor Red
-                } else {
-                    Write-Host "🟢 正常完了いたしましたわ: $flacPath" -ForegroundColor Green
-                }
+                $body = @{
+                    flacPath = $flacPath
+                    targetScript = $targetScript
+                } | ConvertTo-Json -Compress
+                
+                Invoke-RestMethod -Uri "http://127.0.0.1:8080/task" -Method Post -Body $body -ContentType "application/json" | Out-Null
+                Write-Host "🟢 キューに投下いたしましたわ: $flacPath" -ForegroundColor Green
             }
             catch {
                 Write-Host "❌ 実行エラーが発生いたしましたわ: $_" -ForegroundColor Red

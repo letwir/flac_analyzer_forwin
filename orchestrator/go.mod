@@ -1,0 +1,3 @@
+module flac_analyzer/orchestrator
+
+go 1.26.4
