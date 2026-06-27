@@ -82,3 +82,7 @@
 Hypothesis: Python側からのDB依存（`db.py`等）を排除し、Goのオーケストレータに結果を直接JSONで渡すことでブロック要素を削除し純粋なパイプライン（Purity）を保つ。
 Tried: pipeline.py と main.py から psycopg2 の依存や接続確立ロジックをすべて削除し、SafeAudioJSONEncoder をインライン化。upsert_flac の代わりに JSON Lines の標準出力にリダイレクト。
 Correction: 特になし、構文確認完了。
+### 2026-06-27 17:00:00
+Hypothesis: git 検索により pipeline.py の run_producer / run_consumer 内にまだ psycopg2 の参照が残存していることが判明。
+Tried: git rm で db.py と verify_db_connection.py を削除し、pipeline.py から残存コードを削除して再コミット。
+Correction: 特になし。これで完全に Purity 達成。

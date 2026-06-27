@@ -306,3 +306,7 @@
 [~] IMPLEMENTED
 Summary: Python 既存の db.py 依存を完全に切断し、解析結果（features, meta）を JSON Lines として標準出力へ返すロジックへのリファクタリング。
 Files: pipeline.py, main.py
+### 2026-06-27 17:00:00
+[~] IMPLEMENTED
+Summary: Python 側の psycopg2 依存を全排除。db.py および verify_db_connection.py を git rm で完全削除。
+Files: pipeline.py, db.py, verify_db_connection.py
