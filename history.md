@@ -294,3 +294,8 @@
 - [x] DONE: `pipeline.py` に、インプロセスで「デコード → 波形分離 → 特徴量抽出 → DB書き込み (UPSERT) → タグ更新」を安全に直列で完結させる `process_single_flac_file_directly` 関数を新規実装。
 - [x] DONE: `pytest` による自動テスト、および `-Test -Skip` によるテストモード手動検証がすべて正常に動作・パスすることを確認。
 
+### 2026-06-28 01:46:57
+> [x] DONE
+> Category: Orchestration
+> Summary: Implemented Go orchestrator base (HTTP server & Goroutine worker pool) and updated run_batch.ps1 to enqueue tasks via POST. Verified dummy workflow.
+> Files: run_batch.ps1, orchestrator/main.go, orchestrator/go.mod, issues.md

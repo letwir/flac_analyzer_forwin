@@ -71,3 +71,7 @@
 
 ### 2026-06-25 08:12
 **Hypothesis**: 旦那様提案の「flac.doneに成功パスを書き込む」案。最後の1ファイルだけを保持するチェックポイント方式は、ライブラリの途中に新曲が追加された場合に取りこぼすリスクがありますわ。代わりに、プロジェクトルートに `flac.done` という単一ファイルを置き、そこに成功したファイルパスを改行区切りでどんどん追記する方式にすれば、起動時にそれを1回読み込むだけで全ファイル高速スキップ判定が可能になり、クリーンさと堅牢さを両立できますの。
+### 2026-06-28 01:46:57
+> Hypothesis: Go HTTP server can cleanly replace the direct python execution in run_batch.ps1.
+> Tried: Generated main.go with HTTP listener, modified run_batch.ps1 to POST. llama2coder binary stuck due to Markdown link in URL, fallback to write_to_file.
+> Correctness: Successfully passed dummy integration test with pwsh.

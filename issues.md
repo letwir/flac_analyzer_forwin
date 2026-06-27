@@ -1,7 +1,6 @@
 # ISSUE
 
-- [x] 【ps1】`run_batch.ps1` におけるFLACディレクトリスキャンとGoタスクキュー（HTTP/STDIN等）への投下機能の実装
-- [x] 【Go】Goオーケストレーター (`main.go`) のスケルトンと、Pythonサブプロセスの起動・監視機構の実装
+
 - [ ] 【Go】`syscall` を用いたWindows共有メモリ (`CreateFileMapping`, `MapViewOfFile`) のアロケーションとWORM制約の管理 (`shm_windows.go`)
 - [ ] 【Go】テスト時の PostgreSQL UPSERT を無効化する `--no-db` フラグと、ローカルJSONファイル出力による検証機能の実装
 - [ ] 【Python】既存の `db.py` 依存を完全に切断し、解析結果（`features`, `meta`）を JSON Lines として標準出力へ返すロジックへのリファクタリング
