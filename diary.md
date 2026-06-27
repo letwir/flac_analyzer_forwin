@@ -77,3 +77,8 @@
 > Correctness: Successfully passed dummy integration test with pwsh.
 
 ### 2026-06-28 01:51:00 > WORM shared memory implemented via VirtualProtect (PAGE_READONLY). Test passes. llama2coder failed due to URL formatting so manually wrote Go syscalls.
+
+### 2026-06-27 16:56:00
+Hypothesis: Python側からのDB依存（`db.py`等）を排除し、Goのオーケストレータに結果を直接JSONで渡すことでブロック要素を削除し純粋なパイプライン（Purity）を保つ。
+Tried: pipeline.py と main.py から psycopg2 の依存や接続確立ロジックをすべて削除し、SafeAudioJSONEncoder をインライン化。upsert_flac の代わりに JSON Lines の標準出力にリダイレクト。
+Correction: 特になし、構文確認完了。

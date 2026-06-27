@@ -197,17 +197,6 @@ def parse_args() -> argparse.Namespace:
         help="Librosa スレッドプール並列数 (デフォルト: 4)",
     )
     p.add_argument(
-        "--dsn", default=os.environ.get("INGESTER_DATABASE_URL"), help="PostgreSQL DSN"
-    )
-    p.add_argument(
-        "--resume", action="store_true", help="既存 PG ハッシュ/トラック をスキップ（途中再開）"
-    )
-    p.add_argument(
-        "--rough",
-        action="store_true",
-        help="ファイルパスベースで重複チェック（スキップ）を行う",
-    )
-    p.add_argument(
         "--dml", action="store_true", help="波形分離で DirectML (GPU) を有効化しますわ"
     )
     p.add_argument(
@@ -238,10 +227,6 @@ def main():
     print(f"  Target: {args.filepath}")
     print("=" * 60)
 
-    if not args.dsn:
-        logging.error("--dsn または環境変数 INGESTER_DATABASE_URL が必要ですわ")
-        sys.exit(1)
-
     if not os.path.exists(args.filepath):
         logging.error(f"指定されたファイルが見つかりませんわ: {args.filepath}")
         sys.exit(1)
@@ -254,9 +239,6 @@ def main():
     result = process_single_flac_file_directly(
         filepath=args.filepath,
         essentia_models=essentia_models,
-        dsn=args.dsn,
-        resume=args.resume,
-        rough=args.rough,
         use_dml=args.dml,
     )
     logging.info(result)

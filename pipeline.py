@@ -30,7 +30,49 @@ from analyzer import (
 )
 from analyzer_worker import process_stem, process_stem_shm
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from db import insert_to_postgres_dummy
+import json
+import math
+
+class SafeAudioJSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        try:
+            import numpy as np
+            if isinstance(o, (np.floating, np.integer)):
+                return o.item()
+            if isinstance(o, np.ndarray):
+                return o.tolist()
+        except ImportError:
+            pass
+        return super().default(o)
+
+    def iterencode(self, o, _one_shot=False):
+        try:
+            import numpy as np
+            has_numpy = True
+        except ImportError:
+            has_numpy = False
+
+        def sanitize(obj):
+            if isinstance(obj, dict):
+                return {k: sanitize(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [sanitize(x) for x in obj]
+            elif has_numpy and isinstance(obj, (float, np.floating)):
+                if np.isinf(obj) or np.isnan(obj):
+                    return None
+                return float(obj)
+            elif not has_numpy and isinstance(obj, float):
+                if math.isinf(obj) or math.isnan(obj):
+                    return None
+                return obj
+            elif has_numpy and isinstance(obj, (int, np.integer)):
+                return int(obj)
+            elif has_numpy and isinstance(obj, np.ndarray):
+                return [sanitize(x) for x in obj.tolist()]
+            return obj
+
+        return super().iterencode(sanitize(o), _one_shot=_one_shot)
+
 
 MODELS_DIR = "./models"
 
@@ -1179,15 +1221,10 @@ def run_consumer(
 def process_single_flac_file_directly(
     filepath: str,
     essentia_models: dict,
-    dsn: str | None = None,
-    resume: bool = False,
-    rough: bool = False,
     use_dml: bool = False,
 ) -> str:
     """単一の FLAC ファイルをインプロセスで完全に解析・処理しますわ。
     PowerShell から 1ファイルずつ起動されることを想定し、RAMのリークや断片化を極小化しますの。"""
-    import psycopg2
-    from db import upsert_flac
     import gc
     import time
 
@@ -1195,28 +1232,6 @@ def process_single_flac_file_directly(
     filepath_abs = os.path.abspath(filepath)
 
     logging.info(f"[Direct-Process] 解析開始: {basename}")
-
-    # 1. 重複スキップ用のデータ取得 (Roughモード用)
-    skip_tracks = set()
-    skip_hashes = set()
-
-    if resume and dsn:
-        try:
-            conn_check = psycopg2.connect(dsn)
-            with conn_check.cursor() as cur:
-                if rough:
-                    cur.execute("SELECT track_number FROM raw.library_flac WHERE filepath = %s", (filepath_abs,))
-                    for row in cur.fetchall():
-                        t_num = row[0] if row[0] is not None else 1
-                        skip_tracks.add(t_num)
-                    logging.info(f"[Direct-Process] --rough --resume: 登録済みトラック {skip_tracks}")
-                else:
-                    cur.execute("SELECT audio_hash FROM raw.library_flac WHERE filepath = %s", (filepath_abs,))
-                    skip_hashes = {row[0] for row in cur.fetchall()}
-            conn_check.close()
-        except Exception as e:
-            logging.warning(f"[Direct-Process] resume用事前DBチェック失敗: {e}")
-
     # 2. FLAC ハンドルの構築 (Cuesheet / メタデータ)
     try:
         flac_handle = flac_decode.build_flac_handle(filepath_abs)
@@ -1228,17 +1243,6 @@ def process_single_flac_file_directly(
     tags = _build_metadata_tags(filepath_abs)
     TRACK_TAG_PAT = re.compile(r"^(?:cue_)?track_?(\d+)_(.+)$", re.IGNORECASE)
     final_tags = {}
-
-    # DB 接続
-    conn = None
-    if dsn:
-        try:
-            conn = psycopg2.connect(dsn)
-            conn.autocommit = False
-        except Exception as e_db:
-            logging.error(f"[Direct-Process] DB接続失敗: {e_db}")
-            return f"NG: DB connection error: {e_db}"
-
     processed_tracks = 0
     skipped_tracks_count = 0
 
@@ -1283,31 +1287,14 @@ def process_single_flac_file_directly(
                     pass
 
         for seg in flac_handle.slices:
-            num = seg.track_number
-
-            # Rough スキップ判定
-            if rough and num in skip_tracks:
-                logging.info(f"[Direct-Process] Skip --rough: {basename} (Track: {num})")
-                skipped_tracks_count += 1
-                continue
-
-            # 部分デコードとハッシュ計算
+            num = seg.track_number# 部分デコードとハッシュ計算
             t_dec = time.perf_counter()
             audio_44100, md5_hash = flac_decode.process_slice_with_seq_safety(
                 filepath_abs, seg.start_sample, seg.end_sample, flac_handle.sample_rate, flac_handle.channels
             )
             logging.info(
                 f"[Direct-Process] デコード完了 (経過: {time.perf_counter() - t_dec:.4f}s, length: {len(audio_44100)} samples)"
-            )
-
-            # 通常モードのハッシュ重複チェック
-            if not rough and md5_hash in skip_hashes:
-                logging.info(f"[Direct-Process] Skip --resume (Hash match): {basename} (Track: {num})")
-                skipped_tracks_count += 1
-                del audio_44100
-                continue
-
-            # スライスが短すぎる場合のガード
+            )# スライスが短すぎる場合のガード
             if len(audio_44100) < 100:
                 logging.warning(f"[Direct-Process] Track {num} のサンプル数が極端に少ないため解析をスキップしますわ。")
                 skipped_tracks_count += 1
@@ -1383,34 +1370,33 @@ def process_single_flac_file_directly(
                 track_meta["composer"] = seg.composer
 
             target_track_num = num if is_multi_track else single_track_num
+            # DB 書き込みの代わりに JSON Lines で stdout へ出力しますわ
+            features_payload = {}
+            mix_feat = track_features.get("mix")
+            if mix_feat:
+                dict_mix = mix_feat.to_postgres_dict(track_id="mix")
+                features_payload["mix"] = {
+                    "scalars": dict_mix["scalars"],
+                    "sequences": dict_mix["sequences"]
+                }
+            if demucs_feats:
+                features_payload["demucs"] = demucs_feats.to_postgres_dict()
 
-            # DB 書き込み
-            if conn:
-                t_db = time.perf_counter()
-                upsert_flac(
-                    conn=conn,
-                    audio_hash=mix_hash,
-                    filepath=filepath_abs,
-                    track_number=target_track_num,
-                    metadata_tags=track_meta,
-                    track_features=track_features,
-                    essentia_features=essentia_feats,
-                    demucs_features=demucs_feats,
-                )
-                conn.commit()
-                logging.info(
-                    f"[Direct-Process] DB 登録(UPSERT)完了 (経過: {time.perf_counter() - t_db:.4f}s)"
-                )
-            else:
-                insert_to_postgres_dummy(
-                    audio_hash=mix_hash,
-                    filepath=filepath_abs,
-                    track_number=target_track_num,
-                    metadata_tags=track_meta,
-                    track_features=track_features,
-                    essentia_features=essentia_feats,
-                    demucs_features=demucs_feats,
-                )
+            predictions_payload = {}
+            if essentia_feats:
+                predictions_payload = essentia_feats.to_postgres_dict()
+
+            output_data = {
+                "audio_hash": mix_hash,
+                "filepath": filepath_abs,
+                "track_number": target_track_num,
+                "metadata_tags": track_meta,
+                "features": features_payload,
+                "predictions": predictions_payload
+            }
+            print(json.dumps(output_data, ensure_ascii=False, cls=SafeAudioJSONEncoder))
+            sys.stdout.flush()
+
 
             # 各ループでのメモリ早期解放
             stem_ctx.clear()

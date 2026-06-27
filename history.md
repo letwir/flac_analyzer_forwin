@@ -301,3 +301,8 @@
 > Files: run_batch.ps1, orchestrator/main.go, orchestrator/go.mod, issues.md
 
 ### 2026-06-28 01:51:00 > Implementation/WORM Shared Memory/orchestrator/shm_windows.go, orchestrator/shm_windows_test.go
+
+### 2026-06-27 16:56:00
+[~] IMPLEMENTED
+Summary: Python 既存の db.py 依存を完全に切断し、解析結果（features, meta）を JSON Lines として標準出力へ返すロジックへのリファクタリング。
+Files: pipeline.py, main.py
