@@ -310,3 +310,7 @@ Files: pipeline.py, main.py
 [~] IMPLEMENTED
 Summary: Python 側の psycopg2 依存を全排除。db.py および verify_db_connection.py を git rm で完全削除。
 Files: pipeline.py, db.py, verify_db_connection.py
+### 2026-06-27 17:05:00
+[~] IMPLEMENTED
+Summary: Go オーケストレーターに `--no-db` フラグを追加し、テスト時に PostgreSQL UPSERT を無効化してローカルの JSON ファイル (`testFLAC/*.json`) へ出力を保存する機能を実装。
+Files: orchestrator/main.go

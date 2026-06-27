@@ -86,3 +86,7 @@ Correction: 特になし、構文確認完了。
 Hypothesis: git 検索により pipeline.py の run_producer / run_consumer 内にまだ psycopg2 の参照が残存していることが判明。
 Tried: git rm で db.py と verify_db_connection.py を削除し、pipeline.py から残存コードを削除して再コミット。
 Correction: 特になし。これで完全に Purity 達成。
+### 2026-06-27 17:05:00
+> Hypothesis: Go のオーケストレーターにて `--no-db` フラグを受け取り、テスト時は PostgreSQL への UPSERT をバイパスして標準出力からの JSON をローカルに保存することで、DB 非依存のテストが可能になる。
+> Tried: `flag` パッケージを用いて `--no-db` を追加し、Pythonプロセスの `Stdout` を `bytes.Buffer` に捕捉して、`--no-db` 有効時には `testFLAC/` 以下へ `.json` として書き出す処理を `orchestrator/main.go` に実装。
+> Correction: 構文エラーなし。想定通りに実装完了。

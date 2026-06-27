@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 )
@@ -20,7 +23,7 @@ type TaskPayload struct {
 
 const numWorkers = 4
 
-func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup) {
+func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool) {
 	defer wg.Done()
 	for task := range taskQueue {
 		var script string = task.TargetScript
@@ -32,25 +35,43 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup) {
 		
 		// Set working directory to project root
 		cmd.Dir = ".."
-		cmd.Stdout = os.Stdout
+		
+		var outBuf bytes.Buffer
+		cmd.Stdout = &outBuf
 		cmd.Stderr = os.Stderr
 		
 		if err := cmd.Run(); err != nil {
 			log.Printf("[Worker %d] Error processing %s: %v\n", id, task.FlacPath, err)
 		} else {
 			log.Printf("[Worker %d] Successfully processed: %s\n", id, task.FlacPath)
+			if noDB {
+				baseName := filepath.Base(task.FlacPath)
+				outName := fmt.Sprintf("%s.json", baseName)
+				outPath := filepath.Join("..", "testFLAC", outName)
+				if err := os.WriteFile(outPath, outBuf.Bytes(), 0644); err != nil {
+					log.Printf("[Worker %d] Failed to write local JSON: %v\n", id, err)
+				} else {
+					log.Printf("[Worker %d] Saved local JSON to: %s\n", id, outPath)
+				}
+			} else {
+				// TODO: Implement PostgreSQL UPSERT using outBuf.Bytes()
+				log.Printf("[Worker %d] PostgreSQL UPSERT not implemented yet. Ignored %d bytes of JSON.\n", id, outBuf.Len())
+			}
 		}
 	}
 }
 
 func main() {
+	noDB := flag.Bool("no-db", false, "Disable PostgreSQL UPSERT and output JSON locally for testing")
+	flag.Parse()
+
 	taskQueue := make(chan TaskPayload, 1000)
 	var wg sync.WaitGroup
 
 	// Start worker pool
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
-		go worker(i, taskQueue, &wg)
+		go worker(i, taskQueue, &wg, *noDB)
 	}
 
 	http.HandleFunc("/task", func(w http.ResponseWriter, r *http.Request) {
