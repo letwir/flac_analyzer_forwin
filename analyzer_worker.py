@@ -74,19 +74,17 @@ def process_stem_shm(
     特徴量抽出（Pre-warming と Extractor）を実行後、クローズしますわ！
     """
     import multiprocessing
-    from multiprocessing.shared_memory import SharedMemory
     import numpy as np
     import time
     import logging
+    from shm_interop import attach_shm_read_only
 
     proc_name = multiprocessing.current_process().name
     t_start = time.perf_counter()
 
-    # 1. 共有メモリにアタッチ
-    shm = SharedMemory(name=shm_name)
+    # 1. 共有メモリにアタッチ (Zero-copy Read-Only)
+    shm, y = attach_shm_read_only(shm_name, shape, dtype_name)
     try:
-        # np.ndarray ビューを作成してデータを参照
-        y = np.ndarray(shape, dtype=np.dtype(dtype_name), buffer=shm.buf)
         
         # 2. AudioContext の構築 (y のコピーを作らず参照)
         ctx = AudioContext(y=y, sr=sr, source=stem_name)

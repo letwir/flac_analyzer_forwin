@@ -133,11 +133,12 @@ def analyze_segment_pipeline(
     mix_hash = stem_context.stems["mix"].audio_hash
 
     # 1.5 & 2. 中段: Librosa解析を ProcessPoolExecutor によるプロセス並列で実行しますわ！
-    # 共有メモリ（SharedMemory）を使用して巨大な配列コピー（pickle）を削減しますの。
-    from multiprocessing.shared_memory import SharedMemory
+    # 共有メモリを使用して巨大な配列コピー（pickle）を削減しますの。
+    import uuid
+    import shm_interop
     
     track_features: dict[str, Any] = {}
-    shm_list: list[SharedMemory] = []
+    shm_list: list[Any] = []
     
     t_start_librosa = time.perf_counter()
     pool = get_process_pool()
@@ -150,20 +151,19 @@ def analyze_segment_pipeline(
     try:
         futures = {}
         for name, ctx in stem_context.stems.items():
-            # 共有メモリ領域を親プロセス側でアロケート
-            shm = SharedMemory(create=True, size=ctx.y.nbytes)
-            shm_list.append(shm)
+            # 共有メモリ名を作成 (Windows Native SHM)
+            shm_name = f"Local\\FlacShm_{uuid.uuid4().hex}"
             
-            # 共有メモリ上に配列ビューを作成し、波形データを書き込みますの
-            shm_arr = np.ndarray(ctx.y.shape, dtype=ctx.y.dtype, buffer=shm.buf)
-            shm_arr[:] = ctx.y[:]
+            # Python側で共有メモリを確保し、Zero-copyで波形データを書き込みますの
+            shm = shm_interop.write_to_shm(shm_name, ctx.y)
+            shm_list.append(shm)
             
             # 子プロセスには、共有メモリ名、形状、データ型の文字列、レートだけを渡しますわ！
             # これにより 400MB の IPC コピーを完全に葬り去ることができますの
             fut = pool.submit(
                 process_stem_shm,
                 name,
-                shm.name,
+                shm_name,
                 ctx.y.shape,
                 str(ctx.y.dtype),
                 ctx.sr
@@ -189,14 +189,13 @@ def analyze_segment_pipeline(
             except Exception as e:
                 logging.error(f"ソース [{name}] のLibrosa解析エラー(直列): {e}", exc_info=True)
     finally:
-        # 親プロセス側で確保したすべての共有メモリを確実に close & unlink して解放しますわ！
+        # 親プロセス側で確保したすべての共有メモリを確実に close して解放しますわ！
         # (これを怠ると Windows でメモリリークしてしまいますの)
         for shm in shm_list:
             try:
                 shm.close()
-                shm.unlink()
             except Exception as e_del:
-                logging.warning(f"共有メモリ解放エラー ({shm.name}): {e_del}")
+                logging.warning(f"共有メモリ解放エラー: {e_del}")
                 
     logging.info(
         f"[{proc_name}] [Morphism] [Librosa] [Extraction] "
