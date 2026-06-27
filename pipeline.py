@@ -1010,25 +1010,7 @@ def run_producer(
     skip_hashes: set[str] = set()
     skip_tracks: set[tuple[str, int]] = set()
 
-    if resume and dsn:
-        try:
-            import psycopg2
-            conn = psycopg2.connect(dsn)
-            with conn.cursor() as cur:
-                if rough:
-                    cur.execute("SELECT filepath, track_number FROM raw.library_flac")
-                    for row in cur.fetchall():
-                        fp_abs = os.path.abspath(row[0])
-                        t_num = row[1] if row[1] is not None else 1
-                        skip_tracks.add((fp_abs, t_num))
-                    logging.info(f"[Producer] --rough --resume: {len(skip_tracks)}件をファイルパス基準でスキップ登録")
-                else:
-                    cur.execute("SELECT audio_hash FROM raw.library_flac")
-                    skip_hashes = {row[0] for row in cur.fetchall()}
-                    logging.info(f"[Producer] --resume: {len(skip_hashes)}件をハッシュ基準でスキップ登録")
-            conn.close()
-        except Exception as e:
-            logging.warning(f"[Producer] resume用PG接続失敗（全ファイル処理）: {e}")
+    # DBアクセスなし（オーケストレータ側で判定しますわ）
 
     skipped = 0
     for fp in files:
@@ -1124,9 +1106,7 @@ def run_consumer(
 ):
     """Consumer プロセスエントリポイント。
     Queue からタスクを取得 → load_wave.load_stems → 分析 → PG UPSERT → cleanup"""
-    import psycopg2
     import time
-    from db import upsert_flac
 
     proc_name = multiprocessing.current_process().name
     logging.info(f"[{proc_name}] Consumer 起動 (workers={workers})")
@@ -1135,8 +1115,6 @@ def run_consumer(
         shm_dir = load_wave.get_default_shm_dir()
 
     essentia_models = models.init_worker_onnx(models_dir)
-    conn = psycopg2.connect(dsn)
-    conn.autocommit = False
 
     while True:
         msg = in_queue.get()
@@ -1169,29 +1147,40 @@ def run_consumer(
             track_features, essentia_feats, demucs_feats, mix_hash = analyze_stems(
                 stem_ctx, essentia_models, workers
             )
+            # 3. 解析結果を JSON Lines として標準出力へダンプいたしますわ
+            features_payload = {}
+            mix_feat = track_features.get("mix")
+            if mix_feat:
+                dict_mix = mix_feat.to_postgres_dict(track_id="mix")
+                features_payload["mix"] = {
+                    "scalars": dict_mix["scalars"],
+                    "sequences": dict_mix["sequences"]
+                }
+            if demucs_feats:
+                features_payload["demucs"] = demucs_feats.to_postgres_dict()
 
-            # 3. DBインサート (upsert_flac 内で自動的に同一 filepath/track_number の古いエントリを DELETE します)
-            t_db = time.perf_counter()
-            upsert_flac(
-                conn=conn,
-                audio_hash=mix_hash,
-                filepath=fp,
-                track_number=track_number,
-                metadata_tags=metadata_tags,
-                track_features=track_features,
-                essentia_features=essentia_feats,
-                demucs_features=demucs_feats,
-            )
-            conn.commit()  # トランザクションコミット
-            logging.info(
-                f"[{proc_name}] DB への書き込み(UPSERT)を完了いたしました (経過: {time.perf_counter() - t_db:.4f}s)"
-            )
+            predictions_payload = {}
+            if essentia_feats:
+                predictions_payload = essentia_feats.to_postgres_dict()
+
+            output_data = {
+                "audio_hash": mix_hash,
+                "filepath": fp,
+                "track_number": track_number,
+                "metadata_tags": metadata_tags,
+                "features": features_payload,
+                "predictions": predictions_payload
+            }
+            import json
+            import sys
+            print(json.dumps(output_data, ensure_ascii=False, cls=SafeAudioJSONEncoder))
+            sys.stdout.flush()
+
 
             if completed is not None:
                 completed.value += 1
             logging.info(f"[{proc_name}] OK: {basename} (Track: {track_number}, 全処理経過: {time.perf_counter() - t_start_total:.4f}s)")
         except Exception as e:
-            conn.rollback()  # エラー時はロールバック
             logging.error(f"[{proc_name}] NG: {basename} (Track: {track_number}): {e}", exc_info=True)
         finally:
             # 4. リソースのクリーンアップ
