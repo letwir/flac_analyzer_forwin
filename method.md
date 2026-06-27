@@ -38,12 +38,12 @@
   <target id="DRUMS_BASS_TEMPOBEAT_EXTENSION">
     <why>Enable groove analysis for drums/bass. Strict evaluation during Pre-warming prevents GIL/LIBROSA_LOCK contention and preserves lazy evaluation safety.</why>
   </target>
-  <target id="SHARED_MEMORY_FIFO_GC_CACHE">
-    <why>Prevent Windows shared memory (multiprocessing.shared_memory.SharedMemory) handles from leaking and exhausting virtual memory (Pagefile) over large batch runs, which subsequently causes disk write OSErrors.</why>
-    <how>Implement a track-level dictionary-based FIFO cache for _SHM_KEEP_ALIVE in load_wave.py. Limit the cache size to 64 tracks, closing the oldest handles on the Producer side once the limit is exceeded, while allowing the Consumer to safely attach and copy the array buffer beforehand.</how>
+  <target id="ZERO_COPY_DECOUPLED_PIPELINE">
+    <why>Python processes holding onto huge audio arrays across extraction steps leads to memory bloat and violates Referential Transparency. We must separate effectful writing from pure reading.</why>
+    <how>Create separate `demucs_worker.py` and `librosa_worker.py`. Demucs writes output to a Go-provided Shared Memory handle. The worker cleanly exits (exit 0) as a completion signal. Go then applies VirtualProtect (`Freeze()`) to the memory region, enforcing Write-Once-Read-Many (WORM), and invokes the Librosa worker which attaches to the memory segment as Read-Only. This models state transition as an explicit morphism.</how>
+  </target>
   <target id="SINGLE_PROCESS_FLAC_ISOLATION">
     <why>並列 P/C パイプラインでのマルチプロセス起動および SharedMemory 状態共有が、Windows環境における深刻な RAM リークおよび OOM を引き起こすため、Python プロセスをファイル単位で完全に分離・破棄したいからですわ。</why>
-    <how>PowerShell側ですべての FLAC ファイルパスを再帰的に列挙して一次保存（配列保持）し、ループ処理で python main.py &lt;flacfullpath&gt; を1個ずつ同期呼び出ししますの。Python側はインプロセスでデコードから分離、特徴量抽出、DB書き込み、タグ保存までを直列で完結させ、処理終了とともにプロセスを完全に破棄してメモリを全解放しますわ。</how>
+    <how>PowerShell側ですべての FLAC ファイルパスを再帰的に列挙して一次保存（配列保持）し、ループ処理で python main.py &lt;flacfullpath&gt; を1個ずつ同期呼び出ししますの。Python側はインプロセスでデコードから分離、特徴量抽出、DB書き込み、タグ保存までを直列で完結させ、処理終了とともにプロセスを完全に破棄してメモリを全解放しますわ。(※ このパスは ZERO_COPY_DECOUPLED_PIPELINE によって Goオーケストレーションへと昇華しました)</how>
   </target>
 </methods>
-

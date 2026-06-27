@@ -9,11 +9,12 @@
 - **Go (Orchestrator & IO Monad)**: 
   - ファイルパスの内部情報（メタデータ等）には関与せず、単なるタスク識別子として扱う。
   - Windows API (`CreateFileMapping`) を用いて波形引き渡し用の共有メモリ領域を確保し、その「ポインタ名（所有権）」をPythonワーカーへメッセージパッシングとして渡す。
+  - `demucs_worker.py` を起動し、完了ステータス (`exit 0`) を確認したのち、共有メモリ領域に対して `Freeze()`（PAGE_READONLY 化）の射を適用する。
+  - その後、`librosa_worker.py` を起動し、Freeze済みの共有メモリから並列に特徴量を抽出させる（完全疎結合アーキテクチャ）。
   - DBアクセス（PostgreSQLへの INSERT / UPSERT）を非同期の Goroutine で完全に引き受け、Pythonプロセスのブロッキングを排除する。
 - **Python (Worker & Pure Morphism)**:
-  - 渡された共有メモリ名を `mmap` で受け取りアタッチする。
-  - Demucs分離後のステム波形を共有メモリに書き込み、直後にこれを **Read-Only（不変データ）** として凍結する (WORM: Write-Once, Read-Many 制約)。
-  - 共有メモリ上の NumPy 配列から Librosa や Essentia による特徴抽出を並列に実行し、純粋な解析結果（JSON）のみを stdout を通じて Go へ返却する。
+  - **`demucs_worker.py`**: 引数で渡された共有メモリ名を開き、Demucs分離後のステム波形を書き込んで `exit 0` する。
+  - **`librosa_worker.py`**: 渡された共有メモリを Read-Only でアタッチし、Librosa特徴抽出を実行してJSONを返す。プロセスは単一タスク完了と共に破棄され、メモリを全解放する。
 
 ## 2. DBスキーマと波形特徴量 (JSONB) の構成
 
