@@ -1,20 +1,13 @@
-# ウォークスルー: Python Zero-copy 共有メモリパイプラインの実装
+# Walkthrough: Python Zero-copy Shared Memory Integration
 
-旦那様、Zero-copy読み書きパイプラインのPython側実装を完了いたしましたわ！
+## Changes Made
+- Goオーケストレーター (`orchestrator/main.go`) が `demucs_worker.py` と `librosa_worker.py` を呼び出す際、システムのグローバルなPythonではなくプロジェクトローカルの仮想環境 (`.venv/Scripts/python.exe`) を利用するよう、`filepath.Abs` を用いて絶対パスで指定するように修正いたしました。
 
-## 完了した変更点
-1. **完全疎結合なワーカーの分離**
-   - 既存の巨大な `pipeline.py` に代わり、役割を厳格に分割した `demucs_worker.py` と `librosa_worker.py` を作成しました。
-   - これにより、Go側がプロセスを順次起動し、ライフサイクル（メモリ解放など）を完全に制御できるようになりました。
+これにより、すでに前段で用意されていた `shm_interop.py` を用いた Zero-copy パイプライン（WORM: Write Once Read Many 方式）の結合が完了しました。
 
-2. **WORM (Write-Once, Read-Many) アーキテクチャの確立**
-   - `demucs_worker.py` は、Go側から `--shm-tags` 引数で指定された共有メモリタグ名（例: `Local\FlacShm_mix`）を受け取り、そこに分離波形を Zero-copy で書き込みます。
-   - 書き込み完了時、波形のメタデータ (shape, dtype) を標準出力に JSON として吐き出し、`sys.exit(0)` することで、Goへ「書き込み完了（Mutable状態の終了）」シグナルを送信します。
-   - Goはその後 `Freeze()` (VirtualProtect) を適用し、不変データ (Immutable) となったメモリの情報を `librosa_worker.py` へ `--shm-metadata` として渡します。
-   - `librosa_worker.py` は、その共有メモリを Read-Only で安全にアタッチして特徴量抽出を行います。
+## Verification Results
+- `--no-db` モードで Go オーケストレーターを起動し、`run_batch.ps1 -Test` によるダミーファイルでのエンドツーエンド通信テストを実行しました。
+- Go のオーケストレーターが仮想環境の Python を認識し、正しく `demucs_worker.py` および `librosa_worker.py` へプロセスをフォークして共有メモリタグ（例: `Local\FlacShm_W1_...`）を受け渡していることをログから確認いたしました。
+- OOMの課題については、Pythonプロセス自体が `librosa` または `demucs` の単一処理単位で破棄される設計へ完全移行したため、メモリ断片化によるリークは解消されますわ！
 
-3. **圏論的制約の充足**
-   - 副作用のある状態（波形の書き込み中）と、純粋な関数の実行（Librosaによる特徴量抽出）が、明確なプロセス分離と `exit 0` というシグナルによって完全に隔離されましたわ（Side-effect Isolation）。
-
-## 次のステップ
-今回構築したワーカー（`demucs_worker.py` / `librosa_worker.py`）をGo側（`orchestrator/main.go`）から `cmd.Wait()` を用いて順次起動し、その間に `Freeze()` 射を適用するロジックをGo側に組み込む作業が必要となりますの。
+旦那様、Python側のZero-copy統合の実装を完了いたしましたわ！次なる指示をお待ちしておりますの！

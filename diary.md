@@ -89,4 +89,4 @@ Correction: 特になし。これで完全に Purity 達成。
 ### 2026-06-27 17:05:00
 > Hypothesis: Go のオーケストレーターにて `--no-db` フラグを受け取り、テスト時は PostgreSQL への UPSERT をバイパスして標準出力からの JSON をローカルに保存することで、DB 非依存のテストが可能になる。
 > Tried: `flag` パッケージを用いて `--no-db` を追加し、Pythonプロセスの `Stdout` を `bytes.Buffer` に捕捉して、`--no-db` 有効時には `testFLAC/` 以下へ `.json` として書き出す処理を `orchestrator/main.go` に実装。
-> Correction: 構文エラーなし。想定通りに実装完了。
+> Correction: 構文エラーなし。想定通りに実装完了。### 2026-06-29 16:41:19 > Hypothesis: Python script failed due to being executed globally instead of within .venv. Tried: Absolute path binding via filepath.Abs in orchestrator/main.go. Result: Execution succeeds and correctly invokes virtualenv python.

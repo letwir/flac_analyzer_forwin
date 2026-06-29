@@ -183,8 +183,10 @@ foreach ($genreMain in $genreMains) {
 
             # Goオーケストレーターのキューへ投下
             try {
+                $fileSize = (Get-Item $flacPath).Length
                 $body = @{
                     flacPath = $flacPath
+                    fileSize = $fileSize
                     targetScript = $targetScript
                 } | ConvertTo-Json -Compress
                 
