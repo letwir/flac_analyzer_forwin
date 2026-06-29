@@ -315,3 +315,5 @@ Files: pipeline.py, db.py, verify_db_connection.py
 Summary: Go オーケストレーターに `--no-db` フラグを追加し、テスト時に PostgreSQL UPSERT を無効化してローカルの JSON ファイル (`testFLAC/*.json`) へ出力を保存する機能を実装。
 Files: orchestrator/main.go### 2026-06-29 16:41:19 > Python Zero-copy Pipeline Integration / Completed Go-Python orchestrator binding, enabled absolute paths for python execution.
 Files: orchestrator/main.go, pipeline.py, run_batch.ps1
+
+### 2026-06-29 16:44:47 > IMPLEMENTED/Integration test/test_integration.py

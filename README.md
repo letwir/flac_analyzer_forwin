@@ -74,6 +74,13 @@ $env:INGESTER_DATABASE_URL = "postgres://username:password@hostname:port/dbname"
 python.exe main.py <探査したいFLACディレクトリ>
 ```
 
+### 5. 【次世代】Go Orchestrator ＆ OOM監視テスト
+現在、Peak RAM 効率とプロセスの堅牢性を極限まで高めるため、Pythonから **Go 言語ベースのオーケストレーター (`orchestrator/orchestrator.exe`)** への移行を進めておりますの。
+結合テストや OOM (Out Of Memory) 監視、実行時間の精密な計測を行うには、以下の専用スクリプトを実行してくださいませ。DB（PostgreSQL）への書き込みは自動的に回避（`--no-db`）され、ローカルへJSON出力されますわ。
+
+```powershell
+python.exe test_integration.py
+```
 
 ## 🌹 高貴なる主要機能 (Features)
 
