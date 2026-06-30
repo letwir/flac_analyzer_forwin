@@ -32,6 +32,8 @@ def main():
     if not features:
         logging.warning("No features found in JSON.")
 
+    predictions = json_data.get("predictions", {})
+
     meta = {}
     album_artist = ""
     album = ""
@@ -82,9 +84,9 @@ def main():
         
         query = """
             INSERT INTO raw.library_flac (
-                audio_hash, filepath, filename, track_number, album_artist, album, artist, title, meta, features
+                audio_hash, filepath, filename, track_number, album_artist, album, artist, title, meta, features, predictions
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             ON CONFLICT (audio_hash) DO UPDATE SET
                 filepath = EXCLUDED.filepath,
@@ -95,7 +97,8 @@ def main():
                 artist = EXCLUDED.artist,
                 title = EXCLUDED.title,
                 meta = EXCLUDED.meta,
-                features = EXCLUDED.features;
+                features = EXCLUDED.features,
+                predictions = EXCLUDED.predictions;
         """
         
         filename = os.path.basename(args.flac_path)
@@ -110,7 +113,8 @@ def main():
             artist,
             title,
             psycopg2.extras.Json(meta),
-            psycopg2.extras.Json(features)
+            psycopg2.extras.Json(features),
+            psycopg2.extras.Json(predictions)
         ))
         
         conn.commit()
