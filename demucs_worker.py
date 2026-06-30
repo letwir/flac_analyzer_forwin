@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 import time
+import tomllib
 
 # プロジェクト内のモジュール
 import models
@@ -44,8 +45,17 @@ def main():
 
     logger.info(f"Loading FLAC: {args.flac_path}")
     try:
+        config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+        target_sr = 44100
+        try:
+            with open(config_path, "rb") as f:
+                config = tomllib.load(f)
+                target_sr = config.get("models", {}).get("sr", 44100)
+        except Exception:
+            pass
+
         # load_audio が (waveform, sample_rate) を返すと想定
-        y, sr = librosa.load(args.flac_path, sr=44100, mono=False)
+        y, sr = librosa.load(args.flac_path, sr=target_sr, mono=False)
     except Exception as e:
         logger.error(f"Failed to load audio: {e}")
         sys.exit(1)

@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import threading
+import tomllib
 from typing import Any
 
 import librosa
@@ -23,14 +24,23 @@ from constants import CLASS_ALIAS, DEFAULT_CLASS_MAP
 # ONNX Runtime のグローバル警告ログをミュート (ScatterND等の警告抑制)
 ort.set_default_logger_severity(3)
 
+# Load global config
+CONFIG = {}
+config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+try:
+    with open(config_path, "rb") as f:
+        CONFIG = tomllib.load(f)
+except Exception as e:
+    logging.warning(f"Failed to load config.toml in models.py: {e}")
+
 # ─────────────────────────────────────────────
 # demucs-onnx のセッション作成フック (モンキーパッチ)
 # ─────────────────────────────────────────────
 def _custom_make_session(onnx_path, providers):
     sess_opts = ort.SessionOptions()
     sess_opts.log_severity_level = 3
-    sess_opts.intra_op_num_threads = 1
-    sess_opts.inter_op_num_threads = 1
+    sess_opts.intra_op_num_threads = CONFIG.get("models", {}).get("intra_op_num_threads", 1)
+    sess_opts.inter_op_num_threads = CONFIG.get("models", {}).get("inter_op_num_threads", 1)
     sess_opts.enable_cpu_mem_arena = False
     sess_opts.enable_mem_pattern = False
     sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
@@ -121,8 +131,8 @@ def init_global_onnx_sessions(models_dir: str, essentia_models: dict):
 
     opts = ort.SessionOptions()
     opts.log_severity_level = 3
-    opts.intra_op_num_threads = 1  # セグフォ防止
-    opts.inter_op_num_threads = 1
+    opts.intra_op_num_threads = CONFIG.get("models", {}).get("intra_op_num_threads", 1)  # セグフォ防止
+    opts.inter_op_num_threads = CONFIG.get("models", {}).get("inter_op_num_threads", 1)
     opts.enable_cpu_mem_arena = False  # OOM防止
     opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
 
@@ -149,7 +159,8 @@ def init_global_onnx_sessions(models_dir: str, essentia_models: dict):
 
 
 def _resample_to_16k(audio: np.ndarray, sr: int) -> np.ndarray:
-    return audio if sr == 16000 else soxr.resample(audio, sr, 16000)
+    target_sr = CONFIG.get("models", {}).get("resample_sr", 16000)
+    return audio if sr == target_sr else soxr.resample(audio, sr, target_sr)
 
 
 def extract_mel_patches(audio: np.ndarray, sr: int, n_patches: int = 64) -> np.ndarray:
@@ -162,19 +173,24 @@ def extract_mel_patches(audio: np.ndarray, sr: int, n_patches: int = 64) -> np.n
         else:
             audio = np.mean(audio, axis=0)  # フォールバック
 
+    target_sr = CONFIG.get("models", {}).get("resample_sr", 16000)
+    n_fft = CONFIG.get("models", {}).get("n_fft", 512)
+    hop_length = CONFIG.get("models", {}).get("hop_length", 256)
+    n_mels = CONFIG.get("models", {}).get("n_mels", 96)
+    
     audio_16k = _resample_to_16k(audio, sr)
     mel = librosa.feature.melspectrogram(
         y=audio_16k,
-        sr=16000,
-        n_fft=512,
-        hop_length=256,
-        n_mels=96,
+        sr=target_sr,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        n_mels=n_mels,
         power=2.0,
     )
     log_mel = np.log10(10000.0 * mel + 1.0).T
 
-    patch_size = 128
-    patch_hop = 62
+    patch_size = CONFIG.get("models", {}).get("patch_size", 128)
+    patch_hop = CONFIG.get("models", {}).get("patch_hop", 62)
 
     if log_mel.shape[0] < patch_size:
         log_mel = np.pad(log_mel, ((0, patch_size - log_mel.shape[0]), (0, 0)))

@@ -1,0 +1,30 @@
+[database]
+url = "postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db"
+
+[orchestrator]
+num_workers = 4
+demucs_concurrent_limit = 1
+shm_allocation_delay_sec = 2
+queue_dir = "../queue"
+test_flac_dir = "../testFLAC"
+
+[python_env]
+omp_num_threads = "1"
+openblas_num_threads = "1"
+mkl_num_threads = "1"
+numexpr_num_threads = "1"
+veclib_maximum_threads = "1"
+hf_hub_offline = "1"
+pythonutf8 = "1"
+pythonioencoding = "utf-8"
+
+[models]
+intra_op_num_threads = 1
+inter_op_num_threads = 1
+patch_size = 128
+patch_hop = 62
+n_fft = 512
+hop_length = 256
+n_mels = 96
+sr = 44100
+resample_sr = 16000

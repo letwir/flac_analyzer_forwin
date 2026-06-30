@@ -5,6 +5,7 @@ import argparse
 import psycopg2
 import psycopg2.extras
 import logging
+import tomllib
 from mutagen.flac import FLAC
 
 def main():
@@ -57,13 +58,22 @@ def main():
     except Exception as e:
         logging.warning(f"Failed to extract FLAC metadata: {e}")
 
+    db_url = None
+    config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+    try:
+        with open(config_path, "rb") as f:
+            config = tomllib.load(f)
+            db_url = config.get("database", {}).get("url")
+    except Exception as e:
+        logging.warning(f"Failed to load config.toml: {e}")
+
     db_url = (
+        db_url or
         os.environ.get("INGESTER_DATABASE_URL") or 
-        os.environ.get("DATABASE_URL") or 
-        "postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db"
+        os.environ.get("DATABASE_URL")
     )
     if not db_url:
-        logging.error("No DATABASE_URL or INGESTER_DATABASE_URL provided.")
+        logging.error("No DATABASE_URL or INGESTER_DATABASE_URL provided in config or env.")
         sys.exit(1)
 
     try:

@@ -20,6 +20,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 type TaskPayload struct {
@@ -28,11 +30,21 @@ type TaskPayload struct {
 	TargetScript string `json:"targetScript"`
 }
 
-const numWorkers = 4
+type Config struct {
+	Orchestrator struct {
+		NumWorkers            int    `toml:"num_workers"`
+		DemucsConcurrentLimit int    `toml:"demucs_concurrent_limit"`
+		ShmAllocationDelaySec int    `toml:"shm_allocation_delay_sec"`
+		QueueDir              string `toml:"queue_dir"`
+		TestFlacDir           string `toml:"test_flac_dir"`
+	} `toml:"orchestrator"`
+	PythonEnv map[string]string `toml:"python_env"`
+}
 
 var (
+	globalConfig  Config
 	allocMutex    sync.Mutex
-	demucsSemaphore = make(chan struct{}, 1) // Demucs の同時実行数を厳密に制限するセマフォ (ONNX OOM対策)
+	demucsSemaphore chan struct{}
 )
 
 // ANSI Colors
@@ -97,7 +109,11 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		demucsSemaphore <- struct{}{}
 		
 		// 旦那様の提案通り、他ワーカーのメモリ展開がOSに反映されるまで遅延
-		time.Sleep(2 * time.Second)
+		delaySec := globalConfig.Orchestrator.ShmAllocationDelaySec
+		if delaySec <= 0 {
+			delaySec = 2 // default fallback
+		}
+		time.Sleep(time.Duration(delaySec) * time.Second)
 		
 		// Memory Throttling and Allocation (Protected by Mutex to prevent race conditions)
 		shmMap := make(map[string]*SharedMemory)
@@ -161,7 +177,12 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 
 		cmdDemucs := exec.Command(pythonPath, "demucs_worker.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--track-hash", trackHash)
 		cmdDemucs.Dir = parentDir
-		cmdDemucs.Env = append(os.Environ(), "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8")
+		
+		var envVars []string
+		for k, v := range globalConfig.PythonEnv {
+			envVars = append(envVars, fmt.Sprintf("%s=%s", strings.ToUpper(k), v))
+		}
+		cmdDemucs.Env = append(os.Environ(), envVars...)
 		
 		var outBuf bytes.Buffer
 		cmdDemucs.Stdout = &outBuf
@@ -206,7 +227,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		
 		cmdLibrosa := exec.Command(pythonPath, "librosa_worker.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
 		cmdLibrosa.Dir = parentDir
-		cmdLibrosa.Env = append(os.Environ(), "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8")
+		cmdLibrosa.Env = append(os.Environ(), envVars...)
 		
 		var libOutBuf bytes.Buffer
 		cmdLibrosa.Stdout = &libOutBuf
@@ -234,11 +255,16 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		
 		// 6. Output Handling
 		baseName := filepath.Base(task.FlacPath)
-		outName := fmt.Sprintf("%s_%s.json", task.TrackHash, baseName)
-		outPath := filepath.Join("..", "queue", outName)
+		outName := fmt.Sprintf("%s_%s.json", trackHash, baseName)
+		
+		queueDir := globalConfig.Orchestrator.QueueDir
+		if queueDir == "" {
+			queueDir = filepath.Join("..", "queue")
+		}
+		outPath := filepath.Join(queueDir, outName)
 		
 		// Create queue dir if it doesn't exist
-		os.MkdirAll(filepath.Join("..", "queue"), 0755)
+		os.MkdirAll(queueDir, 0755)
 		
 		if err := os.WriteFile(outPath, libOutBuf.Bytes(), 0644); err != nil {
 			log.Printf("[Worker %d] Failed to write local JSON: %v\n", id, err)
@@ -249,7 +275,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 			ingesterCmd := exec.Command("python", "../ingester.py",
 				"--flac-path", task.FlacPath,
 				"--json-path", outPath,
-				"--track-hash", task.TrackHash,
+				"--track-hash", trackHash,
 			)
 			// Detach from parent to avoid blocking or zombie processes
 			ingesterCmd.Stdout = nil
@@ -257,7 +283,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 			if err := ingesterCmd.Start(); err != nil {
 				log.Printf("[Worker %d] Failed to start ingester.py: %v\n", id, err)
 			} else {
-				log.Printf("[Worker %d] Started ingester.py (PID %d) for %s\n", id, ingesterCmd.Process.Pid, task.TrackHash)
+				log.Printf("[Worker %d] Started ingester.py (PID %d) for %s\n", id, ingesterCmd.Process.Pid, trackHash)
 				// Note: In go, not calling Wait() on a started process leaves a zombie until the parent exits,
 				// but for short-lived orchestrators or simple scripts it's okay, or we can use a goroutine to wait.
 				go func(cmd *exec.Cmd) {
@@ -281,6 +307,35 @@ func setUTF8Console() {
 
 func main() {
 	setUTF8Console()
+	
+	// Load config.toml
+	exePath, _ := os.Executable()
+	parentDir := filepath.Dir(filepath.Dir(exePath))
+	configPath := filepath.Join(parentDir, "config.toml")
+	
+	tomlData, err := os.ReadFile(configPath)
+	if err == nil {
+		err = toml.Unmarshal(tomlData, &globalConfig)
+		if err != nil {
+			log.Printf("Warning: Failed to parse config.toml: %v\n", err)
+		} else {
+			log.Printf("Loaded configuration from %s\n", configPath)
+		}
+	} else {
+		log.Printf("Warning: Could not read config.toml from %s: %v\n", configPath, err)
+	}
+
+	numWorkers := globalConfig.Orchestrator.NumWorkers
+	if numWorkers <= 0 {
+		numWorkers = 4
+	}
+	
+	limit := globalConfig.Orchestrator.DemucsConcurrentLimit
+	if limit <= 0 {
+		limit = 1
+	}
+	demucsSemaphore = make(chan struct{}, limit)
+	
 	noDB := flag.Bool("no-db", false, "Disable PostgreSQL UPSERT and output JSON locally for testing")
 	flag.Parse()
 
