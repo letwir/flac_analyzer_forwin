@@ -8,3 +8,5 @@ testFLAC/
 tests/
 改変前/
 *.zip
+*.log
+flac.done
