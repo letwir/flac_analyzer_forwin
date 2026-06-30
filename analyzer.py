@@ -12,6 +12,8 @@ from typing import Any, Callable, Generic, TypeVar, cast
 
 import librosa
 import numpy as np
+import scipy.stats
+import scipy.signal
 
 from constants import CHORDS_DIC, KEY_PROFILES, NOTES
 
@@ -566,6 +568,51 @@ class OnsetFeatures:
     onset_strength_seq: list[float] = field(default_factory=list)
 
 
+@dataclass
+class ScipyStatsFeatures:
+    """Scipyを用いた周波数スペクトルの統計特徴量群ですわ。"""
+    skewness_mean: float = 0.0
+    skewness_std: float = 0.0
+    skewness_peak: float = 0.0
+    skewness_min: float = 0.0
+    skewness_seq: list[float] = field(default_factory=list)
+    kurtosis_mean: float = 0.0
+    kurtosis_std: float = 0.0
+    kurtosis_peak: float = 0.0
+    kurtosis_min: float = 0.0
+    kurtosis_seq: list[float] = field(default_factory=list)
+
+
+@dataclass
+class HilbertFeatures:
+    """Scipyを用いたHilbert変換特徴量群ですわ。"""
+    env_mean: float = 0.0
+    env_std: float = 0.0
+    env_peak: float = 0.0
+    env_min: float = 0.0
+    env_seq: list[float] = field(default_factory=list)
+    inst_freq_mean: float = 0.0
+    inst_freq_std: float = 0.0
+    inst_freq_peak: float = 0.0
+    inst_freq_min: float = 0.0
+    inst_freq_seq: list[float] = field(default_factory=list)
+
+
+@dataclass
+class PeakFeatures:
+    """Scipyを用いたピーク特徴量群ですわ。"""
+    spectral_mean: float = 0.0
+    spectral_std: float = 0.0
+    spectral_peak: float = 0.0
+    spectral_min: float = 0.0
+    spectral_seq: list[float] = field(default_factory=list)
+    temporal_mean: float = 0.0
+    temporal_std: float = 0.0
+    temporal_peak: float = 0.0
+    temporal_min: float = 0.0
+    temporal_seq: list[float] = field(default_factory=list)
+
+
 # ─────────────────────────────────────────────
 # RawFeatures (v4: Single Source of Truth)
 # ─────────────────────────────────────────────
@@ -640,6 +687,11 @@ class RawFeatures:
     # ── 新規追加の raw 時系列 ──
     chord_sequence: list[str] = field(default_factory=list)
     vocal_f0_seq: list[float] | None = None
+
+    # ── Scipy / Math 特徴量 ──
+    scipy_stats_feat: ScipyStatsFeatures | None = None
+    hilbert_feat: HilbertFeatures | None = None
+    peak_feat: PeakFeatures | None = None
 
     def to_postgres_dict(self, track_id: str) -> dict[str, Any]:
         """ステム種別に応じて scalars/sequences をフィルタリングした辞書を返しますわ！"""
@@ -751,6 +803,40 @@ class RawFeatures:
         tags[f"{p}LIBROSA_SPECTRAL_CENTROID_PEAK"] = str(_safe_int(self.centroid_peak))
         tags[f"{p}LIBROSA_ROLLOFF_MEAN"] = str(_safe_int(self.rolloff_mean))
         tags[f"{p}LIBROSA_ROLLOFF_STD"] = str(_safe_int(self.rolloff_std))
+
+        # ── Scipy / Math 特徴量 ──
+        if self.scipy_stats_feat is not None:
+            ssf = self.scipy_stats_feat
+            tags[f"{p}SKEWNESS_MEAN"] = str(_safe_int(ssf.skewness_mean, 1000))
+            tags[f"{p}SKEWNESS_STD"] = str(_safe_int(ssf.skewness_std, 1000))
+            tags[f"{p}SKEWNESS_PEAK"] = str(_safe_int(ssf.skewness_peak, 1000))
+            tags[f"{p}SKEWNESS_MIN"] = str(_safe_int(ssf.skewness_min, 1000))
+            tags[f"{p}KURTOSIS_MEAN"] = str(_safe_int(ssf.kurtosis_mean, 1000))
+            tags[f"{p}KURTOSIS_STD"] = str(_safe_int(ssf.kurtosis_std, 1000))
+            tags[f"{p}KURTOSIS_PEAK"] = str(_safe_int(ssf.kurtosis_peak, 1000))
+            tags[f"{p}KURTOSIS_MIN"] = str(_safe_int(ssf.kurtosis_min, 1000))
+
+        if self.hilbert_feat is not None:
+            hf = self.hilbert_feat
+            tags[f"{p}HILBERT_ENV_MEAN"] = str(_safe_int(hf.env_mean, 1000))
+            tags[f"{p}HILBERT_ENV_STD"] = str(_safe_int(hf.env_std, 1000))
+            tags[f"{p}HILBERT_ENV_PEAK"] = str(_safe_int(hf.env_peak, 1000))
+            tags[f"{p}HILBERT_ENV_MIN"] = str(_safe_int(hf.env_min, 1000))
+            tags[f"{p}HILBERT_INST_FREQ_MEAN"] = str(_safe_int(hf.inst_freq_mean, 1000))
+            tags[f"{p}HILBERT_INST_FREQ_STD"] = str(_safe_int(hf.inst_freq_std, 1000))
+            tags[f"{p}HILBERT_INST_FREQ_PEAK"] = str(_safe_int(hf.inst_freq_peak, 1000))
+            tags[f"{p}HILBERT_INST_FREQ_MIN"] = str(_safe_int(hf.inst_freq_min, 1000))
+            
+        if self.peak_feat is not None:
+            pf = self.peak_feat
+            tags[f"{p}PEAK_SPECTRAL_MEAN"] = str(_safe_int(pf.spectral_mean, 1000))
+            tags[f"{p}PEAK_SPECTRAL_STD"] = str(_safe_int(pf.spectral_std, 1000))
+            tags[f"{p}PEAK_SPECTRAL_PEAK"] = str(_safe_int(pf.spectral_peak, 1000))
+            tags[f"{p}PEAK_SPECTRAL_MIN"] = str(_safe_int(pf.spectral_min, 1000))
+            tags[f"{p}PEAK_TEMPORAL_MEAN"] = str(_safe_int(pf.temporal_mean, 1000))
+            tags[f"{p}PEAK_TEMPORAL_STD"] = str(_safe_int(pf.temporal_std, 1000))
+            tags[f"{p}PEAK_TEMPORAL_PEAK"] = str(_safe_int(pf.temporal_peak, 1000))
+            tags[f"{p}PEAK_TEMPORAL_MIN"] = str(_safe_int(pf.temporal_min, 1000))
 
         return tags
 
@@ -886,6 +972,121 @@ def _calc_vocal_f0_seq(ctx: AudioContext) -> list[float] | None:
     except Exception as e:
         logging.warning(f"[VocalF0] ピッチ検出エラー (source: {ctx.source}): {e}")
         return [0.0] * FIXED_SEQ_FRAMES
+
+
+def _calc_scipy_stats_features(ctx: AudioContext) -> ScipyStatsFeatures | None:
+    """Scipyによる周波数スペクトルのSkewness, Kurtosisを計算しますわ！"""
+    if ctx.spectro is None or ctx.spectro.size == 0:
+        return None
+    try:
+        # spectro: (n_bins, t_frames)
+        # 警告を抑制するため、合計が0に近いフレームは微小値を足す
+        spectro = ctx.spectro + 1e-10
+        # 時間軸に沿って周波数ビンの分布を計算
+        skew_vals = scipy.stats.skew(spectro, axis=0, nan_policy='omit')
+        kurt_vals = scipy.stats.kurtosis(spectro, axis=0, nan_policy='omit')
+        
+        skew_vals = np.nan_to_num(skew_vals, nan=0.0, posinf=0.0, neginf=0.0)
+        kurt_vals = np.nan_to_num(kurt_vals, nan=0.0, posinf=0.0, neginf=0.0)
+
+        skew_seq = _resample_to_fixed_frames(skew_vals)
+        kurt_seq = _resample_to_fixed_frames(kurt_vals)
+
+        return ScipyStatsFeatures(
+            skewness_mean=float(np.mean(skew_vals)),
+            skewness_std=float(np.std(skew_vals)),
+            skewness_peak=float(np.max(skew_vals)),
+            skewness_min=float(np.min(skew_vals)),
+            skewness_seq=skew_seq,
+            kurtosis_mean=float(np.mean(kurt_vals)),
+            kurtosis_std=float(np.std(kurt_vals)),
+            kurtosis_peak=float(np.max(kurt_vals)),
+            kurtosis_min=float(np.min(kurt_vals)),
+            kurtosis_seq=kurt_seq,
+        )
+    except Exception as e:
+        logging.warning(f"[ScipyStats] Skew/Kurt 計算エラー (source: {ctx.source}): {e}")
+        return None
+
+
+def _calc_hilbert_features(ctx: AudioContext) -> HilbertFeatures | None:
+    """ScipyによるHilbert Envelope, Instantaneous Frequencyを計算しますわ！"""
+    if ctx.y is None or ctx.y.size == 0:
+        return None
+    try:
+        # 計算量削減のため、1/10 程度にデシメーション (約4.4kHz)
+        y_dec = ctx.y[::10]
+        sr_dec = ctx.sr / 10.0
+        
+        analytic_signal = scipy.signal.hilbert(y_dec)
+        amplitude_envelope = np.abs(analytic_signal)
+        instantaneous_phase = np.unwrap(np.angle(analytic_signal))
+        instantaneous_frequency = (np.diff(instantaneous_phase) / (2.0 * np.pi) * sr_dec)
+        
+        # 配列長を合わせる
+        instantaneous_frequency = np.append(instantaneous_frequency, instantaneous_frequency[-1])
+
+        env_seq = _resample_to_fixed_frames(amplitude_envelope)
+        inst_freq_seq = _resample_to_fixed_frames(instantaneous_frequency)
+
+        return HilbertFeatures(
+            env_mean=float(np.mean(amplitude_envelope)),
+            env_std=float(np.std(amplitude_envelope)),
+            env_peak=float(np.max(amplitude_envelope)),
+            env_min=float(np.min(amplitude_envelope)),
+            env_seq=env_seq,
+            inst_freq_mean=float(np.mean(instantaneous_frequency)),
+            inst_freq_std=float(np.std(instantaneous_frequency)),
+            inst_freq_peak=float(np.max(instantaneous_frequency)),
+            inst_freq_min=float(np.min(instantaneous_frequency)),
+            inst_freq_seq=inst_freq_seq,
+        )
+    except Exception as e:
+        logging.warning(f"[Hilbert] Hilbert変換計算エラー (source: {ctx.source}): {e}")
+        return None
+
+
+def _calc_peak_features(ctx: AudioContext) -> PeakFeatures | None:
+    """Scipyによるピーク(Spectral, Temporal)の数を計算しますわ！"""
+    if ctx.spectro is None or ctx.y is None:
+        return None
+    try:
+        spectro = ctx.spectro
+        t_frames = spectro.shape[1]
+        spectral_peaks_count = np.zeros(t_frames)
+        for t in range(t_frames):
+            peaks, _ = scipy.signal.find_peaks(spectro[:, t], height=0.01)
+            spectral_peaks_count[t] = len(peaks)
+            
+        onset_env = ctx.onset_env
+        if onset_env is not None and onset_env.size > 0:
+            segment_len = max(1, len(onset_env) // FIXED_SEQ_FRAMES)
+            temporal_peaks_count = np.zeros(FIXED_SEQ_FRAMES)
+            for i in range(FIXED_SEQ_FRAMES):
+                segment = onset_env[i*segment_len:(i+1)*segment_len]
+                peaks, _ = scipy.signal.find_peaks(segment, prominence=0.1)
+                temporal_peaks_count[i] = len(peaks)
+        else:
+            temporal_peaks_count = np.zeros(FIXED_SEQ_FRAMES)
+            
+        spectral_seq = _resample_to_fixed_frames(spectral_peaks_count)
+        temporal_seq = temporal_peaks_count.tolist()
+
+        return PeakFeatures(
+            spectral_mean=float(np.mean(spectral_peaks_count)),
+            spectral_std=float(np.std(spectral_peaks_count)),
+            spectral_peak=float(np.max(spectral_peaks_count)),
+            spectral_min=float(np.min(spectral_peaks_count)),
+            spectral_seq=spectral_seq,
+            temporal_mean=float(np.mean(temporal_peaks_count)),
+            temporal_std=float(np.std(temporal_peaks_count)),
+            temporal_peak=float(np.max(temporal_peaks_count)),
+            temporal_min=float(np.min(temporal_peaks_count)),
+            temporal_seq=temporal_seq,
+        )
+    except Exception as e:
+        logging.warning(f"[Peak] ピーク特徴量計算エラー (source: {ctx.source}): {e}")
+        return None
 
 
 # ─────────────────────────────────────────────
@@ -1364,6 +1565,41 @@ def _stem_filter_scalars(raw: RawFeatures, track_id: str) -> dict[str, Any]:
             "skew": float(raw.onset_feat.skew),
             "kurt": float(raw.onset_feat.kurt),
         }
+    if raw.scipy_stats_feat is not None:
+        scalars["scipy_skewness"] = {
+            "mean": float(raw.scipy_stats_feat.skewness_mean),
+            "std": float(raw.scipy_stats_feat.skewness_std),
+            "peak": float(raw.scipy_stats_feat.skewness_peak),
+            "min": float(raw.scipy_stats_feat.skewness_min),
+        }
+        scalars["scipy_kurtosis"] = {
+            "mean": float(raw.scipy_stats_feat.kurtosis_mean),
+            "std": float(raw.scipy_stats_feat.kurtosis_std),
+            "peak": float(raw.scipy_stats_feat.kurtosis_peak),
+            "min": float(raw.scipy_stats_feat.kurtosis_min),
+        }
+    if raw.hilbert_feat is not None:
+        scalars["hilbert"] = {
+            "env_mean": float(raw.hilbert_feat.env_mean),
+            "env_std": float(raw.hilbert_feat.env_std),
+            "env_peak": float(raw.hilbert_feat.env_peak),
+            "env_min": float(raw.hilbert_feat.env_min),
+            "inst_freq_mean": float(raw.hilbert_feat.inst_freq_mean),
+            "inst_freq_std": float(raw.hilbert_feat.inst_freq_std),
+            "inst_freq_peak": float(raw.hilbert_feat.inst_freq_peak),
+            "inst_freq_min": float(raw.hilbert_feat.inst_freq_min),
+        }
+    if raw.peak_feat is not None:
+        scalars["peaks"] = {
+            "spectral_mean": float(raw.peak_feat.spectral_mean),
+            "spectral_std": float(raw.peak_feat.spectral_std),
+            "spectral_peak": float(raw.peak_feat.spectral_peak),
+            "spectral_min": float(raw.peak_feat.spectral_min),
+            "temporal_mean": float(raw.peak_feat.temporal_mean),
+            "temporal_std": float(raw.peak_feat.temporal_std),
+            "temporal_peak": float(raw.peak_feat.temporal_peak),
+            "temporal_min": float(raw.peak_feat.temporal_min),
+        }
     return scalars
 
 
@@ -1400,6 +1636,15 @@ def _stem_filter_sequences(raw: RawFeatures, track_id: str) -> dict[str, Any]:
     if raw.onset_feat is not None:
         sequences["onset_strength"] = raw.onset_feat.onset_strength_seq
         sequences["onset_autocorr"] = raw.onset_feat.autocorr
+    if raw.scipy_stats_feat is not None:
+        sequences["scipy_skewness"] = raw.scipy_stats_feat.skewness_seq
+        sequences["scipy_kurtosis"] = raw.scipy_stats_feat.kurtosis_seq
+    if raw.hilbert_feat is not None:
+        sequences["hilbert_env"] = raw.hilbert_feat.env_seq
+        sequences["hilbert_inst_freq"] = raw.hilbert_feat.inst_freq_seq
+    if raw.peak_feat is not None:
+        sequences["spectral_peaks"] = raw.peak_feat.spectral_seq
+        sequences["temporal_peaks"] = raw.peak_feat.temporal_seq
 
     return sequences
 
@@ -2178,6 +2423,10 @@ extract_rms_obj = FeatureExtractor(_calc_rms_features, "rms_obj")
 extract_centroid_obj = FeatureExtractor(_calc_centroid_features, "centroid_obj")
 extract_mfcc_obj = FeatureExtractor(_calc_mfcc_features, "mfcc_obj")
 extract_chroma_obj = FeatureExtractor(_calc_chroma_features, "chroma_obj")
+# ── Scipy / Math ──
+extract_scipy_stats = FeatureExtractor(_calc_scipy_stats_features, "scipy_stats")
+extract_hilbert = FeatureExtractor(_calc_hilbert_features, "hilbert")
+extract_peak = FeatureExtractor(_calc_peak_features, "peak")
 
 
 # ─────────────────────────────────────────────
@@ -2213,6 +2462,9 @@ def _build_raw_features(
     centroid_obj,
     mfcc_obj,
     chroma_obj,
+    scipy_stats_feat,
+    hilbert_feat,
+    peak_feat,
     ctx: AudioContext,
 ) -> RawFeatures:
     """Product合成結果から RawFeatures を構築しますわ！"""
@@ -2309,6 +2561,9 @@ def _build_raw_features(
         mfcc=mfcc_seq_2d,
         chord_sequence=chord_seq,
         vocal_f0_seq=f0_seq,
+        scipy_stats_feat=scipy_stats_feat,
+        hilbert_feat=hilbert_feat,
+        peak_feat=peak_feat,
     )
 
 
@@ -2347,6 +2602,10 @@ _librosa_product = product_all(
     extract_centroid_obj,
     extract_mfcc_obj,
     extract_chroma_obj,
+    # ── Scipy / Math ──
+    extract_scipy_stats,
+    extract_hilbert,
+    extract_peak,
 )
 
 librosa_extractor_v4: FeatureExtractor[RawFeatures] = FeatureExtractor(
