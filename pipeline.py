@@ -553,7 +553,7 @@ def process_single_flac_file(file_path: str, essentia_models: dict) -> str:
             else:
                 raw_tags[key_lower] = val_list
 
-        TRACK_TAG_PAT = re.compile(r"^(?:cue_)?track_?(\d+)_(.+)$", re.IGNORECASE)
+        TRACK_TAG_PAT = re.compile(r"^(?:cue_?)?track_?(\d+)_(.+)$", re.IGNORECASE)
 
         final_tags: dict[str, str] = {}
 
@@ -1229,7 +1229,7 @@ def process_single_flac_file_directly(
 
     # mutagen の全メタデータを辞書化
     tags = _build_metadata_tags(filepath_abs)
-    TRACK_TAG_PAT = re.compile(r"^(?:cue_)?track_?(\d+)_(.+)$", re.IGNORECASE)
+    TRACK_TAG_PAT = re.compile(r"^(?:cue_?)?track_?(\d+)_(.+)$", re.IGNORECASE)
     final_tags = {}
     processed_tracks = 0
     skipped_tracks_count = 0

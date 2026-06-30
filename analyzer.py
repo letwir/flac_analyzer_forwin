@@ -473,15 +473,16 @@ class DemucsFeatures:
     stems: dict[str, Any] = field(default_factory=dict)
     energy_ratios: dict[str, float] = field(default_factory=dict)
 
-    def to_flac_tags(self) -> dict[str, str]:
+    def to_flac_tags(self, prefix: str = "") -> dict[str, str]:
+        p = f"{prefix}_" if prefix else ""
         tags = {}
         # 各ステムのエネルギー比率を書き込みますわ
         for name, ratio in self.energy_ratios.items():
-            tags[f"DEMUCS_{name.upper()}_ENERGY_RATIO"] = str(int(ratio * 1000))
+            tags[f"{p}DEMUCS_{name.upper()}_ENERGY_RATIO"] = str(int(ratio * 1000))
         # 各ステムの特徴量タグにDEMUCS_プレフィックスを付けてマージしますの
         for name, feat in self.stems.items():
             if hasattr(feat, "to_flac_tags"):
-                tags.update(feat.to_flac_tags(prefix=f"DEMUCS_{name.upper()}"))
+                tags.update(feat.to_flac_tags(prefix=f"{p}DEMUCS_{name.upper()}"))
         return tags
 
     def to_postgres_dict(self) -> dict[str, Any]:
@@ -1098,8 +1099,9 @@ class EssentiaFeatures:
     def __init__(self, predictions: dict[str, float]):
         self.predictions = predictions
 
-    def to_flac_tags(self) -> dict[str, str]:
-        return {k: str(_safe_int(v, 1000)) for k, v in self.predictions.items()}
+    def to_flac_tags(self, prefix: str = "") -> dict[str, str]:
+        p = f"{prefix}_" if prefix else ""
+        return {f"{p}{k}": str(_safe_int(v, 1000)) for k, v in self.predictions.items()}
 
     def to_postgres_dict(self) -> dict[str, Any]:
         try:
