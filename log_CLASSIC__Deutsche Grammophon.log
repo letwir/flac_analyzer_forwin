@@ -1,0 +1,546 @@
+2026-06-25 09:33:25,697 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:33:25,698 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:33:25,944 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 09:33:25,944 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 09:33:25,954 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac
+2026-06-25 09:33:26,305 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-25 09:33:26,305 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:33:41,822 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-25 09:33:42,835 [INFO] [Direct-Process] デコード完了 (経過: 1.0125s, length: 23064300 samples)
+2026-06-25 09:33:42,835 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-25 09:33:43,534 [INFO] [Direct-Process] デコード完了 (経過: 0.6938s, length: 18389700 samples)
+2026-06-25 09:33:43,534 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-25 09:33:44,017 [INFO] [Direct-Process] デコード完了 (経過: 0.4796s, length: 12921300 samples)
+2026-06-25 09:33:44,018 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-25 09:33:44,714 [INFO] [Direct-Process] デコード完了 (経過: 0.6933s, length: 17640000 samples)
+2026-06-25 09:33:44,714 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-25 09:33:45,243 [INFO] [Direct-Process] デコード完了 (経過: 0.5251s, length: 13935600 samples)
+2026-06-25 09:33:45,243 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-25 09:33:45,734 [INFO] [Direct-Process] デコード完了 (経過: 0.4876s, length: 13362300 samples)
+2026-06-25 09:33:45,734 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-25 09:33:46,482 [INFO] [Direct-Process] デコード完了 (経過: 0.7450s, length: 19139400 samples)
+2026-06-25 09:33:46,483 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-25 09:33:47,247 [INFO] [Direct-Process] デコード完了 (経過: 0.7602s, length: 20286000 samples)
+2026-06-25 09:33:47,247 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-25 09:33:47,773 [INFO] [Direct-Process] デコード完了 (経過: 0.5213s, length: 14376600 samples)
+2026-06-25 09:33:47,773 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-25 09:33:48,660 [INFO] [Direct-Process] デコード完了 (経過: 0.8834s, length: 22270500 samples)
+2026-06-25 09:33:48,660 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-25 09:33:49,341 [INFO] [Direct-Process] デコード完了 (経過: 0.6767s, length: 17110800 samples)
+2026-06-25 09:33:49,341 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 11)
+2026-06-25 09:33:49,796 [INFO] [Direct-Process] デコード完了 (経過: 0.4519s, length: 12127500 samples)
+2026-06-25 09:33:49,797 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 12)
+2026-06-25 09:33:49,799 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-25 09:33:49,812 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac
+2026-06-25 09:33:50,366 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:33:50,367 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:33:50,621 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 09:33:50,621 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 09:33:50,631 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac
+2026-06-25 09:33:50,919 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-25 09:33:50,919 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:34:06,608 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-25 09:34:07,317 [INFO] [Direct-Process] デコード完了 (経過: 0.7079s, length: 15876000 samples)
+2026-06-25 09:34:07,317 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-25 09:34:08,104 [INFO] [Direct-Process] デコード完了 (経過: 0.7837s, length: 20682900 samples)
+2026-06-25 09:34:08,105 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-25 09:34:08,471 [INFO] [Direct-Process] デコード完了 (経過: 0.3596s, length: 9305100 samples)
+2026-06-25 09:34:08,471 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-25 09:34:09,464 [INFO] [Direct-Process] デコード完了 (経過: 0.9910s, length: 25842600 samples)
+2026-06-25 09:34:09,464 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-25 09:34:10,088 [INFO] [Direct-Process] デコード完了 (経過: 0.6175s, length: 16449300 samples)
+2026-06-25 09:34:10,088 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-25 09:34:10,236 [INFO] [Direct-Process] デコード完了 (経過: 0.1419s, length: 3263400 samples)
+2026-06-25 09:34:10,236 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-25 09:34:10,884 [INFO] [Direct-Process] デコード完了 (経過: 0.6471s, length: 17640000 samples)
+2026-06-25 09:34:10,884 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-25 09:34:12,095 [INFO] [Direct-Process] デコード完了 (経過: 1.2074s, length: 38322900 samples)
+2026-06-25 09:34:12,096 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-25 09:34:13,374 [INFO] [Direct-Process] デコード完了 (経過: 1.2698s, length: 40792500 samples)
+2026-06-25 09:34:13,374 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-25 09:34:14,276 [INFO] [Direct-Process] デコード完了 (経過: 0.8940s, length: 22623300 samples)
+2026-06-25 09:34:14,276 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-25 09:34:14,282 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-25 09:34:14,297 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac
+2026-06-25 09:34:14,817 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:34:14,818 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:34:15,072 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 09:34:15,072 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 09:34:15,084 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac
+2026-06-25 09:34:15,393 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-25 09:34:15,394 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:34:30,951 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-25 09:34:31,991 [INFO] [Direct-Process] デコード完了 (経過: 1.0397s, length: 27121500 samples)
+2026-06-25 09:34:31,991 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-25 09:34:32,590 [INFO] [Direct-Process] デコード完了 (経過: 0.5929s, length: 16023000 samples)
+2026-06-25 09:34:32,590 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-25 09:34:32,796 [INFO] [Direct-Process] デコード完了 (経過: 0.2024s, length: 5497800 samples)
+2026-06-25 09:34:32,796 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-25 09:34:33,686 [INFO] [Direct-Process] デコード完了 (経過: 0.8885s, length: 24034500 samples)
+2026-06-25 09:34:33,686 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-25 09:34:34,450 [INFO] [Direct-Process] デコード完了 (経過: 0.7582s, length: 19492200 samples)
+2026-06-25 09:34:34,450 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-25 09:34:35,128 [INFO] [Direct-Process] デコード完了 (経過: 0.6736s, length: 17463600 samples)
+2026-06-25 09:34:35,128 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-25 09:34:35,970 [INFO] [Direct-Process] デコード完了 (経過: 0.8388s, length: 22976100 samples)
+2026-06-25 09:34:35,971 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-25 09:34:36,753 [INFO] [Direct-Process] デコード完了 (経過: 0.7772s, length: 19889100 samples)
+2026-06-25 09:34:36,753 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-25 09:34:37,662 [INFO] [Direct-Process] デコード完了 (経過: 0.9053s, length: 23814000 samples)
+2026-06-25 09:34:37,663 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-25 09:34:37,993 [INFO] [Direct-Process] デコード完了 (経過: 0.3259s, length: 8952300 samples)
+2026-06-25 09:34:37,993 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-25 09:34:38,517 [INFO] [Direct-Process] デコード完了 (経過: 0.5216s, length: 13494600 samples)
+2026-06-25 09:34:38,518 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 11)
+2026-06-25 09:34:38,520 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-25 09:34:38,534 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac
+2026-06-25 09:34:39,067 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:34:39,068 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:34:39,345 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 09:34:39,345 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 09:34:39,357 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac
+2026-06-25 09:34:39,623 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-25 09:34:39,623 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:34:55,248 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-25 09:34:56,171 [INFO] [Direct-Process] デコード完了 (経過: 0.9225s, length: 29061900 samples)
+2026-06-25 09:34:56,172 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 1)
+2026-06-25 09:34:57,027 [INFO] [Direct-Process] デコード完了 (経過: 0.8490s, length: 22976100 samples)
+2026-06-25 09:34:57,028 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 2)
+2026-06-25 09:34:58,025 [INFO] [Direct-Process] デコード完了 (経過: 0.9931s, length: 24563700 samples)
+2026-06-25 09:34:58,026 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 3)
+2026-06-25 09:34:58,956 [INFO] [Direct-Process] デコード完了 (経過: 0.9252s, length: 23373000 samples)
+2026-06-25 09:34:58,956 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 4)
+2026-06-25 09:34:59,599 [INFO] [Direct-Process] デコード完了 (経過: 0.6373s, length: 15964200 samples)
+2026-06-25 09:34:59,660 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 5)
+2026-06-25 09:35:00,282 [INFO] [Direct-Process] デコード完了 (経過: 0.6186s, length: 15170400 samples)
+2026-06-25 09:35:00,282 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 6)
+2026-06-25 09:35:01,179 [INFO] [Direct-Process] デコード完了 (経過: 0.8940s, length: 23108400 samples)
+2026-06-25 09:35:01,179 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 7)
+2026-06-25 09:35:01,654 [INFO] [Direct-Process] デコード完了 (経過: 0.4698s, length: 12612600 samples)
+2026-06-25 09:35:01,654 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 8)
+2026-06-25 09:35:01,975 [INFO] [Direct-Process] デコード完了 (経過: 0.3177s, length: 8070300 samples)
+2026-06-25 09:35:01,975 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 9)
+2026-06-25 09:35:02,586 [INFO] [Direct-Process] デコード完了 (経過: 0.6091s, length: 15170400 samples)
+2026-06-25 09:35:02,586 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 10)
+2026-06-25 09:35:02,591 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (All tracks skipped)
+2026-06-25 09:35:02,605 [INFO] SKIPPED: Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac
+2026-06-25 09:35:03,153 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:35:03,153 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:35:03,407 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 09:35:03,407 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 09:35:03,418 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac
+2026-06-25 09:35:03,645 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-25 09:35:03,645 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:35:21,038 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-25 09:35:22,010 [INFO] [Direct-Process] デコード完了 (経過: 0.9714s, length: 25181100 samples)
+2026-06-25 09:35:22,010 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 1)
+2026-06-25 09:35:22,550 [INFO] [Direct-Process] デコード完了 (経過: 0.5342s, length: 12568500 samples)
+2026-06-25 09:35:22,550 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 2)
+2026-06-25 09:35:23,459 [INFO] [Direct-Process] デコード完了 (経過: 0.9060s, length: 26680500 samples)
+2026-06-25 09:35:23,459 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 3)
+2026-06-25 09:35:24,474 [INFO] [Direct-Process] デコード完了 (経過: 1.0107s, length: 25578000 samples)
+2026-06-25 09:35:24,475 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 4)
+2026-06-25 09:35:25,146 [INFO] [Direct-Process] デコード完了 (経過: 0.6667s, length: 17154900 samples)
+2026-06-25 09:35:25,146 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 5)
+2026-06-25 09:35:25,756 [INFO] [Direct-Process] デコード完了 (経過: 0.6060s, length: 15038100 samples)
+2026-06-25 09:35:25,756 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 6)
+2026-06-25 09:35:26,750 [INFO] [Direct-Process] デコード完了 (経過: 0.9908s, length: 25004700 samples)
+2026-06-25 09:35:26,751 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 7)
+2026-06-25 09:35:27,416 [INFO] [Direct-Process] デコード完了 (経過: 0.6608s, length: 17110800 samples)
+2026-06-25 09:35:27,416 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 8)
+2026-06-25 09:35:28,311 [INFO] [Direct-Process] デコード完了 (経過: 0.8906s, length: 20971020 samples)
+2026-06-25 09:35:28,311 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 9)
+2026-06-25 09:35:28,315 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (All tracks skipped)
+2026-06-25 09:35:28,327 [INFO] SKIPPED: Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac
+2026-06-25 09:35:28,864 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:35:28,864 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:35:29,130 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 09:35:29,131 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 09:35:29,143 [INFO] [Direct-Process] 解析開始: Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac
+2026-06-25 09:35:29,376 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-25 09:35:29,376 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 09:35:45,473 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-25 09:35:46,446 [INFO] [Direct-Process] デコード完了 (経過: 0.9727s, length: 21476700 samples)
+2026-06-25 09:35:46,446 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 1)
+2026-06-25 09:35:47,339 [INFO] [Direct-Process] デコード完了 (経過: 0.8884s, length: 21917700 samples)
+2026-06-25 09:35:47,339 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 2)
+2026-06-25 09:35:47,952 [INFO] [Direct-Process] デコード完了 (経過: 0.6080s, length: 16008300 samples)
+2026-06-25 09:35:47,952 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 3)
+2026-06-25 09:35:48,895 [INFO] [Direct-Process] デコード完了 (経過: 0.9393s, length: 29679300 samples)
+2026-06-25 09:35:48,895 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 4)
+2026-06-25 09:35:49,559 [INFO] [Direct-Process] デコード完了 (経過: 0.6574s, length: 17110800 samples)
+2026-06-25 09:35:49,560 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 5)
+2026-06-25 09:35:50,448 [INFO] [Direct-Process] デコード完了 (経過: 0.8845s, length: 27562500 samples)
+2026-06-25 09:35:50,448 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 6)
+2026-06-25 09:35:51,264 [INFO] [Direct-Process] デコード完了 (経過: 0.8104s, length: 20241900 samples)
+2026-06-25 09:35:51,264 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 7)
+2026-06-25 09:35:52,183 [INFO] [Direct-Process] デコード完了 (経過: 0.9146s, length: 23593500 samples)
+2026-06-25 09:35:52,183 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 8)
+2026-06-25 09:35:52,760 [INFO] [Direct-Process] デコード完了 (経過: 0.5716s, length: 15523200 samples)
+2026-06-25 09:35:52,760 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 9)
+2026-06-25 09:35:52,764 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (All tracks skipped)
+2026-06-25 09:35:52,780 [INFO] SKIPPED: Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac
+2026-06-27 14:05:02,015 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:05:02,015 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:05:02,290 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 14:05:02,290 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 14:05:02,301 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac
+2026-06-27 14:05:02,657 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 14:05:02,657 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:05:17,854 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 14:05:18,860 [INFO] [Direct-Process] デコード完了 (経過: 1.0058s, length: 23064300 samples)
+2026-06-27 14:05:18,861 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-27 14:05:19,551 [INFO] [Direct-Process] デコード完了 (経過: 0.6851s, length: 18389700 samples)
+2026-06-27 14:05:19,551 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-27 14:05:20,016 [INFO] [Direct-Process] デコード完了 (経過: 0.4610s, length: 12921300 samples)
+2026-06-27 14:05:20,016 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-27 14:05:20,702 [INFO] [Direct-Process] デコード完了 (経過: 0.6830s, length: 17640000 samples)
+2026-06-27 14:05:20,702 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-27 14:05:21,218 [INFO] [Direct-Process] デコード完了 (経過: 0.5118s, length: 13935600 samples)
+2026-06-27 14:05:21,218 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-27 14:05:21,691 [INFO] [Direct-Process] デコード完了 (経過: 0.4704s, length: 13362300 samples)
+2026-06-27 14:05:21,691 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-27 14:05:22,413 [INFO] [Direct-Process] デコード完了 (経過: 0.7192s, length: 19139400 samples)
+2026-06-27 14:05:22,414 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-27 14:05:23,187 [INFO] [Direct-Process] デコード完了 (経過: 0.7690s, length: 20286000 samples)
+2026-06-27 14:05:23,187 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-27 14:05:23,709 [INFO] [Direct-Process] デコード完了 (経過: 0.5174s, length: 14376600 samples)
+2026-06-27 14:05:23,709 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-27 14:05:24,548 [INFO] [Direct-Process] デコード完了 (経過: 0.8362s, length: 22270500 samples)
+2026-06-27 14:05:24,548 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-27 14:05:25,170 [INFO] [Direct-Process] デコード完了 (経過: 0.6165s, length: 17110800 samples)
+2026-06-27 14:05:25,171 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 11)
+2026-06-27 14:05:25,600 [INFO] [Direct-Process] デコード完了 (経過: 0.4260s, length: 12127500 samples)
+2026-06-27 14:05:25,600 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 12)
+2026-06-27 14:05:25,603 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-27 14:05:25,617 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac
+2026-06-27 14:05:26,153 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:05:26,154 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:05:26,402 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 14:05:26,402 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 14:05:26,414 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac
+2026-06-27 14:05:26,666 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 14:05:26,667 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:05:41,974 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 14:05:42,657 [INFO] [Direct-Process] デコード完了 (経過: 0.6829s, length: 15876000 samples)
+2026-06-27 14:05:42,658 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-27 14:05:43,422 [INFO] [Direct-Process] デコード完了 (経過: 0.7616s, length: 20682900 samples)
+2026-06-27 14:05:43,423 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-27 14:05:43,768 [INFO] [Direct-Process] デコード完了 (経過: 0.3414s, length: 9305100 samples)
+2026-06-27 14:05:43,769 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-27 14:05:44,748 [INFO] [Direct-Process] デコード完了 (経過: 0.9767s, length: 25842600 samples)
+2026-06-27 14:05:44,748 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-27 14:05:45,380 [INFO] [Direct-Process] デコード完了 (経過: 0.6261s, length: 16449300 samples)
+2026-06-27 14:05:45,380 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-27 14:05:45,508 [INFO] [Direct-Process] デコード完了 (経過: 0.1250s, length: 3263400 samples)
+2026-06-27 14:05:45,509 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-27 14:05:46,180 [INFO] [Direct-Process] デコード完了 (経過: 0.6703s, length: 17640000 samples)
+2026-06-27 14:05:46,180 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-27 14:05:47,332 [INFO] [Direct-Process] デコード完了 (経過: 1.1486s, length: 38322900 samples)
+2026-06-27 14:05:47,333 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-27 14:05:48,613 [INFO] [Direct-Process] デコード完了 (経過: 1.2734s, length: 40792500 samples)
+2026-06-27 14:05:48,613 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-27 14:05:49,502 [INFO] [Direct-Process] デコード完了 (経過: 0.8802s, length: 22623300 samples)
+2026-06-27 14:05:49,502 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-27 14:05:49,507 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-27 14:05:49,520 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac
+2026-06-27 14:05:50,048 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:05:50,048 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:05:50,309 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 14:05:50,309 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 14:05:50,320 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac
+2026-06-27 14:05:50,631 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 14:05:50,631 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:06:05,963 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 14:06:06,891 [INFO] [Direct-Process] デコード完了 (経過: 0.9283s, length: 27121500 samples)
+2026-06-27 14:06:06,892 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-27 14:06:07,480 [INFO] [Direct-Process] デコード完了 (経過: 0.5816s, length: 16023000 samples)
+2026-06-27 14:06:07,480 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-27 14:06:07,685 [INFO] [Direct-Process] デコード完了 (経過: 0.2014s, length: 5497800 samples)
+2026-06-27 14:06:07,685 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-27 14:06:08,588 [INFO] [Direct-Process] デコード完了 (経過: 0.9016s, length: 24034500 samples)
+2026-06-27 14:06:08,589 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-27 14:06:09,332 [INFO] [Direct-Process] デコード完了 (経過: 0.7380s, length: 19492200 samples)
+2026-06-27 14:06:09,332 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-27 14:06:09,949 [INFO] [Direct-Process] デコード完了 (経過: 0.6136s, length: 17463600 samples)
+2026-06-27 14:06:09,950 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-27 14:06:10,792 [INFO] [Direct-Process] デコード完了 (経過: 0.8389s, length: 22976100 samples)
+2026-06-27 14:06:10,793 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-27 14:06:11,538 [INFO] [Direct-Process] デコード完了 (経過: 0.7406s, length: 19889100 samples)
+2026-06-27 14:06:11,538 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-27 14:06:12,416 [INFO] [Direct-Process] デコード完了 (経過: 0.8743s, length: 23814000 samples)
+2026-06-27 14:06:12,416 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-27 14:06:12,744 [INFO] [Direct-Process] デコード完了 (経過: 0.3225s, length: 8952300 samples)
+2026-06-27 14:06:12,744 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-27 14:06:13,273 [INFO] [Direct-Process] デコード完了 (経過: 0.5265s, length: 13494600 samples)
+2026-06-27 14:06:13,273 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 11)
+2026-06-27 14:06:13,275 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-27 14:06:13,290 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac
+2026-06-27 14:06:13,825 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:06:13,826 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:06:14,083 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 14:06:14,084 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 14:06:14,104 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac
+2026-06-27 14:06:14,353 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 14:06:14,353 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:06:29,622 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 14:06:30,525 [INFO] [Direct-Process] デコード完了 (経過: 0.9023s, length: 29061900 samples)
+2026-06-27 14:06:30,525 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 1)
+2026-06-27 14:06:31,425 [INFO] [Direct-Process] デコード完了 (経過: 0.8950s, length: 22976100 samples)
+2026-06-27 14:06:31,426 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 2)
+2026-06-27 14:06:32,372 [INFO] [Direct-Process] デコード完了 (経過: 0.9422s, length: 24563700 samples)
+2026-06-27 14:06:32,373 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 3)
+2026-06-27 14:06:33,243 [INFO] [Direct-Process] デコード完了 (経過: 0.8650s, length: 23373000 samples)
+2026-06-27 14:06:33,243 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 4)
+2026-06-27 14:06:33,823 [INFO] [Direct-Process] デコード完了 (経過: 0.5752s, length: 15964200 samples)
+2026-06-27 14:06:33,823 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 5)
+2026-06-27 14:06:34,399 [INFO] [Direct-Process] デコード完了 (経過: 0.5725s, length: 15170400 samples)
+2026-06-27 14:06:34,400 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 6)
+2026-06-27 14:06:35,278 [INFO] [Direct-Process] デコード完了 (経過: 0.8754s, length: 23108400 samples)
+2026-06-27 14:06:35,278 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 7)
+2026-06-27 14:06:35,735 [INFO] [Direct-Process] デコード完了 (経過: 0.4518s, length: 12612600 samples)
+2026-06-27 14:06:35,735 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 8)
+2026-06-27 14:06:36,033 [INFO] [Direct-Process] デコード完了 (経過: 0.2951s, length: 8070300 samples)
+2026-06-27 14:06:36,033 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 9)
+2026-06-27 14:06:36,658 [INFO] [Direct-Process] デコード完了 (経過: 0.6231s, length: 15170400 samples)
+2026-06-27 14:06:36,658 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 10)
+2026-06-27 14:06:36,661 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (All tracks skipped)
+2026-06-27 14:06:36,674 [INFO] SKIPPED: Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac
+2026-06-27 14:06:37,239 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:06:37,240 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:06:37,485 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 14:06:37,485 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 14:06:37,496 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac
+2026-06-27 14:06:37,694 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 14:06:37,694 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:06:53,082 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 14:06:54,029 [INFO] [Direct-Process] デコード完了 (経過: 0.9469s, length: 25181100 samples)
+2026-06-27 14:06:54,029 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 1)
+2026-06-27 14:06:54,517 [INFO] [Direct-Process] デコード完了 (経過: 0.4835s, length: 12568500 samples)
+2026-06-27 14:06:54,518 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 2)
+2026-06-27 14:06:55,345 [INFO] [Direct-Process] デコード完了 (経過: 0.8247s, length: 26680500 samples)
+2026-06-27 14:06:55,345 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 3)
+2026-06-27 14:06:56,311 [INFO] [Direct-Process] デコード完了 (経過: 0.9595s, length: 25578000 samples)
+2026-06-27 14:06:56,311 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 4)
+2026-06-27 14:06:56,934 [INFO] [Direct-Process] デコード完了 (経過: 0.6184s, length: 17154900 samples)
+2026-06-27 14:06:56,935 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 5)
+2026-06-27 14:06:57,524 [INFO] [Direct-Process] デコード完了 (経過: 0.5865s, length: 15038100 samples)
+2026-06-27 14:06:57,525 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 6)
+2026-06-27 14:06:58,460 [INFO] [Direct-Process] デコード完了 (経過: 0.9322s, length: 25004700 samples)
+2026-06-27 14:06:58,460 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 7)
+2026-06-27 14:06:59,061 [INFO] [Direct-Process] デコード完了 (経過: 0.5949s, length: 17110800 samples)
+2026-06-27 14:06:59,061 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 8)
+2026-06-27 14:06:59,853 [INFO] [Direct-Process] デコード完了 (経過: 0.7886s, length: 20971020 samples)
+2026-06-27 14:06:59,853 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 9)
+2026-06-27 14:06:59,857 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (All tracks skipped)
+2026-06-27 14:06:59,870 [INFO] SKIPPED: Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac
+2026-06-27 14:07:00,420 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:07:00,421 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:07:00,657 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 14:07:00,658 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 14:07:00,669 [INFO] [Direct-Process] 解析開始: Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac
+2026-06-27 14:07:00,900 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 14:07:00,900 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 14:07:16,196 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 14:07:17,106 [INFO] [Direct-Process] デコード完了 (経過: 0.9092s, length: 21476700 samples)
+2026-06-27 14:07:17,106 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 1)
+2026-06-27 14:07:17,918 [INFO] [Direct-Process] デコード完了 (経過: 0.8056s, length: 21917700 samples)
+2026-06-27 14:07:17,918 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 2)
+2026-06-27 14:07:18,526 [INFO] [Direct-Process] デコード完了 (経過: 0.6032s, length: 16008300 samples)
+2026-06-27 14:07:18,526 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 3)
+2026-06-27 14:07:19,428 [INFO] [Direct-Process] デコード完了 (経過: 0.8987s, length: 29679300 samples)
+2026-06-27 14:07:19,429 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 4)
+2026-06-27 14:07:20,050 [INFO] [Direct-Process] デコード完了 (経過: 0.6157s, length: 17110800 samples)
+2026-06-27 14:07:20,050 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 5)
+2026-06-27 14:07:20,867 [INFO] [Direct-Process] デコード完了 (経過: 0.8134s, length: 27562500 samples)
+2026-06-27 14:07:20,867 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 6)
+2026-06-27 14:07:21,626 [INFO] [Direct-Process] デコード完了 (経過: 0.7533s, length: 20241900 samples)
+2026-06-27 14:07:21,626 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 7)
+2026-06-27 14:07:22,516 [INFO] [Direct-Process] デコード完了 (経過: 0.8859s, length: 23593500 samples)
+2026-06-27 14:07:22,516 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 8)
+2026-06-27 14:07:23,069 [INFO] [Direct-Process] デコード完了 (経過: 0.5485s, length: 15523200 samples)
+2026-06-27 14:07:23,070 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 9)
+2026-06-27 14:07:23,073 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (All tracks skipped)
+2026-06-27 14:07:23,089 [INFO] SKIPPED: Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac
+2026-06-27 22:04:55,409 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:04:55,410 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:04:55,672 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 22:04:55,672 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 22:04:55,686 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac
+2026-06-27 22:04:56,067 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 22:04:56,067 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:05:14,008 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 22:05:15,935 [INFO] [Direct-Process] デコード完了 (経過: 1.0635s, length: 23064300 samples)
+2026-06-27 22:05:16,943 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-27 22:05:25,175 [INFO] [Direct-Process] デコード完了 (経過: 0.7703s, length: 18389700 samples)
+2026-06-27 22:05:26,588 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-27 22:05:27,116 [INFO] [Direct-Process] デコード完了 (経過: 0.5232s, length: 12921300 samples)
+2026-06-27 22:05:27,117 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-27 22:05:27,843 [INFO] [Direct-Process] デコード完了 (経過: 0.7220s, length: 17640000 samples)
+2026-06-27 22:05:27,843 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-27 22:05:28,420 [INFO] [Direct-Process] デコード完了 (経過: 0.5728s, length: 13935600 samples)
+2026-06-27 22:05:28,420 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-27 22:05:28,945 [INFO] [Direct-Process] デコード完了 (経過: 0.5223s, length: 13362300 samples)
+2026-06-27 22:05:28,946 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-27 22:05:29,754 [INFO] [Direct-Process] デコード完了 (経過: 0.8053s, length: 19139400 samples)
+2026-06-27 22:05:29,754 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-27 22:05:30,583 [INFO] [Direct-Process] デコード完了 (経過: 0.8254s, length: 20286000 samples)
+2026-06-27 22:05:30,583 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-27 22:05:31,194 [INFO] [Direct-Process] デコード完了 (経過: 0.6054s, length: 14376600 samples)
+2026-06-27 22:05:31,195 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-27 22:05:32,114 [INFO] [Direct-Process] デコード完了 (経過: 0.9160s, length: 22270500 samples)
+2026-06-27 22:05:32,114 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-27 22:05:32,845 [INFO] [Direct-Process] デコード完了 (経過: 0.7241s, length: 17110800 samples)
+2026-06-27 22:05:32,845 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 11)
+2026-06-27 22:05:33,381 [INFO] [Direct-Process] デコード完了 (経過: 0.5318s, length: 12127500 samples)
+2026-06-27 22:05:33,381 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (Track: 12)
+2026-06-27 22:05:33,384 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-27 22:05:33,403 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 01][Beethoven][chamber, ..].flac
+2026-06-27 22:05:34,115 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:05:34,117 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:05:34,433 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 22:05:34,434 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 22:05:34,448 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac
+2026-06-27 22:05:34,732 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 22:05:34,732 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:05:53,734 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 22:05:54,494 [INFO] [Direct-Process] デコード完了 (経過: 0.7601s, length: 15876000 samples)
+2026-06-27 22:05:54,495 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-27 22:05:55,371 [INFO] [Direct-Process] デコード完了 (経過: 0.8734s, length: 20682900 samples)
+2026-06-27 22:05:55,372 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-27 22:05:55,782 [INFO] [Direct-Process] デコード完了 (経過: 0.4052s, length: 9305100 samples)
+2026-06-27 22:05:55,782 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-27 22:05:56,930 [INFO] [Direct-Process] デコード完了 (経過: 1.1451s, length: 25842600 samples)
+2026-06-27 22:05:56,930 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-27 22:05:57,632 [INFO] [Direct-Process] デコード完了 (経過: 0.6937s, length: 16449300 samples)
+2026-06-27 22:05:57,633 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-27 22:05:57,784 [INFO] [Direct-Process] デコード完了 (経過: 0.1472s, length: 3263400 samples)
+2026-06-27 22:05:57,784 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-27 22:05:58,583 [INFO] [Direct-Process] デコード完了 (経過: 0.7985s, length: 17640000 samples)
+2026-06-27 22:05:58,583 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-27 22:05:59,968 [INFO] [Direct-Process] デコード完了 (経過: 1.3806s, length: 38322900 samples)
+2026-06-27 22:05:59,968 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-27 22:06:01,424 [INFO] [Direct-Process] デコード完了 (経過: 1.4476s, length: 40792500 samples)
+2026-06-27 22:06:01,424 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-27 22:06:02,459 [INFO] [Direct-Process] デコード完了 (経過: 1.0258s, length: 22623300 samples)
+2026-06-27 22:06:02,459 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-27 22:06:02,466 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-27 22:06:02,482 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 02][Beethoven][chamber, ..].flac
+2026-06-27 22:06:03,176 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:06:03,177 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:06:03,453 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 22:06:03,453 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 22:06:03,468 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac
+2026-06-27 22:06:03,784 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 22:06:03,784 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:06:22,639 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 22:06:23,701 [INFO] [Direct-Process] デコード完了 (経過: 1.0614s, length: 27121500 samples)
+2026-06-27 22:06:23,701 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 1)
+2026-06-27 22:06:24,351 [INFO] [Direct-Process] デコード完了 (経過: 0.6432s, length: 16023000 samples)
+2026-06-27 22:06:24,351 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 2)
+2026-06-27 22:06:24,580 [INFO] [Direct-Process] デコード完了 (経過: 0.2256s, length: 5497800 samples)
+2026-06-27 22:06:24,580 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 3)
+2026-06-27 22:06:25,568 [INFO] [Direct-Process] デコード完了 (経過: 0.9865s, length: 24034500 samples)
+2026-06-27 22:06:25,568 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 4)
+2026-06-27 22:06:26,368 [INFO] [Direct-Process] デコード完了 (経過: 0.7947s, length: 19492200 samples)
+2026-06-27 22:06:26,373 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 5)
+2026-06-27 22:06:27,120 [INFO] [Direct-Process] デコード完了 (経過: 0.7425s, length: 17463600 samples)
+2026-06-27 22:06:27,121 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 6)
+2026-06-27 22:06:28,073 [INFO] [Direct-Process] デコード完了 (経過: 0.9454s, length: 22976100 samples)
+2026-06-27 22:06:28,073 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 7)
+2026-06-27 22:06:28,893 [INFO] [Direct-Process] デコード完了 (経過: 0.8148s, length: 19889100 samples)
+2026-06-27 22:06:28,893 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 8)
+2026-06-27 22:06:29,844 [INFO] [Direct-Process] デコード完了 (経過: 0.9466s, length: 23814000 samples)
+2026-06-27 22:06:29,845 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 9)
+2026-06-27 22:06:30,222 [INFO] [Direct-Process] デコード完了 (経過: 0.3716s, length: 8952300 samples)
+2026-06-27 22:06:30,222 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 10)
+2026-06-27 22:06:30,776 [INFO] [Direct-Process] デコード完了 (経過: 0.5521s, length: 13494600 samples)
+2026-06-27 22:06:30,776 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (Track: 11)
+2026-06-27 22:06:30,781 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac (All tracks skipped)
+2026-06-27 22:06:30,800 [INFO] SKIPPED: Maria Joao Pires- Complete Violin Sonatas[Disc 03][Beethoven][chamber, ..].flac
+2026-06-27 22:06:31,470 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:06:31,471 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:06:31,757 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 22:06:31,757 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 22:06:31,771 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac
+2026-06-27 22:06:32,028 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 22:06:32,029 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:06:50,198 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 22:06:51,329 [INFO] [Direct-Process] デコード完了 (経過: 1.1304s, length: 29061900 samples)
+2026-06-27 22:06:51,329 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 1)
+2026-06-27 22:06:52,304 [INFO] [Direct-Process] デコード完了 (経過: 0.9684s, length: 22976100 samples)
+2026-06-27 22:06:52,304 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 2)
+2026-06-27 22:06:53,267 [INFO] [Direct-Process] デコード完了 (経過: 0.9573s, length: 24563700 samples)
+2026-06-27 22:06:53,267 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 3)
+2026-06-27 22:06:54,239 [INFO] [Direct-Process] デコード完了 (経過: 0.9663s, length: 23373000 samples)
+2026-06-27 22:06:54,239 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 4)
+2026-06-27 22:06:54,855 [INFO] [Direct-Process] デコード完了 (経過: 0.6118s, length: 15964200 samples)
+2026-06-27 22:06:54,855 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 5)
+2026-06-27 22:06:55,454 [INFO] [Direct-Process] デコード完了 (経過: 0.5952s, length: 15170400 samples)
+2026-06-27 22:06:55,454 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 6)
+2026-06-27 22:06:56,366 [INFO] [Direct-Process] デコード完了 (経過: 0.9089s, length: 23108400 samples)
+2026-06-27 22:06:56,366 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 7)
+2026-06-27 22:06:56,856 [INFO] [Direct-Process] デコード完了 (経過: 0.4851s, length: 12612600 samples)
+2026-06-27 22:06:56,857 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 8)
+2026-06-27 22:06:57,188 [INFO] [Direct-Process] デコード完了 (経過: 0.3290s, length: 8070300 samples)
+2026-06-27 22:06:57,189 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 9)
+2026-06-27 22:06:57,774 [INFO] [Direct-Process] デコード完了 (経過: 0.5824s, length: 15170400 samples)
+2026-06-27 22:06:57,774 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (Track: 10)
+2026-06-27 22:06:57,779 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac (All tracks skipped)
+2026-06-27 22:06:57,795 [INFO] SKIPPED: Maria Joao Pires- Die Violinsonaten[Disc 04][Brahms][chamber, ..].flac
+2026-06-27 22:06:58,437 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:06:58,438 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:06:58,703 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 22:06:58,703 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 22:06:58,716 [INFO] [Direct-Process] 解析開始: Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac
+2026-06-27 22:06:58,944 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 22:06:58,944 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:07:15,989 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 22:07:17,027 [INFO] [Direct-Process] デコード完了 (経過: 1.0373s, length: 25181100 samples)
+2026-06-27 22:07:17,027 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 1)
+2026-06-27 22:07:17,604 [INFO] [Direct-Process] デコード完了 (経過: 0.5707s, length: 12568500 samples)
+2026-06-27 22:07:17,604 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 2)
+2026-06-27 22:07:18,566 [INFO] [Direct-Process] デコード完了 (経過: 0.9591s, length: 26680500 samples)
+2026-06-27 22:07:18,567 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 3)
+2026-06-27 22:07:19,684 [INFO] [Direct-Process] デコード完了 (経過: 1.1116s, length: 25578000 samples)
+2026-06-27 22:07:19,684 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 4)
+2026-06-27 22:07:20,444 [INFO] [Direct-Process] デコード完了 (経過: 0.7543s, length: 17154900 samples)
+2026-06-27 22:07:20,445 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 5)
+2026-06-27 22:07:21,077 [INFO] [Direct-Process] デコード完了 (経過: 0.6289s, length: 15038100 samples)
+2026-06-27 22:07:21,078 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 6)
+2026-06-27 22:07:22,214 [INFO] [Direct-Process] デコード完了 (経過: 1.1327s, length: 25004700 samples)
+2026-06-27 22:07:22,214 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 7)
+2026-06-27 22:07:22,931 [INFO] [Direct-Process] デコード完了 (経過: 0.7120s, length: 17110800 samples)
+2026-06-27 22:07:22,931 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 8)
+2026-06-27 22:07:23,860 [INFO] [Direct-Process] デコード完了 (経過: 0.9243s, length: 20971020 samples)
+2026-06-27 22:07:23,860 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (Track: 9)
+2026-06-27 22:07:23,866 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac (All tracks skipped)
+2026-06-27 22:07:23,883 [INFO] SKIPPED: Maria Joao Pires- Violin Sonatas[Disc 06][Grieg][chamber, ..].flac
+2026-06-27 22:07:24,557 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:07:24,558 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:07:24,826 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 22:07:24,826 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 22:07:24,840 [INFO] [Direct-Process] 解析開始: Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac
+2026-06-27 22:07:25,098 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 22:07:25,098 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 22:07:43,983 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 22:07:45,031 [INFO] [Direct-Process] デコード完了 (経過: 1.0478s, length: 21476700 samples)
+2026-06-27 22:07:45,061 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 1)
+2026-06-27 22:07:46,004 [INFO] [Direct-Process] デコード完了 (経過: 0.9376s, length: 21917700 samples)
+2026-06-27 22:07:46,004 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 2)
+2026-06-27 22:07:46,720 [INFO] [Direct-Process] デコード完了 (経過: 0.7115s, length: 16008300 samples)
+2026-06-27 22:07:46,720 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 3)
+2026-06-27 22:07:47,778 [INFO] [Direct-Process] デコード完了 (経過: 1.0541s, length: 29679300 samples)
+2026-06-27 22:07:47,778 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 4)
+2026-06-27 22:07:48,486 [INFO] [Direct-Process] デコード完了 (経過: 0.7007s, length: 17110800 samples)
+2026-06-27 22:07:48,496 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 5)
+2026-06-27 22:07:49,455 [INFO] [Direct-Process] デコード完了 (経過: 0.9550s, length: 27562500 samples)
+2026-06-27 22:07:49,455 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 6)
+2026-06-27 22:07:50,309 [INFO] [Direct-Process] デコード完了 (経過: 0.8476s, length: 20241900 samples)
+2026-06-27 22:07:50,309 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 7)
+2026-06-27 22:07:51,331 [INFO] [Direct-Process] デコード完了 (経過: 1.0178s, length: 23593500 samples)
+2026-06-27 22:07:51,331 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 8)
+2026-06-27 22:07:51,992 [INFO] [Direct-Process] デコード完了 (経過: 0.6541s, length: 15523200 samples)
+2026-06-27 22:07:51,992 [INFO] [Direct-Process] Skip --resume (Hash match): Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (Track: 9)
+2026-06-27 22:07:51,996 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Deutsche Grammophon\Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac (All tracks skipped)
+2026-06-27 22:07:52,012 [INFO] SKIPPED: Maria Joeo Pires- Piano Trios K. 496 & K. 502[Disc 07][Mozart][chamber, ..].flac

@@ -266,19 +266,7 @@ def run_essentia_serialized(
     return predictions
 
 
-class DummyDemucsSeparator:
-    """HTDemucs6Sのダミーフォールバックですわ。"""
-    def separate(self, y: np.ndarray, sr: int) -> Any:
-        from analyzer import AudioContext, StemContext
-        sources = ["mix", "drums", "bass", "other", "vocals", "guitar", "piano"]
-        stems = {}
-        for i, src in enumerate(sources):
-            if src == "mix":
-                stems[src] = AudioContext(y, sr, src)
-            else:
-                dummy_y = np.ascontiguousarray(y * (1.0 / (i + 1.0)), dtype=np.float32)
-                stems[src] = AudioContext(dummy_y, sr, src)
-        return StemContext(stems)
+# DummyDemucsSeparator has been removed per user request for fail-fast behavior
 
 
 class HTDemucsSeparator:
@@ -327,7 +315,7 @@ class HTDemucsSeparator:
             
             # Demucsの要求する 44100Hz にリサンプリング
             if sr != 44100:
-                audio_in = soxr.resample(audio_in.T, sr, 44100).T
+                audio_in = soxr.resample(audio_in.T, float(sr), 44100.0).T
 
             audio_in = np.ascontiguousarray(audio_in, dtype=np.float32)
 
@@ -358,12 +346,9 @@ class HTDemucsSeparator:
                 stems[name] = AudioContext(stem_y, 44100, name)
 
         except Exception as e:
-            logging.error(f"[HTDemucs ONNX Memory] 分離実行中にエラー発生いたしましたわ: {e}", exc_info=True)
-            # エラー時はダミーフォールバック
-            sources = ["drums", "bass", "other", "vocals", "guitar", "piano"]
-            for i, src in enumerate(sources):
-                dummy_y = np.ascontiguousarray(y * (1.0 / (i + 2.0)), dtype=np.float32)
-                stems[src] = AudioContext(dummy_y, sr, src)
+            logging.error(f"[ERROR] [HTDemucs ONNX Memory] 分離実行中に深刻なエラーが発生いたしましたわ (OOM/Type等): {e}", exc_info=True)
+            # エラー時はダミーフォールバックせず、そのまま例外を投げてプロセスを異常終了させますの（Fail Fast）
+            raise RuntimeError(f"Demucs separation failed for track: {e}")
 
         return StemContext(stems)
 
@@ -375,8 +360,9 @@ def init_global_demucs(use_dml: bool = False):
         GLOBAL_DEMUCS = HTDemucsSeparator(model_name="htdemucs_6s", precision="fp16weights", use_dml=use_dml)
         logging.info("HTDemucs ONNX 実機モデルロードに成功いたしましたわ！")
     except Exception as e:
-        logging.error(f"HTDemucs ONNX 実機モデルロード失敗いたしましたわ: {e}", exc_info=True)
-        GLOBAL_DEMUCS = DummyDemucsSeparator()
+        logging.error(f"[ERROR] HTDemucs ONNX 実機モデルロード失敗いたしましたわ: {e}", exc_info=True)
+        # フォールバック廃止のため、ここでも例外を投げてプロセスを終了させます
+        raise RuntimeError(f"Failed to load global demucs model: {e}")
 
 
 def init_worker_onnx(models_dir: str) -> dict:

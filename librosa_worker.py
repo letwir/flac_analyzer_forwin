@@ -29,6 +29,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--shm-metadata", required=True, help="JSON string containing sr and stems metadata from DemucsWorker")
+    parser.add_argument("--track-hash", required=True, help="MD5 hash of the track for DB primary key")
     args = parser.parse_args()
 
     try:
@@ -69,9 +70,8 @@ def main():
             raw_features = librosa_extractor.run(ctx)
             
             # 結果を辞書に変換（Postgresへの格納用などにシリアライズ）
-            # ここでは to_postgres_dict() を持っていると仮定。実装により変更の可能性あり
             if hasattr(raw_features, "to_postgres_dict"):
-                extracted_features[stem_name] = raw_features.to_postgres_dict()
+                extracted_features[stem_name] = raw_features.to_postgres_dict(track_id=args.track_hash)
             else:
                 # 代替処理：dataclassならasdictなど
                 import dataclasses

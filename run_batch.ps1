@@ -27,6 +27,8 @@ $env:PYTHONUTF8 = 1
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+$stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
 # テストモードのセットアップ
 if ($Test) {
     Write-Host "[Test Mode] 一時ディレクトリにダミー構成を作成してテストを行いますわ！" -ForegroundColor Yellow
@@ -98,13 +100,28 @@ if ($Skip) {
     if (-not (Test-Path $doneFilePath)) {
         Write-Host "💡 過去のログファイルから完了履歴を flac.done に移行していますわ..." -ForegroundColor Yellow
         $migratedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        $logFiles = Get-ChildItem -Path $PSScriptRoot -Filter "log_*.log" -File
-        foreach ($logFile in $logFiles) {
+        $oldAnalyzerPath = Join-Path (Split-Path $PSScriptRoot -Parent) "flac_analyzer"
+        $logFiles = Get-ChildItem -Path $oldAnalyzerPath -Filter "log_*.log" -File -ErrorAction SilentlyContinue
+        if ($null -ne $logFiles) {
+            foreach ($logFile in $logFiles) {
+                try {
+                    $lines = Get-Content -Path $logFile.FullName -Encoding utf8
+                    foreach ($line in $lines) {
+                        if ($line -match "\[Direct-Process\] OK:\s*(.*)") {
+                            $null = $migratedPaths.Add($Matches[1].Trim())
+                        }
+                    }
+                } catch {}
+            }
+        }
+        
+        $oldDoneFilePath = Join-Path $oldAnalyzerPath "flac.done"
+        if (Test-Path $oldDoneFilePath) {
             try {
-                $lines = Get-Content -Path $logFile.FullName -Encoding utf8
-                foreach ($line in $lines) {
-                    if ($line -match "\[Direct-Process\] OK:\s*(.*)") {
-                        $null = $migratedPaths.Add($Matches[1].Trim())
+                $doneLines = Get-Content -Path $oldDoneFilePath -Encoding utf8
+                foreach ($line in $doneLines) {
+                    if (-not [System.String]::IsNullOrWhiteSpace($line)) {
+                        $null = $migratedPaths.Add($line.Trim())
                     }
                 }
             } catch {}
@@ -209,6 +226,8 @@ Write-Host "=========================================" -ForegroundColor Green
 Write-Host " バッチ処理が終了いたしましたわ！"
 Write-Host " 処理完了: $processedCount 件"
 Write-Host " スキップ: $skippedCount 件"
+$stopWatch.Stop()
+Write-Host " 投下所要時間: $($stopWatch.Elapsed.ToString())"
 Write-Host "=========================================" -ForegroundColor Green
 
 # テストモードのクリーンアップ

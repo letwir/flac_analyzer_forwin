@@ -1,0 +1,812 @@
+2026-06-27 17:56:19,987 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 17:56:19,988 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 17:56:20,237 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 17:56:20,237 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 17:56:20,249 [INFO] [Direct-Process] 解析開始: 雅楽紫絃会[2002]雅楽大系[Disc 1].flac
+2026-06-27 17:56:20,544 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 17:56:20,545 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 17:56:35,912 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 17:56:36,106 [INFO] [Direct-Process] デコード完了 (経過: 0.1944s, length: 4026624 samples)
+2026-06-27 17:56:36,122 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 17:56:42,823 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 17:56:42,876 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 6.7697s)
+2026-06-27 17:56:52,057 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 9.1790s)
+2026-06-27 17:56:52,057 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 17:57:21,282 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 29.2242s)
+2026-06-27 17:57:21,282 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 17:57:21,282 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 17:57:21,607 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.3249s)
+2026-06-27 17:57:21,607 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 38.7295s)
+2026-06-27 17:57:21,657 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0482s)
+2026-06-27 17:57:22,564 [INFO] [Direct-Process] デコード完了 (経過: 0.8250s, length: 19577460 samples)
+2026-06-27 17:57:22,630 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 17:57:51,265 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 17:57:51,510 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 28.9455s)
+2026-06-27 17:58:19,877 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 28.3628s)
+2026-06-27 17:58:19,877 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:00:30,328 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 130.4506s)
+2026-06-27 18:00:30,328 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:00:30,328 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:00:30,543 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2146s)
+2026-06-27 18:00:30,543 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 159.0292s)
+2026-06-27 18:00:30,588 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0433s)
+2026-06-27 18:00:31,826 [INFO] [Direct-Process] デコード完了 (経過: 1.0554s, length: 28694400 samples)
+2026-06-27 18:00:31,925 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:01:14,456 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:01:14,821 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 42.9946s)
+2026-06-27 18:01:56,590 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 41.7628s)
+2026-06-27 18:01:56,590 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:04:51,338 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 174.7474s)
+2026-06-27 18:04:51,338 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:04:51,338 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:04:51,654 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.3162s)
+2026-06-27 18:04:51,655 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 216.8277s)
+2026-06-27 18:05:00,318 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 8.6610s)
+2026-06-27 18:05:01,382 [INFO] [Direct-Process] デコード完了 (経過: 0.8144s, length: 18263280 samples)
+2026-06-27 18:05:01,478 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:05:28,786 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:05:29,016 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 27.6337s)
+2026-06-27 18:05:55,986 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 26.9649s)
+2026-06-27 18:05:55,986 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:07:57,284 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 121.2979s)
+2026-06-27 18:07:57,284 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:07:57,284 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:07:57,491 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2065s)
+2026-06-27 18:07:57,491 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 148.4707s)
+2026-06-27 18:07:57,533 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0398s)
+2026-06-27 18:07:57,985 [INFO] [Direct-Process] デコード完了 (経過: 0.2785s, length: 5768280 samples)
+2026-06-27 18:07:58,007 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:08:06,537 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:08:06,611 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 8.6257s)
+2026-06-27 18:08:14,998 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 8.3855s)
+2026-06-27 18:08:14,998 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:08:52,755 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 37.7568s)
+2026-06-27 18:08:52,755 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:08:52,755 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:08:52,845 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0900s)
+2026-06-27 18:08:52,846 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 46.2337s)
+2026-06-27 18:08:52,889 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0419s)
+2026-06-27 18:08:53,601 [INFO] [Direct-Process] デコード完了 (経過: 0.6191s, length: 14326619 samples)
+2026-06-27 18:08:53,653 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:09:15,345 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:09:15,523 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 21.9215s)
+2026-06-27 18:09:36,279 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 20.7531s)
+2026-06-27 18:09:36,280 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:11:21,701 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 105.4209s)
+2026-06-27 18:11:21,701 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:11:21,701 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:11:21,876 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1751s)
+2026-06-27 18:11:21,877 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 126.3504s)
+2026-06-27 18:11:21,923 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0449s)
+2026-06-27 18:11:23,202 [INFO] [Direct-Process] デコード完了 (経過: 1.1223s, length: 25907281 samples)
+2026-06-27 18:11:23,294 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:12:01,463 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:12:01,781 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 38.5783s)
+2026-06-27 18:12:40,456 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 38.6702s)
+2026-06-27 18:12:40,456 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:15:29,549 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 169.0922s)
+2026-06-27 18:15:29,549 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:15:29,549 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:15:29,841 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2924s)
+2026-06-27 18:15:29,842 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 208.0562s)
+2026-06-27 18:15:29,883 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0396s)
+2026-06-27 18:15:30,904 [INFO] [Direct-Process] デコード完了 (経過: 0.7606s, length: 15067500 samples)
+2026-06-27 18:15:30,959 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:15:53,427 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:15:53,613 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 22.7089s)
+2026-06-27 18:16:15,502 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 21.8850s)
+2026-06-27 18:16:15,502 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:17:53,212 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 97.7099s)
+2026-06-27 18:17:53,212 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:17:53,212 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:17:53,402 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1891s)
+2026-06-27 18:17:53,402 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 119.7853s)
+2026-06-27 18:17:53,441 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0373s)
+2026-06-27 18:17:53,771 [INFO] [Direct-Process] デコード完了 (経過: 0.1711s, length: 3211656 samples)
+2026-06-27 18:17:53,783 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:17:58,569 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:17:58,609 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 4.8380s)
+2026-06-27 18:18:03,069 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 4.4586s)
+2026-06-27 18:18:03,069 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:18:24,255 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 21.1856s)
+2026-06-27 18:18:24,255 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:18:24,255 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:18:24,316 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0605s)
+2026-06-27 18:18:24,316 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 25.7061s)
+2026-06-27 18:18:24,360 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0418s)
+2026-06-27 18:18:25,198 [INFO] [Direct-Process] デコード完了 (経過: 0.7622s, length: 18861864 samples)
+2026-06-27 18:18:25,262 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:18:52,272 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:18:52,509 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 27.3109s)
+2026-06-27 18:19:19,645 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 27.1321s)
+2026-06-27 18:19:19,645 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:21:12,174 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 112.5288s)
+2026-06-27 18:21:12,174 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:21:12,174 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:21:12,389 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2142s)
+2026-06-27 18:21:12,389 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 139.8766s)
+2026-06-27 18:21:12,430 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0386s)
+2026-06-27 18:21:13,088 [INFO] [Direct-Process] デコード完了 (経過: 0.4768s, length: 11592420 samples)
+2026-06-27 18:21:13,168 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:21:29,779 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:21:29,923 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 16.8348s)
+2026-06-27 18:21:46,932 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 17.0060s)
+2026-06-27 18:21:46,932 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:23:02,419 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 75.4863s)
+2026-06-27 18:23:02,419 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:23:02,419 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:23:02,563 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1434s)
+2026-06-27 18:23:02,563 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 92.6371s)
+2026-06-27 18:23:02,617 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0521s)
+2026-06-27 18:23:03,822 [INFO] [Direct-Process] デコード完了 (経過: 1.0735s, length: 25045860 samples)
+2026-06-27 18:23:03,911 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:23:40,803 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:23:41,134 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 37.3113s)
+2026-06-27 18:24:17,506 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 36.3636s)
+2026-06-27 18:24:17,506 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:26:58,631 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 161.1255s)
+2026-06-27 18:26:58,632 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:26:58,632 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:26:58,915 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2829s)
+2026-06-27 18:26:58,915 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 197.7734s)
+2026-06-27 18:26:58,956 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0389s)
+2026-06-27 18:27:07,897 [INFO] [Timestamp Inheritance] Windows ctypesを用いてタイムスタンプを完全継承しましたわ！ (target: 雅楽紫絃会[2002]雅楽大系[Disc 1].flac)
+2026-06-27 18:27:07,898 [INFO] [Direct-Process] OK: M:\Music\album\EARLY\JP\雅楽紫絃会[2002]雅楽大系[Disc 1].flac
+2026-06-27 18:27:07,953 [INFO] OK: 雅楽紫絃会[2002]雅楽大系[Disc 1].flac (12 トラック処理完了, 0 トラック既処理スキップ)
+2026-06-27 18:27:08,876 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 18:27:08,877 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 18:27:09,146 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 18:27:09,146 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 18:27:09,159 [INFO] [Direct-Process] 解析開始: 雅楽紫絃会[2002]雅楽大系[Disc 2].flac
+2026-06-27 18:27:09,614 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 18:27:09,614 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 18:27:24,918 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 18:27:25,072 [INFO] [Direct-Process] デコード完了 (経過: 0.1532s, length: 2932943 samples)
+2026-06-27 18:27:25,083 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:27:29,678 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:27:29,714 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 4.6418s)
+2026-06-27 18:27:37,332 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 7.6166s)
+2026-06-27 18:27:37,332 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:27:57,460 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 20.1274s)
+2026-06-27 18:27:57,460 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:27:57,460 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:27:57,756 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2964s)
+2026-06-27 18:27:57,757 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 28.0418s)
+2026-06-27 18:27:57,802 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0436s)
+2026-06-27 18:27:58,992 [INFO] [Direct-Process] デコード完了 (経過: 1.1107s, length: 25970197 samples)
+2026-06-27 18:27:59,083 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:28:36,940 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:28:37,275 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 38.2831s)
+2026-06-27 18:29:14,893 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 37.6121s)
+2026-06-27 18:29:14,893 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:32:03,086 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 168.1934s)
+2026-06-27 18:32:03,087 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:32:03,087 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:32:03,374 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2874s)
+2026-06-27 18:32:03,375 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 206.0942s)
+2026-06-27 18:32:03,415 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0384s)
+2026-06-27 18:32:03,840 [INFO] [Direct-Process] デコード完了 (経過: 0.1920s, length: 4095420 samples)
+2026-06-27 18:32:03,855 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:32:10,181 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:32:10,233 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 6.3933s)
+2026-06-27 18:32:16,051 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 5.8169s)
+2026-06-27 18:32:16,052 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:32:42,492 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 26.4401s)
+2026-06-27 18:32:42,492 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:32:42,492 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:32:42,570 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0775s)
+2026-06-27 18:32:42,570 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 32.3358s)
+2026-06-27 18:32:42,616 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0435s)
+2026-06-27 18:32:43,665 [INFO] [Direct-Process] デコード完了 (経過: 0.9654s, length: 29573459 samples)
+2026-06-27 18:32:43,766 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:33:27,360 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:33:27,724 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 44.0583s)
+2026-06-27 18:34:10,733 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 43.0033s)
+2026-06-27 18:34:10,733 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:37:45,261 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 214.5277s)
+2026-06-27 18:37:45,261 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:37:45,261 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:37:45,579 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.3182s)
+2026-06-27 18:37:45,580 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 257.8505s)
+2026-06-27 18:37:45,620 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0381s)
+2026-06-27 18:37:46,165 [INFO] [Direct-Process] デコード完了 (経過: 0.2927s, length: 6040525 samples)
+2026-06-27 18:37:46,206 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:37:55,323 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:37:55,399 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 9.2336s)
+2026-06-27 18:38:04,044 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 8.6430s)
+2026-06-27 18:38:04,044 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:38:47,727 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 43.6826s)
+2026-06-27 18:38:47,727 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:38:47,727 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:38:47,825 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0976s)
+2026-06-27 18:38:47,826 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 52.4247s)
+2026-06-27 18:38:47,875 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0466s)
+2026-06-27 18:38:48,950 [INFO] [Direct-Process] デコード完了 (経過: 0.9806s, length: 23044896 samples)
+2026-06-27 18:38:49,028 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:39:22,978 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:39:23,278 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 34.3271s)
+2026-06-27 18:39:56,661 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 33.3780s)
+2026-06-27 18:39:56,661 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:42:37,237 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 160.5760s)
+2026-06-27 18:42:37,237 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:42:37,237 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:42:37,495 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2571s)
+2026-06-27 18:42:37,495 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 194.2124s)
+2026-06-27 18:42:37,542 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0450s)
+2026-06-27 18:42:38,017 [INFO] [Direct-Process] デコード完了 (経過: 0.2718s, length: 6079920 samples)
+2026-06-27 18:42:38,038 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:42:47,109 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:42:47,184 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 9.1668s)
+2026-06-27 18:42:55,803 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 8.6173s)
+2026-06-27 18:42:55,803 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:43:39,686 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 43.8826s)
+2026-06-27 18:43:39,686 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:43:39,686 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:43:39,778 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0915s)
+2026-06-27 18:43:39,778 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 52.5926s)
+2026-06-27 18:43:39,825 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0449s)
+2026-06-27 18:43:40,072 [INFO] [Direct-Process] デコード完了 (経過: 0.1400s, length: 2225579 samples)
+2026-06-27 18:43:40,081 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:43:43,616 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:43:43,643 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 3.5710s)
+2026-06-27 18:43:46,798 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 3.1540s)
+2026-06-27 18:43:46,798 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:44:02,136 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 15.3375s)
+2026-06-27 18:44:02,136 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:44:02,136 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:44:02,191 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0551s)
+2026-06-27 18:44:02,192 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 18.5478s)
+2026-06-27 18:44:09,004 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 6.8104s)
+2026-06-27 18:44:09,442 [INFO] [Direct-Process] デコード完了 (経過: 0.3683s, length: 8190841 samples)
+2026-06-27 18:44:09,471 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:44:21,473 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:44:21,578 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 12.1354s)
+2026-06-27 18:44:33,386 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 11.8057s)
+2026-06-27 18:44:33,386 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:45:33,766 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 60.3797s)
+2026-06-27 18:45:33,766 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:45:33,766 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:45:33,889 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1232s)
+2026-06-27 18:45:33,890 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 72.3098s)
+2026-06-27 18:45:33,937 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0450s)
+2026-06-27 18:45:34,680 [INFO] [Direct-Process] デコード完了 (経過: 0.6255s, length: 14451864 samples)
+2026-06-27 18:45:34,729 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:45:55,477 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:45:55,654 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 20.9730s)
+2026-06-27 18:46:16,613 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 20.9566s)
+2026-06-27 18:46:16,614 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:47:48,838 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 92.2244s)
+2026-06-27 18:47:48,838 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:47:48,839 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:47:49,008 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1693s)
+2026-06-27 18:47:49,008 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 113.3516s)
+2026-06-27 18:47:49,047 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0370s)
+2026-06-27 18:47:49,693 [INFO] [Direct-Process] デコード完了 (経過: 0.3942s, length: 9557940 samples)
+2026-06-27 18:47:49,726 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:48:03,744 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:48:03,865 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 14.1718s)
+2026-06-27 18:48:17,509 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 13.6411s)
+2026-06-27 18:48:17,509 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:49:21,477 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 63.9685s)
+2026-06-27 18:49:21,478 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:49:21,478 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:49:21,605 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1276s)
+2026-06-27 18:49:21,606 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 77.7385s)
+2026-06-27 18:49:21,645 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0368s)
+2026-06-27 18:49:22,711 [INFO] [Direct-Process] デコード完了 (経過: 0.9439s, length: 21794220 samples)
+2026-06-27 18:49:22,791 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:49:55,087 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:49:55,368 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 32.6564s)
+2026-06-27 18:50:26,891 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 31.5191s)
+2026-06-27 18:50:26,892 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:52:36,740 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 129.8488s)
+2026-06-27 18:52:36,741 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:52:36,741 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:52:36,989 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2486s)
+2026-06-27 18:52:36,990 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 161.6177s)
+2026-06-27 18:52:37,219 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.2268s)
+2026-06-27 18:52:37,542 [INFO] [Direct-Process] デコード完了 (経過: 0.1204s, length: 1915116 samples)
+2026-06-27 18:52:37,549 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:52:40,645 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:52:40,668 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 3.1262s)
+2026-06-27 18:52:43,374 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 2.7051s)
+2026-06-27 18:52:43,374 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:52:56,785 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 13.4108s)
+2026-06-27 18:52:56,785 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:52:56,785 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:52:56,838 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0525s)
+2026-06-27 18:52:56,838 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 16.1695s)
+2026-06-27 18:52:57,013 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.1730s)
+2026-06-27 18:52:57,851 [INFO] [Direct-Process] デコード完了 (経過: 0.7658s, length: 18707220 samples)
+2026-06-27 18:52:57,918 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:53:25,051 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:53:25,287 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 27.4357s)
+2026-06-27 18:53:52,395 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 27.1046s)
+2026-06-27 18:53:52,395 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:56:08,580 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 136.1848s)
+2026-06-27 18:56:08,581 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:56:08,581 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:56:08,799 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2180s)
+2026-06-27 18:56:08,799 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 163.5087s)
+2026-06-27 18:56:08,847 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0460s)
+2026-06-27 18:56:09,329 [INFO] [Direct-Process] デコード完了 (経過: 0.2984s, length: 6002304 samples)
+2026-06-27 18:56:09,372 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:56:18,413 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:56:18,487 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 9.1573s)
+2026-06-27 18:56:26,989 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 8.5006s)
+2026-06-27 18:56:26,989 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:57:07,997 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 41.0074s)
+2026-06-27 18:57:07,997 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:57:07,997 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:57:08,084 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0866s)
+2026-06-27 18:57:08,084 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 49.5959s)
+2026-06-27 18:57:08,137 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0511s)
+2026-06-27 18:57:08,815 [INFO] [Direct-Process] デコード完了 (経過: 0.5842s, length: 14053200 samples)
+2026-06-27 18:57:08,865 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:57:29,568 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:57:29,739 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 20.9242s)
+2026-06-27 18:57:49,747 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 20.0043s)
+2026-06-27 18:57:49,747 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 18:59:20,830 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 91.0834s)
+2026-06-27 18:59:20,831 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 18:59:20,831 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 18:59:20,999 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1687s)
+2026-06-27 18:59:21,000 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 111.2576s)
+2026-06-27 18:59:21,048 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0460s)
+2026-06-27 18:59:30,816 [INFO] [Timestamp Inheritance] Windows ctypesを用いてタイムスタンプを完全継承しましたわ！ (target: 雅楽紫絃会[2002]雅楽大系[Disc 2].flac)
+2026-06-27 18:59:30,817 [INFO] [Direct-Process] OK: M:\Music\album\EARLY\JP\雅楽紫絃会[2002]雅楽大系[Disc 2].flac
+2026-06-27 18:59:30,881 [INFO] OK: 雅楽紫絃会[2002]雅楽大系[Disc 2].flac (16 トラック処理完了, 0 トラック既処理スキップ)
+2026-06-27 18:59:31,883 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 18:59:31,884 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 18:59:32,130 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 18:59:32,130 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 18:59:32,142 [INFO] [Direct-Process] 解析開始: 雅楽紫絃会[2002]雅楽大系[Disc 3].flac
+2026-06-27 18:59:32,554 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 18:59:32,554 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 18:59:48,016 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 18:59:48,279 [INFO] [Direct-Process] デコード完了 (経過: 0.2623s, length: 5515440 samples)
+2026-06-27 18:59:48,300 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 18:59:56,984 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 18:59:57,055 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 8.7752s)
+2026-06-27 19:00:08,701 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 11.6447s)
+2026-06-27 19:00:08,701 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:00:47,483 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 38.7818s)
+2026-06-27 19:00:47,483 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:00:47,483 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:00:47,853 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.3698s)
+2026-06-27 19:00:47,854 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 50.7976s)
+2026-06-27 19:00:47,903 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0475s)
+2026-06-27 19:00:49,031 [INFO] [Direct-Process] デコード完了 (経過: 1.0280s, length: 29379420 samples)
+2026-06-27 19:00:49,146 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:01:32,040 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:01:32,422 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 43.3901s)
+2026-06-27 19:02:15,594 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 43.1668s)
+2026-06-27 19:02:15,595 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:05:18,949 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 183.3548s)
+2026-06-27 19:05:18,950 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:05:18,950 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:05:19,267 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.3176s)
+2026-06-27 19:05:19,268 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 226.8405s)
+2026-06-27 19:05:19,315 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0450s)
+2026-06-27 19:05:20,683 [INFO] [Direct-Process] デコード完了 (経過: 1.1129s, length: 24698940 samples)
+2026-06-27 19:05:20,768 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:05:57,502 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:05:57,812 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 37.1280s)
+2026-06-27 19:06:33,579 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 35.7620s)
+2026-06-27 19:06:33,579 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:09:31,264 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 177.6846s)
+2026-06-27 19:09:31,264 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:09:31,264 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:09:31,544 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2796s)
+2026-06-27 19:09:31,544 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 213.7274s)
+2026-06-27 19:09:31,585 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0390s)
+2026-06-27 19:09:32,029 [INFO] [Direct-Process] デコード完了 (経過: 0.2262s, length: 5146764 samples)
+2026-06-27 19:09:32,047 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:09:39,388 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:09:39,456 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 7.4267s)
+2026-06-27 19:09:46,832 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 7.3746s)
+2026-06-27 19:09:46,833 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:10:20,053 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 33.2199s)
+2026-06-27 19:10:20,053 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:10:20,053 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:10:20,134 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0813s)
+2026-06-27 19:10:20,135 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 40.6771s)
+2026-06-27 19:10:20,181 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0442s)
+2026-06-27 19:10:20,403 [INFO] [Direct-Process] デコード完了 (経過: 0.1344s, length: 1925700 samples)
+2026-06-27 19:10:20,410 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:10:23,318 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:10:23,343 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 2.9391s)
+2026-06-27 19:10:26,054 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 2.7105s)
+2026-06-27 19:10:26,054 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:10:39,546 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 13.4919s)
+2026-06-27 19:10:39,546 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:10:39,547 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:10:39,599 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0528s)
+2026-06-27 19:10:39,600 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 16.2565s)
+2026-06-27 19:10:39,644 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0417s)
+2026-06-27 19:10:40,294 [INFO] [Direct-Process] デコード完了 (経過: 0.5786s, length: 13083000 samples)
+2026-06-27 19:10:40,340 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:11:00,082 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:11:00,252 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 19.9583s)
+2026-06-27 19:11:19,429 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 19.1732s)
+2026-06-27 19:11:19,429 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:12:43,229 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 83.7996s)
+2026-06-27 19:12:43,229 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:12:43,229 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:12:43,392 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1627s)
+2026-06-27 19:12:43,392 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 103.1370s)
+2026-06-27 19:12:43,434 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0394s)
+2026-06-27 19:12:44,077 [INFO] [Direct-Process] デコード完了 (経過: 0.4921s, length: 12804875 samples)
+2026-06-27 19:12:44,144 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:13:02,390 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:13:02,548 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 18.4714s)
+2026-06-27 19:13:20,992 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 18.4405s)
+2026-06-27 19:13:20,992 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:14:44,550 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 83.5579s)
+2026-06-27 19:14:44,550 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:14:44,551 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:14:44,716 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1655s)
+2026-06-27 19:14:44,716 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 102.1653s)
+2026-06-27 19:14:44,757 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0386s)
+2026-06-27 19:14:45,079 [INFO] [Direct-Process] デコード完了 (経過: 0.1795s, length: 3859044 samples)
+2026-06-27 19:14:45,094 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:14:50,738 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:14:50,787 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 5.7080s)
+2026-06-27 19:14:56,356 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 5.5669s)
+2026-06-27 19:14:56,356 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:15:22,343 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 25.9874s)
+2026-06-27 19:15:22,344 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:15:22,344 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:15:22,415 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0710s)
+2026-06-27 19:15:22,415 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 31.6266s)
+2026-06-27 19:15:22,479 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0622s)
+2026-06-27 19:15:22,980 [INFO] [Direct-Process] デコード完了 (経過: 0.4217s, length: 10488157 samples)
+2026-06-27 19:15:23,017 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:15:38,789 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:15:38,918 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 15.9382s)
+2026-06-27 19:15:54,286 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 15.3650s)
+2026-06-27 19:15:54,286 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:17:01,696 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 67.4105s)
+2026-06-27 19:17:01,697 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:17:01,697 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:17:01,832 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1348s)
+2026-06-27 19:17:01,832 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 82.9116s)
+2026-06-27 19:17:10,883 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 9.0488s)
+2026-06-27 19:17:11,652 [INFO] [Direct-Process] デコード完了 (経過: 0.6453s, length: 14319564 samples)
+2026-06-27 19:17:11,703 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:17:33,363 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:17:33,550 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 21.8969s)
+2026-06-27 19:17:54,128 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 20.5749s)
+2026-06-27 19:17:54,128 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:19:38,306 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 104.1775s)
+2026-06-27 19:19:38,306 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:19:38,307 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:19:38,480 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1731s)
+2026-06-27 19:19:38,480 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 124.9273s)
+2026-06-27 19:19:38,519 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0369s)
+2026-06-27 19:19:38,821 [INFO] [Direct-Process] デコード完了 (経過: 0.1529s, length: 3089940 samples)
+2026-06-27 19:19:38,832 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:19:43,646 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:19:43,687 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 4.8653s)
+2026-06-27 19:19:48,010 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 4.3221s)
+2026-06-27 19:19:48,011 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:20:08,467 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 20.4568s)
+2026-06-27 19:20:08,468 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:20:08,468 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:20:08,531 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0632s)
+2026-06-27 19:20:08,531 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 24.8435s)
+2026-06-27 19:20:08,569 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0356s)
+2026-06-27 19:20:09,399 [INFO] [Direct-Process] デコード完了 (経過: 0.7528s, length: 17948700 samples)
+2026-06-27 19:20:09,463 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:20:35,718 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:20:35,940 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 26.5401s)
+2026-06-27 19:21:01,976 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 26.0320s)
+2026-06-27 19:21:01,976 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:23:07,800 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 125.8237s)
+2026-06-27 19:23:07,800 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:23:07,800 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:23:08,010 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2101s)
+2026-06-27 19:23:08,011 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 152.0672s)
+2026-06-27 19:23:08,054 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0418s)
+2026-06-27 19:23:08,852 [INFO] [Direct-Process] デコード完了 (経過: 0.5150s, length: 12246276 samples)
+2026-06-27 19:23:08,895 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:23:26,698 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:23:26,848 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 17.9956s)
+2026-06-27 19:23:44,826 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 17.9751s)
+2026-06-27 19:23:44,826 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:25:02,639 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 77.8125s)
+2026-06-27 19:25:02,639 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:25:02,639 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:25:02,793 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1535s)
+2026-06-27 19:25:02,793 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 95.9423s)
+2026-06-27 19:25:02,836 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0411s)
+2026-06-27 19:25:03,799 [INFO] [Direct-Process] デコード完了 (経過: 0.8178s, length: 17578260 samples)
+2026-06-27 19:25:03,863 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:25:30,176 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:25:30,394 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 26.5942s)
+2026-06-27 19:25:55,737 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 25.3398s)
+2026-06-27 19:25:55,737 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:27:33,778 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 98.0409s)
+2026-06-27 19:27:33,779 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:27:33,779 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:27:33,980 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2010s)
+2026-06-27 19:27:33,980 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 123.5829s)
+2026-06-27 19:27:34,020 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0375s)
+2026-06-27 19:27:34,895 [INFO] [Direct-Process] デコード完了 (経過: 0.6272s, length: 14508900 samples)
+2026-06-27 19:27:34,949 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:27:56,619 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:27:56,803 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 21.9076s)
+2026-06-27 19:28:17,930 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 21.1231s)
+2026-06-27 19:28:17,930 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:30:01,808 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 103.8778s)
+2026-06-27 19:30:01,808 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:30:01,808 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:30:01,982 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1742s)
+2026-06-27 19:30:01,983 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 125.1763s)
+2026-06-27 19:30:02,029 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0439s)
+2026-06-27 19:30:14,163 [INFO] [Timestamp Inheritance] Windows ctypesを用いてタイムスタンプを完全継承しましたわ！ (target: 雅楽紫絃会[2002]雅楽大系[Disc 3].flac)
+2026-06-27 19:30:14,164 [INFO] [Direct-Process] OK: M:\Music\album\EARLY\JP\雅楽紫絃会[2002]雅楽大系[Disc 3].flac
+2026-06-27 19:30:14,221 [INFO] OK: 雅楽紫絃会[2002]雅楽大系[Disc 3].flac (15 トラック処理完了, 0 トラック既処理スキップ)
+2026-06-27 19:30:15,148 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 19:30:15,149 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 19:30:15,402 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 19:30:15,403 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 19:30:15,413 [INFO] [Direct-Process] 解析開始: 雅楽紫絃会[2002]雅楽大系[Disc 4].flac
+2026-06-27 19:30:16,094 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 19:30:16,095 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 19:30:31,139 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 19:30:31,498 [INFO] [Direct-Process] デコード完了 (経過: 0.3587s, length: 7623420 samples)
+2026-06-27 19:30:31,524 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:30:43,003 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:30:43,107 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 11.6085s)
+2026-06-27 19:30:57,349 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 14.2393s)
+2026-06-27 19:30:57,349 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:31:54,779 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 57.4297s)
+2026-06-27 19:31:54,779 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:31:54,780 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:31:55,145 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.3654s)
+2026-06-27 19:31:55,146 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 72.0361s)
+2026-06-27 19:31:55,200 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0525s)
+2026-06-27 19:31:55,401 [INFO] [Direct-Process] デコード完了 (経過: 0.0913s, length: 999600 samples)
+2026-06-27 19:31:55,405 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:31:56,854 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:31:56,867 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 1.4657s)
+2026-06-27 19:31:58,299 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 1.4312s)
+2026-06-27 19:31:58,299 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:32:05,274 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 6.9743s)
+2026-06-27 19:32:05,274 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:32:05,274 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:32:05,318 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0437s)
+2026-06-27 19:32:05,318 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 8.4505s)
+2026-06-27 19:32:05,365 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0444s)
+2026-06-27 19:32:05,482 [INFO] [Direct-Process] デコード完了 (経過: 0.0584s, length: 1113084 samples)
+2026-06-27 19:32:05,487 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:32:07,281 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:32:07,296 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 1.8126s)
+2026-06-27 19:32:08,903 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 1.6064s)
+2026-06-27 19:32:08,903 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:32:16,747 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 7.8439s)
+2026-06-27 19:32:16,747 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:32:16,747 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:32:16,787 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0400s)
+2026-06-27 19:32:16,788 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 9.4915s)
+2026-06-27 19:32:16,828 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0380s)
+2026-06-27 19:32:17,326 [INFO] [Direct-Process] デコード完了 (経過: 0.4362s, length: 10742760 samples)
+2026-06-27 19:32:17,363 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:32:32,814 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:32:32,949 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 15.6228s)
+2026-06-27 19:32:48,510 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 15.5587s)
+2026-06-27 19:32:48,510 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:33:52,938 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 64.4282s)
+2026-06-27 19:33:52,939 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:33:52,939 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:33:53,080 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1412s)
+2026-06-27 19:33:53,080 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 80.1293s)
+2026-06-27 19:33:53,124 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0412s)
+2026-06-27 19:33:53,393 [INFO] [Direct-Process] デコード完了 (経過: 0.1377s, length: 2212056 samples)
+2026-06-27 19:33:53,401 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:33:56,914 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:33:56,942 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 3.5485s)
+2026-06-27 19:34:00,056 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 3.1135s)
+2026-06-27 19:34:00,057 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:34:14,853 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 14.7963s)
+2026-06-27 19:34:14,853 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:34:14,853 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:34:14,904 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0509s)
+2026-06-27 19:34:14,905 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 17.9619s)
+2026-06-27 19:34:14,948 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0412s)
+2026-06-27 19:34:15,777 [INFO] [Direct-Process] デコード完了 (経過: 0.7590s, length: 20375964 samples)
+2026-06-27 19:34:15,849 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:34:46,555 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:34:46,811 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 31.0341s)
+2026-06-27 19:35:16,350 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 29.5340s)
+2026-06-27 19:35:16,350 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:37:42,631 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 146.2811s)
+2026-06-27 19:37:42,631 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:37:42,632 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:37:42,870 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2379s)
+2026-06-27 19:37:42,870 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 176.0543s)
+2026-06-27 19:37:42,915 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0425s)
+2026-06-27 19:37:43,372 [INFO] [Direct-Process] デコード完了 (経過: 0.2293s, length: 3845520 samples)
+2026-06-27 19:37:43,396 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:37:49,272 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:37:49,323 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 5.9510s)
+2026-06-27 19:37:54,815 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 5.4902s)
+2026-06-27 19:37:54,815 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:38:23,429 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 28.6135s)
+2026-06-27 19:38:23,429 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:38:23,429 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:38:23,495 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0660s)
+2026-06-27 19:38:23,495 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 34.1710s)
+2026-06-27 19:38:23,535 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0375s)
+2026-06-27 19:38:23,719 [INFO] [Direct-Process] デコード完了 (経過: 0.0955s, length: 1214220 samples)
+2026-06-27 19:38:23,724 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:38:25,621 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:38:25,637 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 1.9173s)
+2026-06-27 19:38:27,328 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 1.6905s)
+2026-06-27 19:38:27,328 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:38:34,863 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 7.5348s)
+2026-06-27 19:38:34,863 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:38:34,863 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:38:34,909 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0454s)
+2026-06-27 19:38:34,909 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 9.2720s)
+2026-06-27 19:38:34,954 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0430s)
+2026-06-27 19:38:35,093 [INFO] [Direct-Process] デコード完了 (経過: 0.0752s, length: 1617000 samples)
+2026-06-27 19:38:35,105 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:38:37,880 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:38:37,902 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 2.8087s)
+2026-06-27 19:38:40,200 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 2.2968s)
+2026-06-27 19:38:40,200 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:38:51,357 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 11.1571s)
+2026-06-27 19:38:51,358 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:38:51,358 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:38:51,404 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0462s)
+2026-06-27 19:38:51,404 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 13.5013s)
+2026-06-27 19:38:51,450 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0430s)
+2026-06-27 19:38:52,040 [INFO] [Direct-Process] デコード完了 (経過: 0.5232s, length: 12331535 samples)
+2026-06-27 19:38:52,083 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:39:10,243 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:39:10,397 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 18.3559s)
+2026-06-27 19:39:28,177 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 17.7781s)
+2026-06-27 19:39:28,178 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:40:45,401 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 77.2226s)
+2026-06-27 19:40:45,401 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:40:45,401 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:40:45,559 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1578s)
+2026-06-27 19:40:45,559 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 95.1600s)
+2026-06-27 19:40:45,600 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0385s)
+2026-06-27 19:40:45,902 [INFO] [Direct-Process] デコード完了 (経過: 0.1690s, length: 3051721 samples)
+2026-06-27 19:40:45,913 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:40:50,381 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:40:50,420 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 4.5182s)
+2026-06-27 19:40:54,825 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 4.4031s)
+2026-06-27 19:40:54,825 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:41:14,111 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 19.2857s)
+2026-06-27 19:41:14,111 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:41:14,111 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:41:14,170 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0592s)
+2026-06-27 19:41:14,171 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 23.7493s)
+2026-06-27 19:41:21,718 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 7.5451s)
+2026-06-27 19:41:22,190 [INFO] [Direct-Process] デコード完了 (経過: 0.3995s, length: 9493260 samples)
+2026-06-27 19:41:22,224 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:41:35,663 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:41:35,782 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 13.5912s)
+2026-06-27 19:41:49,312 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 13.5282s)
+2026-06-27 19:41:49,313 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:42:59,136 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 69.8228s)
+2026-06-27 19:42:59,136 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:42:59,136 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:42:59,261 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1252s)
+2026-06-27 19:42:59,262 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 83.4775s)
+2026-06-27 19:42:59,304 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0405s)
+2026-06-27 19:43:00,244 [INFO] [Direct-Process] デコード完了 (経過: 0.8223s, length: 19292280 samples)
+2026-06-27 19:43:00,341 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:43:29,186 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:43:29,866 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 29.6209s)
+2026-06-27 19:43:58,371 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 28.5013s)
+2026-06-27 19:43:58,371 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:46:17,288 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 138.9171s)
+2026-06-27 19:46:17,289 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:46:17,289 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:46:17,516 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2270s)
+2026-06-27 19:46:17,516 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 167.6467s)
+2026-06-27 19:46:17,556 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0376s)
+2026-06-27 19:46:18,069 [INFO] [Direct-Process] デコード完了 (経過: 0.3275s, length: 8157324 samples)
+2026-06-27 19:46:18,106 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:46:30,124 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:46:30,224 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 12.1553s)
+2026-06-27 19:46:42,097 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 11.8712s)
+2026-06-27 19:46:42,098 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:47:37,364 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 55.2659s)
+2026-06-27 19:47:37,364 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:47:37,364 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:47:37,479 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1148s)
+2026-06-27 19:47:37,479 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 67.2534s)
+2026-06-27 19:47:37,518 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0366s)
+2026-06-27 19:47:37,936 [INFO] [Direct-Process] デコード完了 (経過: 0.3067s, length: 7068936 samples)
+2026-06-27 19:47:37,962 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:47:48,417 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:47:48,504 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 10.5678s)
+2026-06-27 19:47:58,752 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 10.2455s)
+2026-06-27 19:47:58,752 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:48:51,394 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 52.6424s)
+2026-06-27 19:48:51,395 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:48:51,395 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:48:51,496 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1014s)
+2026-06-27 19:48:51,497 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 62.9906s)
+2026-06-27 19:48:51,543 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0441s)
+2026-06-27 19:48:51,866 [INFO] [Direct-Process] デコード完了 (経過: 0.2199s, length: 4079544 samples)
+2026-06-27 19:48:51,881 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:48:57,660 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:48:57,713 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 5.8465s)
+2026-06-27 19:49:03,414 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 5.7000s)
+2026-06-27 19:49:03,414 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:49:30,448 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 27.0341s)
+2026-06-27 19:49:30,449 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:49:30,449 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:49:30,523 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0743s)
+2026-06-27 19:49:30,523 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 32.8097s)
+2026-06-27 19:49:30,570 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0442s)
+2026-06-27 19:49:31,506 [INFO] [Direct-Process] デコード完了 (経過: 0.8442s, length: 20066676 samples)
+2026-06-27 19:49:31,575 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:50:01,327 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:50:01,580 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 30.0734s)
+2026-06-27 19:50:30,601 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 29.0163s)
+2026-06-27 19:50:30,601 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:52:41,555 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 130.9537s)
+2026-06-27 19:52:41,555 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:52:41,555 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:52:41,789 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2335s)
+2026-06-27 19:52:41,789 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 160.2047s)
+2026-06-27 19:52:41,832 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0406s)
+2026-06-27 19:52:42,285 [INFO] [Direct-Process] デコード完了 (経過: 0.2640s, length: 3923724 samples)
+2026-06-27 19:52:42,311 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:52:48,127 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:52:48,180 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 5.8940s)
+2026-06-27 19:52:53,663 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 5.4815s)
+2026-06-27 19:52:53,663 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:53:19,741 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 26.0772s)
+2026-06-27 19:53:19,741 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:53:19,741 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:53:19,811 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0704s)
+2026-06-27 19:53:19,812 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 31.6304s)
+2026-06-27 19:53:19,856 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0421s)
+2026-06-27 19:53:20,456 [INFO] [Direct-Process] デコード完了 (経過: 0.5183s, length: 12087516 samples)
+2026-06-27 19:53:20,499 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:53:38,025 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:53:38,181 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 17.7255s)
+2026-06-27 19:53:55,704 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 17.5196s)
+2026-06-27 19:53:55,704 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:55:18,115 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 82.4112s)
+2026-06-27 19:55:18,115 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:55:18,116 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:55:18,265 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1495s)
+2026-06-27 19:55:18,265 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 100.0815s)
+2026-06-27 19:55:18,307 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0390s)
+2026-06-27 19:55:18,635 [INFO] [Direct-Process] デコード完了 (経過: 0.1798s, length: 3169320 samples)
+2026-06-27 19:55:18,646 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:55:23,143 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:55:23,184 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 4.5492s)
+2026-06-27 19:55:27,753 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 4.5675s)
+2026-06-27 19:55:27,753 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:55:49,909 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 22.1555s)
+2026-06-27 19:55:49,909 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:55:49,909 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:55:49,974 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0650s)
+2026-06-27 19:55:49,974 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 26.7893s)
+2026-06-27 19:55:50,019 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0424s)
+2026-06-27 19:55:50,787 [INFO] [Direct-Process] デコード完了 (経過: 0.6898s, length: 17096100 samples)
+2026-06-27 19:55:50,844 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 19:56:15,512 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 19:56:15,723 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 24.9357s)
+2026-06-27 19:56:44,783 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 29.0566s)
+2026-06-27 19:56:44,783 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 19:58:49,919 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 125.1353s)
+2026-06-27 19:58:49,919 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 19:58:49,919 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 19:58:50,134 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.2147s)
+2026-06-27 19:58:50,134 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 154.4079s)
+2026-06-27 19:58:50,197 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0600s)
+2026-06-27 19:59:04,053 [INFO] [Timestamp Inheritance] Windows ctypesを用いてタイムスタンプを完全継承しましたわ！ (target: 雅楽紫絃会[2002]雅楽大系[Disc 4].flac)
+2026-06-27 19:59:04,054 [INFO] [Direct-Process] OK: M:\Music\album\EARLY\JP\雅楽紫絃会[2002]雅楽大系[Disc 4].flac
+2026-06-27 19:59:04,129 [INFO] OK: 雅楽紫絃会[2002]雅楽大系[Disc 4].flac (21 トラック処理完了, 0 トラック既処理スキップ)

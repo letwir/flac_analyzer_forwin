@@ -1,0 +1,298 @@
+2026-06-25 08:25:05,556 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 08:25:05,557 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 08:25:05,801 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 08:25:05,802 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 08:25:05,815 [INFO] [Direct-Process] 解析開始: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac
+2026-06-25 08:25:05,981 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-25 08:25:05,981 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 08:25:20,996 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-25 08:25:21,677 [INFO] [Direct-Process] デコード完了 (経過: 0.6806s, length: 16828560 samples)
+2026-06-25 08:25:21,677 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 1)
+2026-06-25 08:25:21,824 [INFO] [Direct-Process] デコード完了 (経過: 0.1432s, length: 3984288 samples)
+2026-06-25 08:25:21,824 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 2)
+2026-06-25 08:25:22,111 [INFO] [Direct-Process] デコード完了 (経過: 0.2861s, length: 7578731 samples)
+2026-06-25 08:25:22,112 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 3)
+2026-06-25 08:25:22,339 [INFO] [Direct-Process] デコード完了 (経過: 0.2246s, length: 6197521 samples)
+2026-06-25 08:25:22,339 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 4)
+2026-06-25 08:26:35,260 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 08:26:35,260 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 08:26:35,497 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 08:26:35,497 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 08:26:35,507 [INFO] [Direct-Process] 解析開始: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac
+2026-06-25 08:26:35,647 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-25 08:26:35,647 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 08:26:50,917 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-25 08:26:51,620 [INFO] [Direct-Process] デコード完了 (経過: 0.7031s, length: 16828560 samples)
+2026-06-25 08:26:51,620 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 1)
+2026-06-25 08:26:51,762 [INFO] [Direct-Process] デコード完了 (経過: 0.1380s, length: 3984288 samples)
+2026-06-25 08:26:51,762 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 2)
+2026-06-25 08:26:52,027 [INFO] [Direct-Process] デコード完了 (経過: 0.2634s, length: 7578731 samples)
+2026-06-25 08:26:52,027 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 3)
+2026-06-25 08:26:52,283 [INFO] [Direct-Process] デコード完了 (経過: 0.2542s, length: 6197521 samples)
+2026-06-25 08:26:52,283 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 4)
+2026-06-25 08:26:52,511 [INFO] [Direct-Process] デコード完了 (経過: 0.2267s, length: 5923512 samples)
+2026-06-25 08:26:52,512 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 5)
+2026-06-25 08:26:52,609 [INFO] [Direct-Process] デコード完了 (経過: 0.0960s, length: 2337300 samples)
+2026-06-25 08:26:52,609 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 6)
+2026-06-25 08:26:52,767 [INFO] [Direct-Process] デコード完了 (経過: 0.1569s, length: 4124820 samples)
+2026-06-25 08:26:52,767 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 7)
+2026-06-25 08:26:52,884 [INFO] [Direct-Process] デコード完了 (経過: 0.1158s, length: 2719499 samples)
+2026-06-25 08:26:52,885 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 8)
+2026-06-25 08:26:53,032 [INFO] [Direct-Process] デコード完了 (経過: 0.1471s, length: 3572688 samples)
+2026-06-25 08:26:53,033 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 9)
+2026-06-25 08:26:53,534 [INFO] [Direct-Process] デコード完了 (経過: 0.5005s, length: 12444433 samples)
+2026-06-25 08:26:53,534 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 10)
+2026-06-25 08:26:53,746 [INFO] [Direct-Process] デコード完了 (経過: 0.2089s, length: 6282192 samples)
+2026-06-25 08:26:53,746 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 11)
+2026-06-25 08:26:53,747 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Aniplex\Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (All tracks skipped)
+2026-06-25 08:26:53,761 [INFO] SKIPPED: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac
+2026-06-25 08:26:54,308 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 08:26:54,309 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-25 08:26:54,557 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-25 08:26:54,557 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-25 08:26:54,568 [INFO] [Direct-Process] 解析開始: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 2][GAME, orc..].flac
+2026-06-25 08:26:54,629 [ERROR] [Direct-Process] FLACメタデータ解析失敗: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 2][GAME, orc..].flac: "M:\\Music\\album\\CLASSIC\\Aniplex\\Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 2][GAME, orc..].flac" is not a valid FLAC file
+2026-06-25 08:26:54,630 [INFO] NG: Metadata error: "M:\\Music\\album\\CLASSIC\\Aniplex\\Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 2][GAME, orc..].flac" is not a valid FLAC file
+2026-06-27 13:38:58,807 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 13:38:58,808 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 13:38:59,067 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 13:38:59,067 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 13:38:59,079 [INFO] [Direct-Process] 解析開始: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac
+2026-06-27 13:38:59,368 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 13:38:59,368 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 13:39:14,731 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 13:39:15,471 [INFO] [Direct-Process] デコード完了 (経過: 0.7389s, length: 16828560 samples)
+2026-06-27 13:39:15,471 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 1)
+2026-06-27 13:39:15,616 [INFO] [Direct-Process] デコード完了 (経過: 0.1414s, length: 3984288 samples)
+2026-06-27 13:39:15,616 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 2)
+2026-06-27 13:39:15,883 [INFO] [Direct-Process] デコード完了 (経過: 0.2652s, length: 7578731 samples)
+2026-06-27 13:39:15,883 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 3)
+2026-06-27 13:39:16,122 [INFO] [Direct-Process] デコード完了 (経過: 0.2368s, length: 6197521 samples)
+2026-06-27 13:39:16,122 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 4)
+2026-06-27 13:39:16,355 [INFO] [Direct-Process] デコード完了 (経過: 0.2316s, length: 5923512 samples)
+2026-06-27 13:39:16,356 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 5)
+2026-06-27 13:39:16,452 [INFO] [Direct-Process] デコード完了 (経過: 0.0947s, length: 2337300 samples)
+2026-06-27 13:39:16,452 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 6)
+2026-06-27 13:39:16,611 [INFO] [Direct-Process] デコード完了 (経過: 0.1581s, length: 4124820 samples)
+2026-06-27 13:39:16,611 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 7)
+2026-06-27 13:39:16,725 [INFO] [Direct-Process] デコード完了 (経過: 0.1121s, length: 2719499 samples)
+2026-06-27 13:39:16,725 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 8)
+2026-06-27 13:39:16,859 [INFO] [Direct-Process] デコード完了 (経過: 0.1334s, length: 3572688 samples)
+2026-06-27 13:39:16,859 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 9)
+2026-06-27 13:39:17,328 [INFO] [Direct-Process] デコード完了 (経過: 0.4675s, length: 12444433 samples)
+2026-06-27 13:39:17,328 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 10)
+2026-06-27 13:39:17,550 [INFO] [Direct-Process] デコード完了 (経過: 0.2198s, length: 6282192 samples)
+2026-06-27 13:39:17,550 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 11)
+2026-06-27 13:39:17,552 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Aniplex\Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (All tracks skipped)
+2026-06-27 13:39:17,567 [INFO] SKIPPED: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac
+2026-06-27 13:39:18,140 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 13:39:18,140 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 13:39:18,404 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 13:39:18,404 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 13:39:18,417 [INFO] [Direct-Process] 解析開始: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 2][GAME, orc..].flac
+2026-06-27 13:39:18,604 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 13:39:18,605 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 13:39:33,845 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 13:39:34,153 [INFO] [Direct-Process] デコード完了 (経過: 0.3077s, length: 6756708 samples)
+2026-06-27 13:39:34,177 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:39:44,619 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:39:44,708 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 10.5544s)
+2026-06-27 13:39:58,102 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 13.3918s)
+2026-06-27 13:39:58,102 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:40:46,539 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 48.4372s)
+2026-06-27 13:40:46,540 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:40:46,540 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:40:46,892 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.3523s)
+2026-06-27 13:40:46,893 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 62.1829s)
+2026-06-27 13:40:55,561 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 8.6671s)
+2026-06-27 13:40:55,889 [INFO] [Direct-Process] デコード完了 (経過: 0.2211s, length: 4450572 samples)
+2026-06-27 13:40:55,905 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:41:02,408 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:41:02,466 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 6.5770s)
+2026-06-27 13:41:08,908 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 6.4402s)
+2026-06-27 13:41:08,908 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:41:34,745 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 25.8361s)
+2026-06-27 13:41:34,745 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:41:34,745 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:41:34,825 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0797s)
+2026-06-27 13:41:34,825 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 32.3573s)
+2026-06-27 13:41:34,864 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0383s)
+2026-06-27 13:41:35,290 [INFO] [Direct-Process] デコード完了 (経過: 0.3414s, length: 6998964 samples)
+2026-06-27 13:41:35,316 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:41:46,348 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:41:46,435 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 11.1445s)
+2026-06-27 13:41:56,592 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 10.1551s)
+2026-06-27 13:41:56,592 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:42:44,078 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 47.4862s)
+2026-06-27 13:42:44,078 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:42:44,079 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:42:44,183 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1042s)
+2026-06-27 13:42:44,183 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 57.7467s)
+2026-06-27 13:42:44,222 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0374s)
+2026-06-27 13:42:44,587 [INFO] [Direct-Process] デコード完了 (経過: 0.2655s, length: 5297292 samples)
+2026-06-27 13:42:44,607 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:42:52,888 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:42:52,957 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 8.3693s)
+2026-06-27 13:43:00,842 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 7.8835s)
+2026-06-27 13:43:00,842 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:43:32,442 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 31.5991s)
+2026-06-27 13:43:32,442 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:43:32,442 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:43:32,526 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0839s)
+2026-06-27 13:43:32,526 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 39.5676s)
+2026-06-27 13:43:32,595 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0679s)
+2026-06-27 13:43:33,067 [INFO] [Direct-Process] デコード完了 (経過: 0.3782s, length: 9015804 samples)
+2026-06-27 13:43:33,104 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:43:46,725 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:43:46,837 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 13.7702s)
+2026-06-27 13:44:00,064 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 13.2251s)
+2026-06-27 13:44:00,065 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:44:59,226 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 59.1614s)
+2026-06-27 13:44:59,226 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:44:59,226 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:44:59,346 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1200s)
+2026-06-27 13:44:59,347 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 72.5078s)
+2026-06-27 13:44:59,386 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0377s)
+2026-06-27 13:44:59,923 [INFO] [Direct-Process] デコード完了 (経過: 0.4236s, length: 10412304 samples)
+2026-06-27 13:44:59,960 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:45:15,321 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:45:15,448 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 15.5248s)
+2026-06-27 13:45:30,709 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 15.2577s)
+2026-06-27 13:45:30,709 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:46:31,035 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 60.3265s)
+2026-06-27 13:46:31,036 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:46:31,036 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:46:31,171 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1353s)
+2026-06-27 13:46:31,171 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 75.7208s)
+2026-06-27 13:46:31,216 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0430s)
+2026-06-27 13:46:31,847 [INFO] [Direct-Process] デコード完了 (経過: 0.5057s, length: 11908176 samples)
+2026-06-27 13:46:31,891 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:46:49,651 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:46:49,804 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 17.9561s)
+2026-06-27 13:47:07,549 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 17.7431s)
+2026-06-27 13:47:07,550 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:48:29,081 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 81.5308s)
+2026-06-27 13:48:29,081 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:48:29,081 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:48:29,236 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1547s)
+2026-06-27 13:48:29,236 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 99.4302s)
+2026-06-27 13:48:29,275 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0370s)
+2026-06-27 13:48:29,587 [INFO] [Direct-Process] デコード完了 (経過: 0.1770s, length: 3080532 samples)
+2026-06-27 13:48:29,598 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:48:34,480 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:48:34,521 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 4.9335s)
+2026-06-27 13:48:39,015 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 4.4926s)
+2026-06-27 13:48:39,015 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:48:59,855 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 20.8401s)
+2026-06-27 13:48:59,855 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:48:59,856 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:48:59,921 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0658s)
+2026-06-27 13:48:59,922 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 25.3998s)
+2026-06-27 13:48:59,966 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0435s)
+2026-06-27 13:49:00,207 [INFO] [Direct-Process] デコード完了 (経過: 0.1590s, length: 2287908 samples)
+2026-06-27 13:49:00,215 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:49:03,726 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:49:03,756 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 3.5482s)
+2026-06-27 13:49:07,014 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 3.2575s)
+2026-06-27 13:49:07,015 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:49:22,228 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 15.2136s)
+2026-06-27 13:49:22,228 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:49:22,228 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:49:22,284 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0551s)
+2026-06-27 13:49:22,284 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 18.5275s)
+2026-06-27 13:49:22,323 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0378s)
+2026-06-27 13:49:22,591 [INFO] [Direct-Process] デコード完了 (経過: 0.1959s, length: 3645600 samples)
+2026-06-27 13:49:22,605 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:49:28,356 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:49:28,403 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 5.8114s)
+2026-06-27 13:49:33,730 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 5.3260s)
+2026-06-27 13:49:33,730 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:49:58,632 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 24.9021s)
+2026-06-27 13:49:58,633 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:49:58,633 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:49:58,703 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.0702s)
+2026-06-27 13:49:58,703 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 30.2997s)
+2026-06-27 13:49:58,742 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0374s)
+2026-06-27 13:49:59,375 [INFO] [Direct-Process] デコード完了 (経過: 0.5534s, length: 12862500 samples)
+2026-06-27 13:49:59,422 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:50:18,738 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:50:18,907 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 19.5315s)
+2026-06-27 13:50:37,894 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 18.9838s)
+2026-06-27 13:50:37,894 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:52:04,433 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 86.5388s)
+2026-06-27 13:52:04,433 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:52:04,434 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:52:04,602 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1679s)
+2026-06-27 13:52:04,602 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 105.6918s)
+2026-06-27 13:52:04,643 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0395s)
+2026-06-27 13:52:05,250 [INFO] [Direct-Process] デコード完了 (経過: 0.4603s, length: 10034808 samples)
+2026-06-27 13:52:05,316 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:52:20,661 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:52:20,785 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 15.5345s)
+2026-06-27 13:52:35,526 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 14.7390s)
+2026-06-27 13:52:35,526 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:53:50,698 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 75.1715s)
+2026-06-27 13:53:50,698 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:53:50,698 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:53:50,833 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1348s)
+2026-06-27 13:53:50,833 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 90.0466s)
+2026-06-27 13:53:50,994 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.1598s)
+2026-06-27 13:53:51,796 [INFO] [Direct-Process] デコード完了 (経過: 0.6342s, length: 14004395 samples)
+2026-06-27 13:53:51,846 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:54:13,786 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:54:13,957 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 22.1614s)
+2026-06-27 13:54:34,629 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 20.6690s)
+2026-06-27 13:54:34,630 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:56:05,125 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 90.4950s)
+2026-06-27 13:56:05,125 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:56:05,125 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:56:05,295 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1703s)
+2026-06-27 13:56:05,296 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 111.3355s)
+2026-06-27 13:56:05,347 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0499s)
+2026-06-27 13:56:05,992 [INFO] [Direct-Process] デコード完了 (経過: 0.4964s, length: 11549497 samples)
+2026-06-27 13:56:06,032 [INFO] [HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)
+2026-06-27 13:56:23,282 [INFO] [HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。
+2026-06-27 13:56:23,425 [INFO] [Direct-Process] Demucs 波形分離完了 (経過: 17.4333s)
+2026-06-27 13:56:40,220 [INFO] [MainProcess] [Endomorphism] [DSP] [Pre-warming] 全ステム7本の遅延キャッシュ事前計算を完了いたしましたわ (経過: 16.7922s)
+2026-06-27 13:56:40,221 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] Librosa による特徴量抽出(ThreadPool=8)を開始しますわ
+2026-06-27 13:57:58,036 [INFO] [MainProcess] [Morphism] [Librosa] [Extraction] 全ステムの Librosa 特徴量抽出を完了いたしましたわ (経過: 77.8151s)
+2026-06-27 13:57:58,036 [INFO] [MainProcess] [Endomorphism] [Post-processing] [SNR-Overwrite] ステム相対エネルギー比率(SNR)の上書きを完了いたしましたわ (経過: 0.0000s)
+2026-06-27 13:57:58,037 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia (EffNet) 分類器17基による推論を開始しますわ
+2026-06-27 13:57:58,182 [INFO] [MainProcess] [Morphism] [Essentia] [ONNX-Inference] Essentia 分類推論を完了いたしましたわ (経過: 0.1452s)
+2026-06-27 13:57:58,182 [INFO] [Direct-Process] ステム特徴量抽出完了 (経過: 94.7542s)
+2026-06-27 13:57:58,227 [INFO] [Direct-Process] DB 登録(UPSERT)完了 (経過: 0.0433s)
+2026-06-27 13:58:08,750 [INFO] [Timestamp Inheritance] Windows ctypesを用いてタイムスタンプを完全継承しましたわ！ (target: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 2][GAME, orc..].flac)
+2026-06-27 13:58:08,751 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Aniplex\Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 2][GAME, orc..].flac
+2026-06-27 13:58:08,808 [INFO] OK: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 2][GAME, orc..].flac (14 トラック処理完了, 0 トラック既処理スキップ)
+2026-06-27 21:56:31,038 [INFO] ONNX使用可能演算器: ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 21:56:31,039 [INFO] 直列実行用ロード     : ['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 21:56:31,343 [INFO] ONNXセッション直列化ロード完了！ (分類器数: 17)
+2026-06-27 21:56:31,343 [INFO] [WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: 17)
+2026-06-27 21:56:31,361 [INFO] [Direct-Process] 解析開始: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac
+2026-06-27 21:56:31,565 [INFO] 波形分離モデル (GLOBAL_DEMUCS) をロードしますわ... (use_dml=False)
+2026-06-27 21:56:31,566 [INFO] HTDemucsSeparator 初期化: model=htdemucs_6s, precision=fp16weights, providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+2026-06-27 21:56:49,882 [INFO] HTDemucs ONNX 実機モデルロードに成功いたしましたわ！
+2026-06-27 21:56:50,651 [INFO] [Direct-Process] デコード完了 (経過: 0.7682s, length: 16828560 samples)
+2026-06-27 21:56:50,651 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 1)
+2026-06-27 21:56:50,821 [INFO] [Direct-Process] デコード完了 (経過: 0.1658s, length: 3984288 samples)
+2026-06-27 21:56:50,821 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 2)
+2026-06-27 21:56:51,119 [INFO] [Direct-Process] デコード完了 (経過: 0.2963s, length: 7578731 samples)
+2026-06-27 21:56:51,119 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 3)
+2026-06-27 21:56:51,370 [INFO] [Direct-Process] デコード完了 (経過: 0.2480s, length: 6197521 samples)
+2026-06-27 21:56:51,371 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 4)
+2026-06-27 21:56:51,615 [INFO] [Direct-Process] デコード完了 (経過: 0.2430s, length: 5923512 samples)
+2026-06-27 21:56:51,616 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 5)
+2026-06-27 21:56:51,721 [INFO] [Direct-Process] デコード完了 (経過: 0.1042s, length: 2337300 samples)
+2026-06-27 21:56:51,722 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 6)
+2026-06-27 21:56:51,899 [INFO] [Direct-Process] デコード完了 (経過: 0.1760s, length: 4124820 samples)
+2026-06-27 21:56:51,899 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 7)
+2026-06-27 21:56:52,013 [INFO] [Direct-Process] デコード完了 (経過: 0.1132s, length: 2719499 samples)
+2026-06-27 21:56:52,013 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 8)
+2026-06-27 21:56:52,181 [INFO] [Direct-Process] デコード完了 (経過: 0.1670s, length: 3572688 samples)
+2026-06-27 21:56:52,182 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 9)
+2026-06-27 21:56:52,708 [INFO] [Direct-Process] デコード完了 (経過: 0.5250s, length: 12444433 samples)
+2026-06-27 21:56:52,708 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 10)
+2026-06-27 21:56:52,951 [INFO] [Direct-Process] デコード完了 (経過: 0.2407s, length: 6282192 samples)
+2026-06-27 21:56:52,952 [INFO] [Direct-Process] Skip --resume (Hash match): Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (Track: 11)
+2026-06-27 21:56:52,953 [INFO] [Direct-Process] OK: M:\Music\album\CLASSIC\Aniplex\Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac (All tracks skipped)
+2026-06-27 21:56:52,968 [INFO] SKIPPED: Fate-stay night 20th Anniversary ''Fate-stay night [Unlimited Blade Works]'' Concert[Disc 1][GAME, orc..].flac

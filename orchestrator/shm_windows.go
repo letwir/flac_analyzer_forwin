@@ -13,6 +13,7 @@ var (
 	procMapViewOfFile  = kernel32.NewProc("MapViewOfFile")
 	procUnmapViewOfFile = kernel32.NewProc("UnmapViewOfFile")
 	procVirtualProtect = kernel32.NewProc("VirtualProtect")
+	procGlobalMemoryStatusEx = kernel32.NewProc("GlobalMemoryStatusEx")
 )
 
 const (
@@ -21,6 +22,28 @@ const (
 	FILE_MAP_WRITE = 0x0002
 	FILE_MAP_READ  = 0x0004
 )
+
+type MemoryStatusEx struct {
+	Length               uint32
+	MemoryLoad           uint32
+	TotalPhys            uint64
+	AvailPhys            uint64
+	TotalPageFile        uint64
+	AvailPageFile        uint64
+	TotalVirtual         uint64
+	AvailVirtual         uint64
+	AvailExtendedVirtual uint64
+}
+
+func GetAvailableMemory() (uint64, error) {
+	var memStatus MemoryStatusEx
+	memStatus.Length = uint32(unsafe.Sizeof(memStatus))
+	ret, _, err := procGlobalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&memStatus)))
+	if ret == 0 {
+		return 0, err
+	}
+	return memStatus.AvailPhys, nil
+}
 
 type SharedMemory struct {
 	Name    string

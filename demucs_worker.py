@@ -32,6 +32,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--flac-path", required=True, help="Target FLAC file path")
     parser.add_argument("--shm-tags", required=True, help="JSON string of stem to shm_tag mapping")
+    parser.add_argument("--track-hash", required=False, default="dummy", help="MD5 hash of the track")
     parser.add_argument("--use-dml", action="store_true", help="Use DirectML")
     args = parser.parse_args()
 
