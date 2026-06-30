@@ -422,3 +422,11 @@ Gotchas: Occurs if the requested mmap size exceeds the size of the existing Wind
 <gotchas>Applying Demucs and Essentia tags correctly requires passing the "prefix" argument recursively during their "to_flac_tags" generation.</gotchas>
 </api>
 
+
+<api id="psycopg2_upsert_postgresql">
+<title>PostgreSQL UPSERT with psycopg2</title>
+Context/Finding/Source/Gotchas:
+- Use "INSERT ... ON CONFLICT (id) DO UPDATE SET ..." syntax for UPSERT.
+- Use "EXCLUDED.column_name" to reference the values proposed for insertion.
+- Pass values as parameters to avoid SQL injection.
+</api>

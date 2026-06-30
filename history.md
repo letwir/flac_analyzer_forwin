@@ -330,3 +330,5 @@ Files: run_batch.ps1, orchestrator/main.go
 > Category: Implement / Fix
 > Summary: Implemented Scipy features (Skewness/Kurtosis, Hilbert envelope, peaks), and fixed missing FLAC tag prefixes for Essentia/Demucs by using consistent CUE_TRACKXX_ prefix.
 > Files: analyzer.py, pipeline.py
+
+### 2026-07-01 06:52:36 > BugFix/Fixed UPSERT ignoring predictions column/ingester.py
