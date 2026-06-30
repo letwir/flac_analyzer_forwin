@@ -272,23 +272,30 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 			log.Printf("[Worker %d] Saved local JSON to: %s\n", id, outPath)
 			
 			// 6.5 Spawn ingester.py asynchronously
-			ingesterCmd := exec.Command("python", "../ingester.py",
+			ingesterCmd := exec.Command(pythonPath, "../ingester.py",
 				"--flac-path", task.FlacPath,
 				"--json-path", outPath,
 				"--track-hash", trackHash,
 			)
-			// Detach from parent to avoid blocking or zombie processes
-			ingesterCmd.Stdout = nil
-			ingesterCmd.Stderr = nil
-			if err := ingesterCmd.Start(); err != nil {
-				log.Printf("[Worker %d] Failed to start ingester.py: %v\n", id, err)
+			// Pass environment variables to ingester.py
+			ingesterCmd.Env = append(os.Environ(), envVars...)
+			
+			// Detach from parent to avoid blocking or zombie processes, but capture output via a goroutine
+			stdoutPipe, errOut := ingesterCmd.StdoutPipe()
+			stderrPipe, errErr := ingesterCmd.StderrPipe()
+			if errOut == nil && errErr == nil {
+				if err := ingesterCmd.Start(); err != nil {
+					log.Printf("[Worker %d] Failed to start ingester.py: %v\n", id, err)
+				} else {
+					log.Printf("[Worker %d] Started ingester.py (PID %d) for %s\n", id, ingesterCmd.Process.Pid, trackHash)
+					go func(cmd *exec.Cmd, out io.ReadCloser, err io.ReadCloser) {
+						go streamColoredLog(out, id, "Ingester", ColorGray)
+						go streamColoredLog(err, id, "Ingester-Err", ColorRed)
+						cmd.Wait()
+					}(ingesterCmd, stdoutPipe, stderrPipe)
+				}
 			} else {
-				log.Printf("[Worker %d] Started ingester.py (PID %d) for %s\n", id, ingesterCmd.Process.Pid, trackHash)
-				// Note: In go, not calling Wait() on a started process leaves a zombie until the parent exits,
-				// but for short-lived orchestrators or simple scripts it's okay, or we can use a goroutine to wait.
-				go func(cmd *exec.Cmd) {
-					cmd.Wait()
-				}(ingesterCmd)
+				log.Printf("[Worker %d] Failed to create pipes for ingester.py\n", id)
 			}
 		}
 		
