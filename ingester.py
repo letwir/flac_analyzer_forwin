@@ -57,7 +57,11 @@ def main():
     except Exception as e:
         logging.warning(f"Failed to extract FLAC metadata: {e}")
 
-    db_url = os.environ.get("INGESTER_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    db_url = (
+        os.environ.get("INGESTER_DATABASE_URL") or 
+        os.environ.get("DATABASE_URL") or 
+        "postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db"
+    )
     if not db_url:
         logging.error("No DATABASE_URL or INGESTER_DATABASE_URL provided.")
         sys.exit(1)
