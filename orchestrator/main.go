@@ -153,11 +153,15 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		// 3. Run Demucs Worker
 		tagsJson, _ := json.Marshal(tagsMap)
 		
-		// Get absolute path to python.exe
-		absPythonPath, _ := filepath.Abs(filepath.Join("..", ".venv", "Scripts", "python.exe"))
+		// Use python.exe from the active environment (PATH)
+		pythonPath := "python.exe"
+		
+		exePath, _ := os.Executable()
+		parentDir := filepath.Dir(filepath.Dir(exePath))
 
-		cmdDemucs := exec.Command(absPythonPath, "demucs_worker.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--track-hash", trackHash)
-		cmdDemucs.Dir = ".."
+		cmdDemucs := exec.Command(pythonPath, "demucs_worker.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--track-hash", trackHash)
+		cmdDemucs.Dir = parentDir
+		cmdDemucs.Env = append(os.Environ(), "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8")
 		
 		var outBuf bytes.Buffer
 		cmdDemucs.Stdout = &outBuf
@@ -167,7 +171,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		
 		if err := cmdDemucs.Start(); err != nil {
 			log.Printf("%s[W-%d] [IO Monad] Demucs start failed: %v%s\n", ColorRed, id, err, ColorReset)
-			heavyTaskLock.Unlock()
+			<-demucsSemaphore
 			for _, shm := range shmMap {
 				shm.Close()
 			}
@@ -200,8 +204,9 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		// 5. Run Librosa Worker
 		log.Printf("%s[W-%d] [IO Monad] Running Librosa worker...%s\n", ColorPurple, id, ColorReset)
 		
-		cmdLibrosa := exec.Command(absPythonPath, "librosa_worker.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
-		cmdLibrosa.Dir = ".."
+		cmdLibrosa := exec.Command(pythonPath, "librosa_worker.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
+		cmdLibrosa.Dir = parentDir
+		cmdLibrosa.Env = append(os.Environ(), "PYTHONUTF8=1", "PYTHONIOENCODING=utf-8")
 		
 		var libOutBuf bytes.Buffer
 		cmdLibrosa.Stdout = &libOutBuf
@@ -249,7 +254,14 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 	}
 }
 
+func setUTF8Console() {
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	setConsoleOutputCP := kernel32.NewProc("SetConsoleOutputCP")
+	setConsoleOutputCP.Call(65001)
+}
+
 func main() {
+	setUTF8Console()
 	noDB := flag.Bool("no-db", false, "Disable PostgreSQL UPSERT and output JSON locally for testing")
 	flag.Parse()
 
