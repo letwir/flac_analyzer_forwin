@@ -92,3 +92,13 @@ Correction: 特になし。これで完全に Purity 達成。
 > Correction: 構文エラーなし。想定通りに実装完了。### 2026-06-29 16:41:19 > Hypothesis: Python script failed due to being executed globally instead of within .venv. Tried: Absolute path binding via filepath.Abs in orchestrator/main.go. Result: Execution succeeds and correctly invokes virtualenv python.
 
 ### 2026-06-29 16:44:55 > Hypothesis: Need script to monitor OOM and integration flow / Tried: Implementing test_integration.py using psutil and requests / Result: Success, the script monitors child process memory and waits for JSON outputs
+### 2026-06-30 23:56:44
+Hypothesis/Tried: User tested orchestrator and encountered 1) path error, 2) mojibake, 3) WinError 5 in SHM.
+Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in Go. 3) Get-Item -LiteralPath to fix wildcard bracket issues yielding 0 fileSize.
+
+### 2026-06-30 23:59:07
+> Hypothesis: Demucs ONNX models are downloaded on every run without cache.
+> Tried: Modified models.py HTDemucsSeparator.__init__ to pass cache_dir='demucs' to inf.download_single_model.
+> Result: Successful, committed to Git.
+### 2026-07-01 00:28:00
+> Hypothesis/Tried/Rejected/Uncertainty/Search/Correction: Confirmed existing FLAC tags via Mutagen are actually "cue_trackXX_". Retained "CUE_TRACK{num:02d}" prefix for writes and updated regex to parse both. Logged findings and preparing for commit.

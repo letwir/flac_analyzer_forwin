@@ -317,3 +317,16 @@ Files: orchestrator/main.go### 2026-06-29 16:41:19 > Python Zero-copy Pipeline I
 Files: orchestrator/main.go, pipeline.py, run_batch.ps1
 
 ### 2026-06-29 16:44:47 > IMPLEMENTED/Integration test/test_integration.py
+### 2026-06-30 23:56:42
+Category: Bugfix
+Summary: Fixed cwd resolution in orchestrator, resolved console encoding (mojibake) via Windows API, and fixed SHM access denied error caused by Get-Item bracket parsing.
+Files: run_batch.ps1, orchestrator/main.go
+
+### 2026-06-30 23:59:07
+> Category: Code/Modification
+> Summary: Modified models.py to cache Demucs ONNX model locally in demucs folder instead of redownloading.
+> Files: models.py
+### 2026-07-01 00:28:00
+> Category: Implement / Fix
+> Summary: Implemented Scipy features (Skewness/Kurtosis, Hilbert envelope, peaks), and fixed missing FLAC tag prefixes for Essentia/Demucs by using consistent CUE_TRACKXX_ prefix.
+> Files: analyzer.py, pipeline.py

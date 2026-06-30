@@ -403,3 +403,22 @@
       2. **WORM (Write-Once, Read-Many) / 線形型的運用**: Demucsが共有メモリに波形を書き込んだ瞬間から、そのメモリ領域を Immutable（不変）として凍結する。Librosa 等の後続プロセスはこれを Read-Only で参照することで、データ競合を理論上排除し参照透過性を保つ。
   </api>
 </knowledge>
+
+<api id="PowerShell_GetItem_Brackets">
+### Get-Item Wildcard Parsing
+Context: Get-Item $path fails on valid paths containing brackets [].
+Gotchas: Brackets are interpreted as wildcards. Use -LiteralPath to prevent $null returns and downstream 0-byte allocations.
+</api>
+
+<api id="WinError5_Mmap">
+### Windows mmap WinError 5
+Context: [WinError 5] Access Denied when calling mmap in Python.
+Gotchas: Occurs if the requested mmap size exceeds the size of the existing Windows File Mapping Object allocated by the creator (e.g., Go).
+</api>
+<api id="Mutagen_FLAC_Tags_CUE_TRACK">
+<title>FLAC tags prefix for CUE tracks</title>
+<context>FLAC files with Embedded CUE sheets (via Mutagen) historically used "cue_trackXX_" (with underscore) as a prefix for per-track features, not "CUETRACK00_".</context>
+<finding>We assumed tags would lack underscores based on memory, but actual data in existing FLACs contained tags like "cue_track07_essentia...". The correct parsing regex should accommodate "^(?:cue_?)?track_?(\d+)_(.+)$" to correctly strip the prefix and parse both legacy "cue_track" and newer track features. Write operations should stick to "CUE_TRACK{num:02d}_" for backward compatibility.</finding>
+<gotchas>Applying Demucs and Essentia tags correctly requires passing the "prefix" argument recursively during their "to_flac_tags" generation.</gotchas>
+</api>
+
