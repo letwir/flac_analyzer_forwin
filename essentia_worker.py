@@ -44,8 +44,10 @@ def main():
         logger.error("Missing 'mix' stem in SHM metadata. Essentia requires the mix stem.")
         sys.exit(1)
 
+    import os
+    models_dir = os.path.join(os.path.dirname(__file__), "models")
     logger.info("Initializing Essentia models...")
-    models.init_global_essentia()
+    essentia_models = models.init_worker_onnx(models_dir)
 
     logger.info("Starting Essentia extraction from shared memory (mix)...")
     t_start = time.perf_counter()
@@ -61,7 +63,8 @@ def main():
     predictions = {}
     try:
         # Essentia の実行
-        predictions = models.GLOBAL_ESSENTIA.run_all(y, args.track_hash)
+        patches = models.extract_mel_patches(y, sr, n_patches=64)
+        predictions = models.run_essentia_serialized(patches, essentia_models)
     except Exception as e:
         logger.error(f"Essentia extraction failed: {e}")
         shm.close()
