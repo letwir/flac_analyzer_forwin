@@ -75,11 +75,12 @@ def main():
         logging.warning(f"Failed to read FLAC tags: {e}")
 
     try:
-        with open("config.toml", "rb") as f:
+        config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+        with open(config_path, "rb") as f:
             config = tomllib.load(f)
         db_url = config.get("database", {}).get("url", "")
     except Exception as e:
-        logging.error(f"Failed to load DB URL from config.toml: {e}")
+        logging.error(f"Failed to load DB URL from {config_path}: {e}")
         sys.exit(1)
 
     if not db_url:
