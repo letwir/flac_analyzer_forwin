@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -72,23 +70,7 @@ const (
 	ColorPurple = "\033[35m"
 )
 
-func computeMD5(filePath string, trackNum int) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	hash := md5.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-	fileHash := hex.EncodeToString(hash.Sum(nil))
-	
-	// Create track-specific hash to stay within varchar(32)
-	trackString := fmt.Sprintf("%s_%02d", fileHash, trackNum)
-	trackHashBytes := md5.Sum([]byte(trackString))
-	return hex.EncodeToString(trackHashBytes[:]), nil
-}
+
 
 func streamColoredLog(pipe io.ReadCloser, workerID int, role string, color string) {
 	scanner := bufio.NewScanner(pipe)
@@ -110,14 +92,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 	stems := []string{"mix", "bass", "drums", "vocals", "other", "guitar", "piano"}
 
 	for task := range taskQueue {
-		// Calculate MD5 hash
-		trackHash, err := computeMD5(task.FlacPath, task.TrackNumber)
-		if err != nil {
-			log.Printf("%s[W-%d] [IO Monad] MD5 Error: %v%s\n", ColorRed, id, err, ColorReset)
-			continue
-		}
-		
-		log.Printf("%s[W-%d] [IO Monad] Starting processing: %s (MD5: %s)%s\n", ColorGreen, id, task.FlacPath, trackHash, ColorReset)
+		log.Printf("%s[W-%d] [IO Monad] Starting processing: %s%s\n", ColorGreen, id, task.FlacPath, ColorReset)
 		
 		// 1. Calculate Estimated Size
 		estimatedSize := EstimateShmSize(task.FileSize)
@@ -193,7 +168,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		exePath, _ := os.Executable()
 		parentDir := filepath.Dir(filepath.Dir(exePath))
 
-		cmdDemucs := exec.Command(pythonPath, "demucs_worker.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--track-hash", trackHash, "--start-sample", fmt.Sprintf("%d", task.StartSample), "--end-sample", fmt.Sprintf("%d", task.EndSample))
+		cmdDemucs := exec.Command(pythonPath, "demucs_worker.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--start-sample", fmt.Sprintf("%d", task.StartSample), "--end-sample", fmt.Sprintf("%d", task.EndSample))
 		cmdDemucs.Dir = parentDir
 		
 		var envVars []string
@@ -232,6 +207,19 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		
 		demucsMetaJson := outBuf.String()
 		log.Printf("%s[W-%d] [IO Monad] Demucs completed successfully.%s\n", ColorGreen, id, ColorReset)
+		
+		var demucsMeta struct {
+			Status    string `json:"status"`
+			AudioHash string `json:"audio_hash"`
+		}
+		if err := json.Unmarshal([]byte(demucsMetaJson), &demucsMeta); err != nil || demucsMeta.Status != "success" || demucsMeta.AudioHash == "" {
+			log.Printf("%s[W-%d] [IO Monad] Failed to parse demucs metadata or missing audio_hash: %v%s\n", ColorRed, id, err, ColorReset)
+			for _, shm := range shmMap {
+				shm.Close()
+			}
+			continue
+		}
+		trackHash := demucsMeta.AudioHash
 		
 		// 4. Freeze Shared Memory (WORM)
 		for stem, shm := range shmMap {

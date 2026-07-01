@@ -48,28 +48,20 @@ def main():
 
     logger.info(f"Loading FLAC: {args.flac_path}")
     try:
-        if args.end_sample != -1:
-            from flac_decode import build_flac_handle, process_slice_with_seq_safety
-            handle = build_flac_handle(args.flac_path)
-            y, md5_hash = process_slice_with_seq_safety(
-                args.flac_path,
-                args.start_sample,
-                args.end_sample,
-                handle.sample_rate,
-                handle.channels
-            )
-            y = y.T # demucs_worker expects (channels, samples)
-            sr = 44100
-        else:
-            config_path = os.path.join(os.path.dirname(__file__), "config.toml")
-            target_sr = 44100
-            try:
-                with open(config_path, "rb") as f:
-                    config = tomllib.load(f)
-                    target_sr = config.get("models", {}).get("sr", 44100)
-            except Exception:
-                pass
-            y, sr = librosa.load(args.flac_path, sr=target_sr, mono=False)
+        from flac_decode import build_flac_handle, process_slice_with_seq_safety
+        handle = build_flac_handle(args.flac_path)
+        start_samp = args.start_sample
+        end_samp = args.end_sample if args.end_sample != -1 else handle.total_samples
+        
+        y, md5_hash = process_slice_with_seq_safety(
+            args.flac_path,
+            start_samp,
+            end_samp,
+            handle.sample_rate,
+            handle.channels
+        )
+        y = y.T # demucs_worker expects (channels, samples)
+        sr = 44100
     except Exception as e:
         logger.error(f"Failed to load audio: {e}")
         sys.exit(1)
@@ -88,6 +80,7 @@ def main():
     # Goに渡すためのメタデータ
     metadata = {
         "status": "success",
+        "audio_hash": md5_hash,
         "sr": sr,
         "stems": {}
     }
