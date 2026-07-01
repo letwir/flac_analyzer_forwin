@@ -1,25 +1,21 @@
-# Walkthrough: worker_tensor.py の実装
+# Walkthrough: functor_precache.py の実装とディスクベースキャッシュ
 
-本ドキュメントは、新たな特徴量（Phase, PSD, Spectral Flux等）の導入に伴う `worker_tensor.py` の実装およびインテグレーションの記録ですわ。
+本ドキュメントは、STFTの事前計算キャッシュ（Functor）およびその後段ワーカーへの統合に関する実装記録ですわ。
 
 ## 実装内容 (Implemented Features)
 
-1. **`worker_tensor.py` の純粋な射の実装**:
-   - `torch` (PyTorch) を用いた高速なテンソル計算基盤を構築いたしました。
-   - `hilbert_envelope_phase`: FFTベースのHilbert変換により、瞬時位相(Phase)とエンベロープを計算。
-   - `welch_psd`: `torch.stft` を用いた高速な平均化PSD（Power Spectral Density）の算出。
-   - `fft_bandpass_envelope`: 理想帯域フィルタリング後のエンベロープ抽出（Sub-bass 20-60Hz等に適用可能）。
-   - `Spectral Flux`: 連続フレーム間のマグニチュード差分の二乗和平方根を抽出。
-   - すべて `worker_librosa.py` と同じく、Demucs分離後の共有メモリ (SHM) から Zero-copy (`torch.from_numpy`) で波形をアタッチする仕様としております。
+1. **`functor_precache.py` の実装**:
+   - Demucs直後に起動する関手 (Functor) として設計いたしました。
+   - 共有メモリに置かれた生波形から STFT 振幅スペクトログラム `[n_fft=2048, hop_length=512]` を計算し、`numpy.save` を用いて OS のテンポラリディレクトリ (`flac_analyzer_cache/{track_hash}/`) に `.npy` 形式で即座に書き出します。
+   - 生成したキャッシュファイルへの絶対パス (`spectro_path`) をメタデータ JSON に埋め込み、新しいメタデータとして出力しますの。
 
-2. **Go オーケストレーター (`orchestrator/main.go`) の接続**:
-   - Librosaワーカーの後続プロセスとして、`worker_tensor.py` の起動シーケンスを追加いたしましたわ。
-   - 出力された特徴量は `{trackHash}_{baseName}_tensor.json` として `queue` ディレクトリに保存されます。
-   - `go build` によるコンパイル成功を確認済みです。
+2. **後段ワーカーのゼロコピーキャッシュ対応 (`analyzer.py` / `worker_tensor.py`)**:
+   - `AudioContext`: メタデータに `spectro_path` が含まれる場合、STFT の再計算をスキップし、`numpy.load(mmap_mode='r')` を用いてディスクからゼロコピーでテンソルをマッピングするよう修正いたしましたわ。
+   - `worker_tensor.py`: 従来 `torch.stft` を用いて独立に計算していた PSD や Spectral Flux についても、前段で計算済みの STFT マグニチュードが存在する場合は `torch.from_numpy(np.load(...))` を用いてそのままキャッシュを流用するエコな設計に変更いたしました。
 
-3. **DB取り込み (`ingester.py`) の拡張**:
-   - `ingester.py` に `--tensor-json-path` 引数を新設。
-   - Tensorワーカーが抽出した位相やPSD情報を、JSONBの `features` カラム（mixおよび各demucsステム階層）に対して自動的に `update` してマージする処理を追加いたしました。
+3. **Go オーケストレーター (`orchestrator/main.go`) の接続**:
+   - Demucs完了直後に `functor_precache.py` を呼び出し、得られた新しいメタデータを `worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py` すべてに分配するようパイプラインを結合しました。
 
-## 今後の展望 (Next Steps)
-- `functor_precache.py` の実装: Librosa と Tensor で重複している STFT 計算などを前段の `precache` で共有化するか否かの実装検討へと移りますの。
+## 検証結果 (Validation results)
+- これにより、CPUおよびRAMの負荷となる「各ワーカーでの重複するSTFT計算」が完全に取り除かれました。
+- さらに NumPy ndarray 経由のディスクキャッシュ (`memmap`) にしたことで、将来的に CQT などの巨大なキャッシュを追加する際にも、共有メモリサイズの確保に悩まされることがなくなりましたわ。
