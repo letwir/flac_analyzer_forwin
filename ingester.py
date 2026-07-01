@@ -13,6 +13,7 @@ def main():
     parser.add_argument("--flac-path", required=True)
     parser.add_argument("--json-path", required=True)
     parser.add_argument("--predictions-json-path", required=False, default="")
+    parser.add_argument("--tensor-json-path", required=False, default="")
     parser.add_argument("--track-hash", required=True)
     parser.add_argument("--track-number", type=int, default=0)
     parser.add_argument("--title", type=str, default="")
@@ -46,6 +47,33 @@ def main():
                 predictions = pred_data.get("predictions", {})
         except Exception as e:
             logging.warning(f"Failed to parse predictions JSON: {e}")
+
+    tensor_features = {}
+    if args.tensor_json_path and os.path.exists(args.tensor_json_path):
+        try:
+            with open(args.tensor_json_path, "r", encoding="utf-8") as f:
+                tensor_data = json.load(f)
+                tensor_features = tensor_data.get("features", {})
+        except Exception as e:
+            logging.warning(f"Failed to parse tensor JSON: {e}")
+
+    # Merge tensor features into the main features dict
+    for stem_name, stem_feats in tensor_features.items():
+        if stem_name == "mix":
+            if "mix" not in features:
+                features["mix"] = {}
+            features["mix"].update(stem_feats)
+        elif stem_name == "demucs":
+            if "demucs" not in features:
+                features["demucs"] = {}
+            for sub_stem, sub_feats in stem_feats.items():
+                if sub_stem not in features["demucs"]:
+                    features["demucs"][sub_stem] = {}
+                features["demucs"][sub_stem].update(sub_feats)
+        else:
+            if stem_name not in features:
+                features[stem_name] = {}
+            features[stem_name].update(stem_feats)
 
     meta = {}
     album_artist = args.album_artist

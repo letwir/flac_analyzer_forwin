@@ -259,6 +259,35 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 			continue
 		}
 		
+		// 5.3 Run Tensor Worker
+		log.Printf("%s[W-%d] [IO Monad] Running Tensor worker...%s\n", ColorPurple, id, ColorReset)
+		
+		cmdTensor := exec.Command(pythonPath, "worker_tensor.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
+		cmdTensor.Dir = parentDir
+		cmdTensor.Env = append(os.Environ(), envVars...)
+		
+		var tensorOutBuf bytes.Buffer
+		cmdTensor.Stdout = &tensorOutBuf
+		stderrTensor, _ := cmdTensor.StderrPipe()
+		
+		if err := cmdTensor.Start(); err != nil {
+			log.Printf("%s[W-%d] [IO Monad] Tensor start failed: %v%s\n", ColorRed, id, err, ColorReset)
+			for _, shm := range shmMap {
+				shm.Close()
+			}
+			continue
+		}
+		
+		streamColoredLog(stderrTensor, id, "Tensor", ColorPurple)
+		
+		if errTensor := cmdTensor.Wait(); errTensor != nil {
+			log.Printf("%s[W-%d] [IO Monad] Tensor processing failed: %v%s\n", ColorRed, id, errTensor, ColorReset)
+			for _, shm := range shmMap {
+				shm.Close()
+			}
+			continue
+		}
+		
 		// 5.5 Run Essentia Worker
 		log.Printf("%s[W-%d] [IO Monad] Running Essentia worker...%s\n", ColorPurple, id, ColorReset)
 		
@@ -294,6 +323,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		baseName := filepath.Base(task.FlacPath)
 		outName := fmt.Sprintf("%s_%s.json", trackHash, baseName)
 		outNameEss := fmt.Sprintf("%s_%s_essentia.json", trackHash, baseName)
+		outNameTensor := fmt.Sprintf("%s_%s_tensor.json", trackHash, baseName)
 		
 		queueDir := globalConfig.Orchestrator.QueueDir
 		if queueDir == "" {
@@ -301,11 +331,13 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		}
 		outPath := filepath.Join(queueDir, outName)
 		outPathEss := filepath.Join(queueDir, outNameEss)
+		outPathTensor := filepath.Join(queueDir, outNameTensor)
 		
 		// Create queue dir if it doesn't exist
 		os.MkdirAll(queueDir, 0755)
 		
 		os.WriteFile(outPathEss, essOutBuf.Bytes(), 0644)
+		os.WriteFile(outPathTensor, tensorOutBuf.Bytes(), 0644)
 		if err := os.WriteFile(outPath, libOutBuf.Bytes(), 0644); err != nil {
 			log.Printf("[Worker %d] Failed to write local JSON: %v\n", id, err)
 		} else {
@@ -316,6 +348,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 				"--flac-path", task.FlacPath,
 				"--json-path", outPath,
 				"--predictions-json-path", outPathEss,
+				"--tensor-json-path", outPathTensor,
 				"--track-hash", trackHash,
 				"--track-number", fmt.Sprintf("%d", task.TrackNumber),
 				"--title", task.Title,
