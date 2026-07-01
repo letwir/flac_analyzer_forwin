@@ -83,7 +83,11 @@ func computeMD5(filePath string, trackNum int) (string, error) {
 		return "", err
 	}
 	fileHash := hex.EncodeToString(hash.Sum(nil))
-	return fmt.Sprintf("%s_%02d", fileHash, trackNum), nil
+	
+	// Create track-specific hash to stay within varchar(32)
+	trackString := fmt.Sprintf("%s_%02d", fileHash, trackNum)
+	trackHashBytes := md5.Sum([]byte(trackString))
+	return hex.EncodeToString(trackHashBytes[:]), nil
 }
 
 func streamColoredLog(pipe io.ReadCloser, workerID int, role string, color string) {
