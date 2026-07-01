@@ -1,63 +1,50 @@
-# 機能拡張と圏論的アーキテクチャの再構築 (Feature Expansion & Categorical Refactoring)
+# 機能拡張と圏論的アーキテクチャの再構築 (Feature Expansion & Categorical Refactoring) - Rev.2
 
-既存のパイプラインに「位相」「非定常性」「ステム間コヒーレンス」等の高度な波形解析パラダイムを導入しつつ、計算の純粋性（Pure Morphisms）を保つためのアーキテクチャ再設計プランです。
+旦那様からのフィードバック（ETLでのクロス計算除外、CuPy/PyTorchの許可、ファイル命名規則の刷新）を反映した最終プランですわ！
+
+## 解決した設計課題 (Resolved Design Decisions)
+
+1. **圏論的破綻の完全回避 (No Categorical Breakdown)**:
+   - ステム間相互作用 (Coherence 等) は **ETL (Python) 側では一切計算しない** ことが決定しました。
+   - すべてのワーカーは引き続き「単一ステムに対する純粋な射 ($Stem \to Feature$)」として振る舞い、位相やPSDを抽出するにとどめます。
+   - ステム間の相関は、抽出された特徴量を元に **後段の SQL (PostgreSQL) 側で直積を組んで比較計算** します。これにより、ETLアーキテクチャの純粋性は完全に守られました。
+
+2. **余剰リソース (VRAM 10GB / CPU 26Threads) の活用**:
+   - `cupy` または `torch` (PyTorch) を導入し、FFT などの重い周波数領域変換を並列化します。
+   - `requirements.txt` に依存関係を追記し、`.venv` にインストールします。
+
+3. **圏論的役割に応じたファイル命名 (Categorical Naming Convention)**:
+   - ファイルの可視性を高めるため、接頭辞を `worker_` や `functor_` に統一し、アルファベット順ソート時に役割ごとにまとまるように変更します。
+
+---
+
+## Proposed Changes (実行予定の変更)
+
+### 1. ファイルのリネームと整理
+Gitの `mv` コマンドを用いて、既存のワーカー群を役割（計算コンテキスト）ごとにリネームします。
+- `librosa_worker.py` ➔ `worker_librosa.py`
+- `demucs_worker.py` ➔ `worker_demucs.py`
+- `essentia_worker.py` ➔ `worker_essentia.py`
+- `analyzer_worker.py` ➔ `worker_analyzer.py`
+
+### 2. 新規ワーカーと関手の追加
+- **`functor_precache.py`**: (旧案の `precache.py`) 波形を STFT/CQT 表現へ写像する関手。
+- **`worker_tensor.py` (または `worker_cupy.py`)**: `cupy` / `torch` を用いて、CPU/GPUをハイブリッドに活用し、位相 (Phase) や PSD、Spectral Flux、Band-limited envelope 等を抽出する純粋な射。
+
+### 3. `requirements.txt` の更新
+- `cupy-cuda12x` (または環境に合わせたバージョン) もしくは `torch` を追記。
+- 依存関係のインストール (`.venv\Scripts\pip.exe install -r requirements.txt`)
+
+### 4. `pipeline.py` およびオーケストレーターの修正
+- ワーカーの呼び出しパスを新しい `worker_*.py` に書き換えます。
 
 ## User Review Required
 
-> [!WARNING]
-> **Coherence (ステム間相互相関) の導入によるドメイン拡張**
-> 既存の分析基盤は $\text{Stem} \to \text{Feature}$ という「単一対象からの射」で構成されていましたが、Coherence の計算には $\text{Stem} \times \text{Stem} \to \text{Feature}$ という**直積 (Categorical Product)** が必要になります。これを無理に単一ワーカー内に押し込むと参照の透明性が破壊される（圏論的破綻）ため、明示的に `StemPair` という対象を定義し、専用の直積射（Cross-spectrum morphism）を割り当てる必要があります。
-
 > [!IMPORTANT]
-> **データベーススキーマ (JSONB) の構造変更**
-> `StemPair` (例: `bass_drums_coherence`) のようなクロスステムの特徴量をどこに格納するかが課題です。
-> `features -> cross_stems -> bass_drums -> {coherence, phase_lag}` のような新しい階層を設けるかご判断ください。
+> **PyTorch (tensor) vs CuPy の選定**
+> 10GBのVRAMを有効活用しつつ、CUDAコアが100%に張り付いている現状を鑑みると、CPUの余剰スレッド（26スレッド）も柔軟に活用できる **PyTorch (`torch`)** の方が、デバイスフォールバック（GPUが重い場合はCPUでFFTを回す等）がしやすく安全かと存じますが、いかがでしょうか？
+> （純粋なNumPyのDrop-in replacementとしては CuPy が優秀ですが、CPU/GPUの動的負荷分散においては PyTorch に分があります）
 
-## Open Questions
-
-1. **Pre-cache の保持フォーマット**: `precache.py` が生成する STFT や CQT の複素数行列（位相情報を含む）は巨大です。これらを共有メモリ (Shared Memory) 上に載せて各ワーカーに分配する方針でよろしいでしょうか？
-2. **CWT (連続ウェーブレット変換)**: ご指摘の通り `scipy.signal.cwt` は非推奨です。依存関係に `pywt` (PyWavelets) を追加してもよろしいでしょうか？
-3. **新規メトリクスの選定**: すべて実装すると抽出時間が大幅に延びる可能性があります。特に優先したい射（例: 瞬時位相、Spectral Flux、Coherenceなど）を絞り込みますか？
-
-## Proposed Changes
-
-計算の純粋性（EffectfulとPureの分離）を徹底するため、ワーカーをライブラリや計算コンテキストごとに分割します。
-
----
-
-### [Architecture]
-
-#### [NEW] `precache.py` (Memoization Functor)
-波形 $X$ から周波数領域表現 $STFT_{\mathbb{C}}(X)$ 等への変換（Functor）を担います。
-位相情報を捨てない複素スペクトログラムや、再利用可能なフィルタバンク出力を生成し、不変な（Immutable）キャッシュ対象として後段のワーカーへ提供します。これにより、LibrosaやScipyの間で計算の重複（O(N)の浪費）を防ぎます。
-
-#### [MODIFY] `librosa_worker.py` (Morphism: $STFT \to Feature$)
-`precache.py` が生成した周波数領域表現を入力とする射の集合です。
-- 既存のMFCC, Chroma, Spectral Flux などを担当。
-- 振幅・周波数重心などの「既存の強み」を純粋な関数として計算します。
-
-#### [NEW] `scipy_worker.py` (Morphism: $Audio \to Feature$ / $Stem \times Stem \to Feature$)
-生波形および直積対象を入力とする射の集合です。
-- **Phase spectrum**: `hilbert` による瞬時位相の抽出
-- **Coherence / PSD**: `welch`, `coherence`, `csd` 等を用いた非定常性・位相相関の計算
-- **Band-limited envelope**: `sosfiltfilt` を用いた帯域別エンベロープの抽出
-
----
-
-### [Database Schema Expansion]
-
-#### [MODIFY] `db.py` / `pipeline.py`
-JSONB カラム `features` に対して以下の拡張を定義します。
-- `features -> stems -> {name} -> sequences -> spectral_flux`
-- `features -> stems -> {name} -> sequences -> inst_phase`
-- `features -> cross_stems -> {pair_name} -> coherence_peaks`
-
-## Verification Plan
-
-### Automated Tests
-- `scipy_worker.py` および `librosa_worker.py` に対し、純粋な NumPy 配列を注入して副作用がないこと（Referential Transparency）をテストします。
-- `precache.py` の出力が両方のワーカーで正しく読み取れるか（Isomorphism / 変換の整合性）を検証します。
-
-### Manual Verification
-- 旦那様の環境（5950X, 64GB RAM）にて、全ワーカーを並列稼働させた際の OOM 発生有無およびスループットを計測します。
-- JSONB に新規追加された特徴量が、期待通りの階層構造で UPSERT されているか確認します。
+> [!TIP]
+> **ファイル名の一括変更について**
+> よろしければ、このまま私が `git mv` を用いてリネームとコード内の参照修正（`pipeline.py` など）を自動実行いたしますわ。
