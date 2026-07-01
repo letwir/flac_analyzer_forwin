@@ -9,6 +9,7 @@ CUDA 13 / CPU フォールバックによる高速なFFT・テンソル計算を
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 import torch
@@ -122,8 +123,11 @@ def main():
         shm, y_np = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
         
         try:
-            # torch.from_numpy は Zero-copy でメモリをマッピングしますの
-            y_tensor = torch.from_numpy(y_np)
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                # torch.from_numpy は Zero-copy でメモリをマッピングしますの
+                y_tensor = torch.from_numpy(y_np)
             
             # 特徴量抽出
             stem_feats = extract_tensor_features(y_tensor, sr, device, spectro_path=spectro_path)
