@@ -66,7 +66,16 @@ def build_flac_handle(filepath: str) -> FlacHandle:
                 
     if cue_text:
         # CUE テキストがある場合はパースします（共通のインデックス境界計算ロジック）
-        slices = parse_cue_text_to_slices(cue_text, total_samples, sr)
+        cue_slices, global_tags = parse_cue_text_to_slices(cue_text, total_samples, sr)
+        slices = cue_slices
+        # マージ
+        if global_tags.get("title") and "album" not in raw_tags:
+            raw_tags["album"] = global_tags["title"]
+        if global_tags.get("performer"):
+            if "albumartist" not in raw_tags and "album artist" not in raw_tags:
+                raw_tags["albumartist"] = global_tags["performer"]
+            if "artist" not in raw_tags:
+                raw_tags["artist"] = global_tags["performer"]
     elif cue_block:
         # CUE ブロックがある場合
         raw_tracks = []
@@ -108,8 +117,8 @@ def build_flac_handle(filepath: str) -> FlacHandle:
         slices=slices
     )
 
-def parse_cue_text_to_slices(cue_text: str, total_samples: int, sr: int) -> list[TrackSlice]:
-    """CUEテキストから INDEX 01 境界を抽出し、サンプル単位のスライスリストを構築しますわ"""
+def parse_cue_text_to_slices(cue_text: str, total_samples: int, sr: int) -> tuple[list[TrackSlice], dict[str, str]]:
+    """CUEテキストから INDEX 01 境界を抽出し、サンプル単位のスライスリストとグローバルメタデータを構築しますわ"""
     import re
     lines = cue_text.splitlines()
     tracks = []
@@ -118,6 +127,9 @@ def parse_cue_text_to_slices(cue_text: str, total_samples: int, sr: int) -> list
     track_title = ""
     track_artist = ""
     track_index_sample = -1
+    
+    global_title = ""
+    global_performer = ""
     
     # INDEX 01 MM:SS:FF をサンプル数に変換するヘルパー
     def time_to_samples(m, s, f) -> int:
@@ -129,6 +141,17 @@ def parse_cue_text_to_slices(cue_text: str, total_samples: int, sr: int) -> list
         line_strip = line.strip()
         if not line_strip:
             continue
+            
+        if current_track is None:
+            # グローバル（TRACK登場前）のメタデータを拾う
+            title_match = re.match(r"^TITLE\s+[\"']?(.+?)[\"']?$", line_strip, re.IGNORECASE)
+            if title_match:
+                global_title = title_match.group(1)
+                continue
+            perf_match = re.match(r"^PERFORMER\s+[\"']?(.+?)[\"']?$", line_strip, re.IGNORECASE)
+            if perf_match:
+                global_performer = perf_match.group(1)
+                continue
             
         # TRACK 01 AUDIO
         track_match = re.match(r"^TRACK\s+(\d+)\s+AUDIO", line_strip, re.IGNORECASE)
@@ -188,7 +211,7 @@ def parse_cue_text_to_slices(cue_text: str, total_samples: int, sr: int) -> list
             title=t["title"],
             artist=t["artist"]
         ))
-    return slices
+    return slices, {"title": global_title, "performer": global_performer}
 
 def parse_wav_header(wav_bytes: bytes) -> tuple[int, int, int, int, int, int]:
     """WAVバイト列からヘッダ情報をパースしますわ"""

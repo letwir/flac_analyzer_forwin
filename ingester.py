@@ -17,6 +17,8 @@ def main():
     parser.add_argument("--track-number", type=int, default=0)
     parser.add_argument("--title", type=str, default="")
     parser.add_argument("--artist", type=str, default="")
+    parser.add_argument("--album", type=str, default="")
+    parser.add_argument("--album-artist", type=str, default="")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -46,8 +48,8 @@ def main():
             logging.warning(f"Failed to parse predictions JSON: {e}")
 
     meta = {}
-    album_artist = ""
-    album = ""
+    album_artist = args.album_artist
+    album = args.album
     artist = args.artist
     title = args.title
     track_number = args.track_number
@@ -57,8 +59,10 @@ def main():
         for key, value in flac.tags:
             meta[key] = value
         
-        album_artist = flac.get("albumartist", flac.get("album artist", [""]))[0]
-        album = flac.get("album", [""])[0]
+        if not album_artist:
+            album_artist = flac.get("albumartist", flac.get("album artist", [""]))[0]
+        if not album:
+            album = flac.get("album", [""])[0]
         if not artist:
             artist = flac.get("artist", [""])[0]
         if not title:

@@ -25,6 +25,7 @@
   </target>
   <target id="COMONAD_AUDIO_HASH">
     <why>Ensure unique deterministic ID generation for 80k+ tracks (including Embedded CUE segments) immune to tag modifications without polluting DSP logic.</why>
+    <how>Calculate the MD5 hash directly from the decoded raw PCM bytes of the sliced audio segment (via flac_decode / process_slice_with_seq_safety), NEVER from the whole file binary. This guarantees that tracks extracted from a CUE sheet receive distinct and stable hashes, while remaining completely invariant to metadata tag edits.</how>
   </target>
   <target id="CUESHEET_FLATTENED_SCHEMA_V2">
     <why>Maximize Cuesheet extraction robustness (3-tier fallback). Flatten JSONB to columns to avoid index overhead and enable high-performance B-Tree lookups.</why>

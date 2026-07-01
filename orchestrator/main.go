@@ -39,6 +39,8 @@ type TaskPayload struct {
 	EndSample    int64  `json:"endSample"`
 	Title        string `json:"title"`
 	Artist       string `json:"artist"`
+	Album        string `json:"album"`
+	AlbumArtist  string `json:"albumArtist"`
 }
 
 type Config struct {
@@ -318,6 +320,8 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 				"--track-number", fmt.Sprintf("%d", task.TrackNumber),
 				"--title", task.Title,
 				"--artist", task.Artist,
+				"--album", task.Album,
+				"--album-artist", task.AlbumArtist,
 			)
 			// Pass environment variables to ingester.py
 			ingesterCmd.Env = append(os.Environ(), envVars...)
@@ -434,11 +438,37 @@ func main() {
 			taskQueue <- payload
 		} else {
 			var result struct {
-				Status       string       `json:"status"`
-				Slices       []TrackSlice `json:"slices"`
-				TotalSamples int64        `json:"total_samples"`
+				Status       string         `json:"status"`
+				Slices       []TrackSlice   `json:"slices"`
+				Tags         map[string]any `json:"tags"`
+				TotalSamples int64          `json:"total_samples"`
 			}
 			if err := json.Unmarshal(cueOut, &result); err == nil && result.Status == "success" {
+				
+				extractStringOpt := func(m map[string]any, k string) string {
+					if m == nil {
+						return ""
+					}
+					if val, ok := m[k]; ok {
+						if s, ok := val.(string); ok {
+							return s
+						}
+						// If it's a list (from mutagen), try to take the first element
+						if l, ok := val.([]any); ok && len(l) > 0 {
+							if s, ok := l[0].(string); ok {
+								return s
+							}
+						}
+					}
+					return ""
+				}
+
+				album := extractStringOpt(result.Tags, "album")
+				albumArtist := extractStringOpt(result.Tags, "albumartist")
+				if albumArtist == "" {
+					albumArtist = extractStringOpt(result.Tags, "album artist")
+				}
+
 				for _, slice := range result.Slices {
 					t := payload // copy
 					t.TrackNumber = slice.TrackNumber
@@ -446,6 +476,8 @@ func main() {
 					t.EndSample = slice.EndSample
 					t.Title = slice.Title
 					t.Artist = slice.Artist
+					t.Album = album
+					t.AlbumArtist = albumArtist
 					taskQueue <- t
 				}
 			} else {

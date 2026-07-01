@@ -16,6 +16,7 @@ def main():
         print(json.dumps({
             "status": "success",
             "slices": slices,
+            "tags": handle.tags,
             "sample_rate": handle.sample_rate,
             "total_samples": handle.total_samples
         }))
