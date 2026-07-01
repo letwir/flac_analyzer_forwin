@@ -24,10 +24,23 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+type TrackSlice struct {
+	TrackNumber int    `json:"track_number"`
+	StartSample int64  `json:"start_sample"`
+	EndSample   int64  `json:"end_sample"`
+	Title       string `json:"title"`
+	Artist      string `json:"artist"`
+}
+
 type TaskPayload struct {
 	FlacPath     string `json:"flacPath"`
 	FileSize     int64  `json:"fileSize"`
 	TargetScript string `json:"targetScript"`
+	TrackNumber  int    `json:"trackNumber"`
+	StartSample  int64  `json:"startSample"`
+	EndSample    int64  `json:"endSample"`
+	Title        string `json:"title"`
+	Artist       string `json:"artist"`
 }
 
 type Config struct {
@@ -59,7 +72,7 @@ const (
 	ColorPurple = "\033[35m"
 )
 
-func computeMD5(filePath string) (string, error) {
+func computeMD5(filePath string, trackNum int) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", err
@@ -69,7 +82,8 @@ func computeMD5(filePath string) (string, error) {
 	if _, err := io.Copy(hash, file); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	fileHash := hex.EncodeToString(hash.Sum(nil))
+	return fmt.Sprintf("%s_%02d", fileHash, trackNum), nil
 }
 
 func streamColoredLog(pipe io.ReadCloser, workerID int, role string, color string) {
@@ -93,7 +107,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 
 	for task := range taskQueue {
 		// Calculate MD5 hash
-		trackHash, err := computeMD5(task.FlacPath)
+		trackHash, err := computeMD5(task.FlacPath, task.TrackNumber)
 		if err != nil {
 			log.Printf("%s[W-%d] [IO Monad] MD5 Error: %v%s\n", ColorRed, id, err, ColorReset)
 			continue
@@ -175,7 +189,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		exePath, _ := os.Executable()
 		parentDir := filepath.Dir(filepath.Dir(exePath))
 
-		cmdDemucs := exec.Command(pythonPath, "demucs_worker.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--track-hash", trackHash)
+		cmdDemucs := exec.Command(pythonPath, "demucs_worker.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--track-hash", trackHash, "--start-sample", fmt.Sprintf("%d", task.StartSample), "--end-sample", fmt.Sprintf("%d", task.EndSample))
 		cmdDemucs.Dir = parentDir
 		
 		var envVars []string
@@ -251,21 +265,53 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 			continue
 		}
 		
-		log.Printf("%s[W-%d] [IO Monad] Successfully processed entire pipeline: %s%s\n", ColorGreen, id, task.FlacPath, ColorReset)
+		// 5.5 Run Essentia Worker
+		log.Printf("%s[W-%d] [IO Monad] Running Essentia worker...%s\n", ColorPurple, id, ColorReset)
+		
+		cmdEssentia := exec.Command(pythonPath, "essentia_worker.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
+		cmdEssentia.Dir = parentDir
+		cmdEssentia.Env = append(os.Environ(), envVars...)
+		
+		var essOutBuf bytes.Buffer
+		cmdEssentia.Stdout = &essOutBuf
+		stderrEssentia, _ := cmdEssentia.StderrPipe()
+		
+		if err := cmdEssentia.Start(); err != nil {
+			log.Printf("%s[W-%d] [IO Monad] Essentia start failed: %v%s\n", ColorRed, id, err, ColorReset)
+			for _, shm := range shmMap {
+				shm.Close()
+			}
+			continue
+		}
+		
+		streamColoredLog(stderrEssentia, id, "Essentia", ColorBlue)
+		
+		if errEssentia := cmdEssentia.Wait(); errEssentia != nil {
+			log.Printf("%s[W-%d] [IO Monad] Essentia processing failed: %v%s\n", ColorRed, id, errEssentia, ColorReset)
+			for _, shm := range shmMap {
+				shm.Close()
+			}
+			continue
+		}
+		
+		log.Printf("%s[W-%d] [IO Monad] Successfully processed entire pipeline: %s (Track %d)%s\n", ColorGreen, id, task.FlacPath, task.TrackNumber, ColorReset)
 		
 		// 6. Output Handling
 		baseName := filepath.Base(task.FlacPath)
 		outName := fmt.Sprintf("%s_%s.json", trackHash, baseName)
+		outNameEss := fmt.Sprintf("%s_%s_essentia.json", trackHash, baseName)
 		
 		queueDir := globalConfig.Orchestrator.QueueDir
 		if queueDir == "" {
 			queueDir = filepath.Join("..", "queue")
 		}
 		outPath := filepath.Join(queueDir, outName)
+		outPathEss := filepath.Join(queueDir, outNameEss)
 		
 		// Create queue dir if it doesn't exist
 		os.MkdirAll(queueDir, 0755)
 		
+		os.WriteFile(outPathEss, essOutBuf.Bytes(), 0644)
 		if err := os.WriteFile(outPath, libOutBuf.Bytes(), 0644); err != nil {
 			log.Printf("[Worker %d] Failed to write local JSON: %v\n", id, err)
 		} else {
@@ -275,7 +321,11 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 			ingesterCmd := exec.Command(pythonPath, "../ingester.py",
 				"--flac-path", task.FlacPath,
 				"--json-path", outPath,
+				"--predictions-json-path", outPathEss,
 				"--track-hash", trackHash,
+				"--track-number", fmt.Sprintf("%d", task.TrackNumber),
+				"--title", task.Title,
+				"--artist", task.Artist,
 			)
 			// Pass environment variables to ingester.py
 			ingesterCmd.Env = append(os.Environ(), envVars...)
@@ -372,8 +422,47 @@ func main() {
 			return
 		}
 
-		// Enqueue task
-		taskQueue <- payload
+		// Call extract_cue.py to get tracks
+		exePath, _ := os.Executable()
+		parentDir := filepath.Dir(filepath.Dir(exePath))
+		cueCmd := exec.Command("python.exe", "extract_cue.py", payload.FlacPath)
+		cueCmd.Dir = parentDir
+		
+		var envVars []string
+		for k, v := range globalConfig.PythonEnv {
+			envVars = append(envVars, fmt.Sprintf("%s=%s", strings.ToUpper(k), v))
+		}
+		cueCmd.Env = append(os.Environ(), envVars...)
+		
+		cueOut, err := cueCmd.Output()
+		if err != nil {
+			log.Printf("Failed to extract CUE for %s: %v", payload.FlacPath, err)
+			// fallback: enqueue as one huge track
+			payload.EndSample = -1 // flag for entire file
+			taskQueue <- payload
+		} else {
+			var result struct {
+				Status       string       `json:"status"`
+				Slices       []TrackSlice `json:"slices"`
+				TotalSamples int64        `json:"total_samples"`
+			}
+			if err := json.Unmarshal(cueOut, &result); err == nil && result.Status == "success" {
+				for _, slice := range result.Slices {
+					t := payload // copy
+					t.TrackNumber = slice.TrackNumber
+					t.StartSample = slice.StartSample
+					t.EndSample = slice.EndSample
+					t.Title = slice.Title
+					t.Artist = slice.Artist
+					taskQueue <- t
+				}
+			} else {
+				// fallback
+				payload.EndSample = -1
+				taskQueue <- payload
+			}
+		}
+
 		w.WriteHeader(http.StatusAccepted)
 		fmt.Fprintf(w, "Task accepted: %s\n", payload.FlacPath)
 	})

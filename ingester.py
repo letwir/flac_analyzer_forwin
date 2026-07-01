@@ -12,7 +12,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--flac-path", required=True)
     parser.add_argument("--json-path", required=True)
+    parser.add_argument("--predictions-json-path", required=False, default="")
     parser.add_argument("--track-hash", required=True)
+    parser.add_argument("--track-number", type=int, default=0)
+    parser.add_argument("--title", type=str, default="")
+    parser.add_argument("--artist", type=str, default="")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -32,14 +36,21 @@ def main():
     if not features:
         logging.warning("No features found in JSON.")
 
-    predictions = json_data.get("predictions", {})
+    predictions = {}
+    if args.predictions_json_path and os.path.exists(args.predictions_json_path):
+        try:
+            with open(args.predictions_json_path, "r", encoding="utf-8") as f:
+                pred_data = json.load(f)
+                predictions = pred_data.get("predictions", {})
+        except Exception as e:
+            logging.warning(f"Failed to parse predictions JSON: {e}")
 
     meta = {}
     album_artist = ""
     album = ""
-    artist = ""
-    title = ""
-    track_number = 0
+    artist = args.artist
+    title = args.title
+    track_number = args.track_number
 
     try:
         flac = FLAC(args.flac_path)
@@ -48,34 +59,31 @@ def main():
         
         album_artist = flac.get("albumartist", flac.get("album artist", [""]))[0]
         album = flac.get("album", [""])[0]
-        artist = flac.get("artist", [""])[0]
-        title = flac.get("title", [""])[0]
+        if not artist:
+            artist = flac.get("artist", [""])[0]
+        if not title:
+            title = flac.get("title", [""])[0]
         
-        trck = flac.get("tracknumber", ["0"])[0]
-        try:
-            track_number = int(trck.split("/")[0])
-        except:
-            track_number = 0
+        if track_number == 0:
+            trck = flac.get("tracknumber", ["0"])[0]
+            try:
+                track_number = int(trck.split("/")[0])
+            except:
+                track_number = 0
             
     except Exception as e:
-        logging.warning(f"Failed to extract FLAC metadata: {e}")
+        logging.warning(f"Failed to read FLAC tags: {e}")
 
-    db_url = None
-    config_path = os.path.join(os.path.dirname(__file__), "config.toml")
     try:
-        with open(config_path, "rb") as f:
+        with open("config.toml", "rb") as f:
             config = tomllib.load(f)
-            db_url = config.get("database", {}).get("url")
+        db_url = config.get("database", {}).get("url", "")
     except Exception as e:
-        logging.warning(f"Failed to load config.toml: {e}")
+        logging.error(f"Failed to load DB URL from config.toml: {e}")
+        sys.exit(1)
 
-    db_url = (
-        db_url or
-        os.environ.get("INGESTER_DATABASE_URL") or 
-        os.environ.get("DATABASE_URL")
-    )
     if not db_url:
-        logging.error("No DATABASE_URL or INGESTER_DATABASE_URL provided in config or env.")
+        logging.error("DB URL is empty.")
         sys.exit(1)
 
     try:
@@ -84,9 +92,9 @@ def main():
         
         query = """
             INSERT INTO raw.library_flac (
-                audio_hash, filepath, filename, track_number, album_artist, album, artist, title, meta, features, predictions
+                audio_hash, filepath, filename, track_number, album_artist, album, artist, title, meta, features, predictions, analyzed_at
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP
             )
             ON CONFLICT (audio_hash) DO UPDATE SET
                 filepath = EXCLUDED.filepath,
@@ -98,7 +106,8 @@ def main():
                 title = EXCLUDED.title,
                 meta = EXCLUDED.meta,
                 features = EXCLUDED.features,
-                predictions = EXCLUDED.predictions;
+                predictions = EXCLUDED.predictions,
+                analyzed_at = EXCLUDED.analyzed_at;
         """
         
         filename = os.path.basename(args.flac_path)

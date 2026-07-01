@@ -91,8 +91,15 @@ def main():
             
     logger.info(f"All extractions completed in {time.perf_counter() - t_start:.4f}s")
     
+    final_features = {"demucs": {}}
+    for k, v in extracted_features.items():
+        if k == "mix":
+            final_features["mix"] = v
+        else:
+            final_features["demucs"][k] = v
+            
     # 成功したら stdout に特徴量をJSONで吐き出して終了
-    print(json.dumps({"status": "success", "features": extracted_features}))
+    print(json.dumps({"status": "success", "features": final_features}))
     sys.exit(0)
 
 if __name__ == "__main__":
