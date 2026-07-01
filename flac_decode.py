@@ -106,6 +106,17 @@ def build_flac_handle(filepath: str) -> FlacHandle:
             title=raw_tags.get("title", "Unknown"),
             artist=raw_tags.get("artist", "Unknown")
         ))
+    elif len(slices) == 1:
+        # 1トラックのみ（分割済みFLAC）の場合、CUEシートの文字数制限(EAC等)でタイトルが途切れるのを防ぐため、FLAC本体のタグを優先しますわ
+        s = slices[0]
+        slices = [TrackSlice(
+            track_number=s.track_number,
+            start_sample=s.start_sample,
+            end_sample=s.end_sample,
+            title=raw_tags.get("title", s.title) if raw_tags.get("title") else s.title,
+            artist=raw_tags.get("artist", s.artist) if raw_tags.get("artist") else s.artist,
+            composer=s.composer
+        )]
         
     return FlacHandle(
         filepath=filepath,
