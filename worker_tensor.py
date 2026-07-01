@@ -57,21 +57,27 @@ def fft_bandpass_envelope(x: torch.Tensor, sr: int, f_lo: float, f_hi: float) ->
     env, _ = hilbert_envelope_phase(x_filtered)
     return env
 
-def extract_tensor_features(y: torch.Tensor, sr: int, device: torch.device) -> dict:
+def extract_tensor_features(y: torch.Tensor, sr: int, device: torch.device, spectro_path: str = None) -> dict:
     y = y.to(device)
     features = {}
     
-    # 1. Spectral Flux (Onset/Novelty の裏付け)
-    stft_mag = torch.stft(y, n_fft=1024, return_complex=True).abs()
-    # 時間軸(dim=-1)で差分を取り、周波数軸(dim=-2)で二乗和平方根
-    flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
-    # 固定長シーケンスにダウンサンプリングするなら補間が必要ですが、一旦平均と分散を計算
+    # 1. Spectral Flux and Welch PSD Peaks
+    if spectro_path and os.path.exists(spectro_path):
+        import numpy as np
+        # spectro is shape (F, T) from librosa.stft(n_fft=2048)
+        stft_mag = torch.from_numpy(np.load(spectro_path, mmap_mode='r')).to(device)
+        flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
+        psd = stft_mag.pow(2).mean(dim=-1)
+        freqs = torch.linspace(0, sr / 2, psd.shape[-1], device=device)
+    else:
+        stft_mag = torch.stft(y, n_fft=1024, return_complex=True).abs()
+        flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
+        freqs, psd = welch_psd(y, sr=sr)
+        
     features["spectral_flux_mean"] = flux.mean().item()
     features["spectral_flux_std"] = flux.std().item()
 
     # 2. Welch PSD Peaks
-    freqs, psd = welch_psd(y, sr=sr)
-    # 単純な最大ピーク周波数
     peak_idx = psd.argmax()
     features["psd_peak_freq"] = freqs[peak_idx].item()
     features["psd_peak_val"] = psd[peak_idx].item()
@@ -110,6 +116,7 @@ def main():
         tag_name = info["shm_tag"]
         shape = tuple(info["shape"])
         dtype_name = info["dtype"]
+        spectro_path = info.get("spectro_path")
         
         logger.info(f"Processing SHM '{tag_name}' for stem: {stem_name}")
         shm, y_np = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
@@ -119,7 +126,7 @@ def main():
             y_tensor = torch.from_numpy(y_np)
             
             # 特徴量抽出
-            stem_feats = extract_tensor_features(y_tensor, sr, device)
+            stem_feats = extract_tensor_features(y_tensor, sr, device, spectro_path=spectro_path)
             extracted_features[stem_name] = stem_feats
             
         except Exception as e:

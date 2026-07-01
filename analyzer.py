@@ -51,7 +51,7 @@ class AudioContext:
     """
 
     def __init__(
-        self, y: np.ndarray, sr: int, source: str = "mix", snr: float | None = None, audio_hash: str | None = None
+        self, y: np.ndarray, sr: int, source: str = "mix", snr: float | None = None, audio_hash: str | None = None, spectro_path: str | None = None
     ):
         # 多次元波形（ステレオ等）の場合は、チャンネル次元を平均化してモノラル（1次元）にするの
         if y.ndim > 1:
@@ -66,6 +66,7 @@ class AudioContext:
         self.sr = sr
         self.source = source
         self._snr_val = snr
+        self._spectro_path = spectro_path
         # キャッシュバッファ
         self._stft: np.ndarray | None = None
         self._spectro: np.ndarray | None = None
@@ -108,7 +109,15 @@ class AudioContext:
     @property
     def spectro(self) -> np.ndarray:
         if self._spectro is None:
-            self._spectro = np.abs(self.stft).astype(np.float32, copy=False)
+            if self._spectro_path is not None:
+                logging.debug(f"    [CSE Cache Hit] spectro ディスクキャッシュロード (source: {self.source})")
+                import os
+                if os.path.exists(self._spectro_path):
+                    self._spectro = np.load(self._spectro_path, mmap_mode='r')
+                else:
+                    self._spectro = np.abs(self.stft).astype(np.float32, copy=False)
+            else:
+                self._spectro = np.abs(self.stft).astype(np.float32, copy=False)
         return self._spectro
 
     @property

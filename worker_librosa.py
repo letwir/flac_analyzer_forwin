@@ -49,13 +49,14 @@ def main():
         tag_name = info["shm_tag"]
         shape = tuple(info["shape"])
         dtype_name = info["dtype"]
+        spectro_path = info.get("spectro_path")
         
         logger.info(f"Attaching to SHM '{tag_name}' (Read-Only) for stem: {stem_name}")
         shm, y = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
         
         try:
             # AudioContext の構築 (Zero-copy)
-            ctx = AudioContext(y=y, sr=sr, source=stem_name)
+            ctx = AudioContext(y=y, sr=sr, source=stem_name, spectro_path=spectro_path)
             
             # config取得と Pre-warming
             config = STEM_CONFIGS.get(stem_name, STEM_CONFIGS["other"])
