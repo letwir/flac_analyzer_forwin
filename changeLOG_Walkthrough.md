@@ -1,28 +1,21 @@
-# Walkthrough
-## Fix Missing Data ("歯抜け") and CUESHEET parsing in Go Orchestrator
+# Walkthrough: アーキテクチャ拡張の圏論的検証
 
-### 作業概要
-Go Orchestrator（新パイプライン）で発生していた、CUEシートが無視されてトラックが1つしか登録されない問題、およびEssentia(ML解析)が欠落する問題を修正いたしましたわ。
+本ドキュメントは、新たな特徴量（Phase, Coherence 等）の導入およびワーカー分割の妥当性検証の履歴を記録しますの。
 
-### 変更点
-1. **`extract_cue.py` の追加**:
-   * `flac_decode.py` のロジックを用いてCUEシートを解析し、JSONとしてトラック一覧を出力するラッパースクリプトを作成しました。
-2. **`orchestrator/main.go` のリファクタリング**:
-   * APIの`/task`エンドポイントで `extract_cue.py` を呼び出し、得られたトラックごとにTaskPayloadを分割キューイングするように変更しました。
-   * Librosaの後に `essentia_worker.py` を呼び出すように変更しました。
-   * `ingester.py` へ `--track-number`, `--title`, `--artist` を渡すように変更しました。
-   * 修正後、正常に `go build` が通ることを確認いたしました。
-3. **`demucs_worker.py` の修正**:
-   * `--start-sample` と `--end-sample` オプションを追加し、`flac_decode.process_slice_with_seq_safety` を用いて当該トラックの範囲のみを読み込むように修正しました。
-4. **`essentia_worker.py` の追加**:
-   * 共有メモリから `mix` 音源を読み込み、`GLOBAL_ESSENTIA.run_all` を実行して `predictions` を出力する専用ワーカーを追加しました。
-5. **JSONスキーマ (`librosa_worker.py`) の修正**:
-   * `demucs` 由来のステム特徴量（bass, drumsなど）を、旧パイプライン同様に `"demucs"` キーの直下にネストするように修正しました。
-6. **`ingester.py` の修正**:
-   * Orchestratorから渡された `--track-number`, `--title`, `--artist` を優先して用いるよう修正しました。
-   * `--predictions-json-path` を追加し、Essentiaの出力を読み込んでマージするようにしました。
-   * UPSERT SQL文に `analyzed_at = CURRENT_TIMESTAMP` を追加しました。
+## 変更の概要 (Changes Made)
 
-### 確認事項
-- `test2.py` / `test3.py` で、DB側にすべての特徴量（`features` に `demucs`）と `predictions` が正しく格納されるためのスキーマ準備が整っていることを確認しました。
-- Goビルド (`go build`) は正常に完了しておりますわ。
+1. **アーキテクチャの圏論的検証**:
+   - `librosa_worker.py` と `scipy_worker.py` の分割について、これを「計算ライブラリの境界」ではなく、「射 (Morphism) の集合」として定義づけることで圏論的純粋性が向上することを確認しました。
+   - `precache.py` は、生波形を周波数領域に引き上げる関手 (Functor) として位置づけ、共有メモリを介した不変 (Immutable) なコンテキストとして提供する設計を採用しました。
+
+2. **新規メトリクスの評価**:
+   - **Phase spectrum / PSD / Band-limited envelope**: 単一の Stem に対する射 ($X \to F$) であり、既存アーキテクチャに副作用なく組み込めることを確認。
+   - **Coherence (ステム間相関)**: $\text{Stem} \times \text{Stem} \to \text{Feature}$ という「直積 (Categorical Product)」の導入が必要になるため、DBの JSONB 構造に `cross_stems` のような新しいカテゴリ対象を追加することを決定しました。
+
+## テスト内容 (What was tested)
+
+- 本フェーズは設計検証（Planning）です。実装段階へ移行するにあたり、旦那様からのフィードバック（JSONBの構造案、優先する特徴量の選定、PyWavelets導入の可否）を待機しております。
+
+## 検証結果 (Validation results)
+
+- ワーカー分割と新規特徴量の導入は、明示的に「直積対象」を定義する限りにおいて、**圏論的破綻を引き起こさない（むしろ純粋性を高める）** と結論付けました。
