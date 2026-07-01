@@ -24,4 +24,6 @@ tensorflow
 tf2onnx
 
 --extra-index-url https://download.pytorch.org/whl/cu132
+torch
+torchaudio
 psycopg2-binary

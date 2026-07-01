@@ -34,8 +34,8 @@ def main():
 
     # 5. Update cmdDemucs with start/end samples
     content = content.replace(
-        "cmdDemucs := exec.Command(pythonPath, \"demucs_worker.py\", \"--flac-path\", task.FlacPath, \"--shm-tags\", string(tagsJson), \"--track-hash\", trackHash)",
-        "cmdDemucs := exec.Command(pythonPath, \"demucs_worker.py\", \"--flac-path\", task.FlacPath, \"--shm-tags\", string(tagsJson), \"--track-hash\", trackHash, \"--start-sample\", fmt.Sprintf(\"%d\", task.StartSample), \"--end-sample\", fmt.Sprintf(\"%d\", task.EndSample))"
+        "cmdDemucs := exec.Command(pythonPath, \"worker_demucs.py\", \"--flac-path\", task.FlacPath, \"--shm-tags\", string(tagsJson), \"--track-hash\", trackHash)",
+        "cmdDemucs := exec.Command(pythonPath, \"worker_demucs.py\", \"--flac-path\", task.FlacPath, \"--shm-tags\", string(tagsJson), \"--track-hash\", trackHash, \"--start-sample\", fmt.Sprintf(\"%d\", task.StartSample), \"--end-sample\", fmt.Sprintf(\"%d\", task.EndSample))"
     )
 
     # 6. Add Essentia worker after Librosa worker
@@ -60,7 +60,7 @@ def main():
 		// 5.5 Run Essentia Worker
 		log.Printf("%s[W-%d] [IO Monad] Running Essentia worker...%s\\n", ColorPurple, id, ColorReset)
 		
-		cmdEssentia := exec.Command(pythonPath, "essentia_worker.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
+		cmdEssentia := exec.Command(pythonPath, "worker_essentia.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
 		cmdEssentia.Dir = parentDir
 		cmdEssentia.Env = append(os.Environ(), envVars...)
 		

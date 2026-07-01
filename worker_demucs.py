@@ -1,5 +1,5 @@
 """
-demucs_worker.py
+worker_demucs.py
 ================
 Goから起動されるDemucs専用ワーカーですわ。
 指定されたFLACファイルを読み込み、波形分離を行い、
@@ -110,7 +110,7 @@ def main():
         sys.exit(1)
 
     # 成功したら stdout にメタデータを吐き出して終了
-    # GoはこのJSONを受け取って Freeze() を実行し、librosa_worker を起動しますわ。
+    # GoはこのJSONを受け取って Freeze() を実行し、worker_librosa を起動しますわ。
     print(json.dumps(metadata))
     sys.exit(0)
 

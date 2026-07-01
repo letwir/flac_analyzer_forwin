@@ -1,5 +1,5 @@
 """
-essentia_worker.py
+worker_essentia.py
 =================
 Goから起動されるEssentia専用ワーカーですわ。
 Demucsから書き込まれた共有メモリ（mixステム）をアタッチし、

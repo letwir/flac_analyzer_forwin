@@ -1,5 +1,5 @@
 """
-librosa_worker.py
+worker_librosa.py
 =================
 Goから起動されるLibrosa専用ワーカーですわ。
 Demucsから書き込まれ、Goによって Freeze (Read-Only化) された共有メモリをアタッチし、

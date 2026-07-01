@@ -28,7 +28,7 @@ from analyzer import (
     librosa_extractor,
     stem_extractor,
 )
-from analyzer_worker import process_stem, process_stem_shm
+from worker_analyzer import process_stem, process_stem_shm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import math

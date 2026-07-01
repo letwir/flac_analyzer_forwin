@@ -170,7 +170,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		exePath, _ := os.Executable()
 		parentDir := filepath.Dir(filepath.Dir(exePath))
 
-		cmdDemucs := exec.Command(pythonPath, "demucs_worker.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--start-sample", fmt.Sprintf("%d", task.StartSample), "--end-sample", fmt.Sprintf("%d", task.EndSample))
+		cmdDemucs := exec.Command(pythonPath, "worker_demucs.py", "--flac-path", task.FlacPath, "--shm-tags", string(tagsJson), "--start-sample", fmt.Sprintf("%d", task.StartSample), "--end-sample", fmt.Sprintf("%d", task.EndSample))
 		cmdDemucs.Dir = parentDir
 		
 		var envVars []string
@@ -233,7 +233,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		// 5. Run Librosa Worker
 		log.Printf("%s[W-%d] [IO Monad] Running Librosa worker...%s\n", ColorPurple, id, ColorReset)
 		
-		cmdLibrosa := exec.Command(pythonPath, "librosa_worker.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
+		cmdLibrosa := exec.Command(pythonPath, "worker_librosa.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
 		cmdLibrosa.Dir = parentDir
 		cmdLibrosa.Env = append(os.Environ(), envVars...)
 		
@@ -262,7 +262,7 @@ func worker(id int, taskQueue <-chan TaskPayload, wg *sync.WaitGroup, noDB bool)
 		// 5.5 Run Essentia Worker
 		log.Printf("%s[W-%d] [IO Monad] Running Essentia worker...%s\n", ColorPurple, id, ColorReset)
 		
-		cmdEssentia := exec.Command(pythonPath, "essentia_worker.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
+		cmdEssentia := exec.Command(pythonPath, "worker_essentia.py", "--shm-metadata", demucsMetaJson, "--track-hash", trackHash)
 		cmdEssentia.Dir = parentDir
 		cmdEssentia.Env = append(os.Environ(), envVars...)
 		
