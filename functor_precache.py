@@ -48,10 +48,8 @@ def main():
         sys.exit(1)
 
     t_start = time.perf_counter()
-    
-    # OSのテンポラリディレクトリ(Q:ドライブ等)が容量不足になるのを防ぐため、プロジェクト直下の .cache を使いますわ
-    base_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
-    cache_dir = os.path.join(base_cache_dir, args.track_hash)
+    # ご指定通り、高速なRAMディスク等の恩恵を受けるため OSのテンポラリディレクトリを使用しますわ
+    cache_dir = os.path.join(tempfile.gettempdir(), "flac_analyzer_cache", args.track_hash)
     os.makedirs(cache_dir, exist_ok=True)
 
     logger.info(f"Generating frequency-domain cache to: {cache_dir}")

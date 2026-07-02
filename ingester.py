@@ -173,7 +173,8 @@ def main():
             
             # Clean up the precache .npy directory
             import shutil
-            cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", args.track_hash)
+            import tempfile
+            cache_dir = os.path.join(tempfile.gettempdir(), "flac_analyzer_cache", args.track_hash)
             if os.path.exists(cache_dir):
                 shutil.rmtree(cache_dir)
                 logging.info(f"Cleaned up cache directory: {cache_dir}")
