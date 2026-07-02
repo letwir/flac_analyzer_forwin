@@ -167,9 +167,18 @@ def main():
         
         try:
             os.remove(args.json_path)
-            logging.info(f"Cleaned up JSON file: {args.json_path}")
+            if args.tensor_json_path and os.path.exists(args.tensor_json_path):
+                os.remove(args.tensor_json_path)
+            logging.info(f"Cleaned up JSON files")
+            
+            # Clean up the precache .npy directory
+            import shutil
+            cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", args.track_hash)
+            if os.path.exists(cache_dir):
+                shutil.rmtree(cache_dir)
+                logging.info(f"Cleaned up cache directory: {cache_dir}")
         except Exception as e:
-            logging.warning(f"Failed to delete JSON file: {e}")
+            logging.warning(f"Failed to clean up temporary files: {e}")
             
     except Exception as e:
         logging.error(f"Database UPSERT failed: {e}")

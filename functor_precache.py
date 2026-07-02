@@ -49,8 +49,9 @@ def main():
 
     t_start = time.perf_counter()
     
-    # OSのテンポラリディレクトリを使用（RAMディスクなら更に高速）
-    cache_dir = os.path.join(tempfile.gettempdir(), "flac_analyzer_cache", args.track_hash)
+    # OSのテンポラリディレクトリ(Q:ドライブ等)が容量不足になるのを防ぐため、プロジェクト直下の .cache を使いますわ
+    base_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
+    cache_dir = os.path.join(base_cache_dir, args.track_hash)
     os.makedirs(cache_dir, exist_ok=True)
 
     logger.info(f"Generating frequency-domain cache to: {cache_dir}")
