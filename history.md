@@ -334,3 +334,5 @@ Files: run_batch.ps1, orchestrator/main.go
 ### 2026-07-01 06:52:36 > BugFix/Fixed UPSERT ignoring predictions column/ingester.py
 
 ### 2026-07-01 07:19:24 > BugFix/Fixed orchestrator ingester.py invocation (use pythonPath, append envVars, capture logs)/orchestrator/main.go
+
+### 2026-07-10 10:07:00 > Add DB ER Diagram/ER図（Markdown+Mermaid）をドキュメントとして追加/docs/database_er_diagram.md

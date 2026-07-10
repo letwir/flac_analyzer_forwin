@@ -6,14 +6,9 @@ Producer-Consumer 並列パイプラインで Demucs + Librosa + Essentia を
 """
 
 import argparse
-import glob
 import logging
-import multiprocessing
 import os
 import sys
-import tempfile
-import time
-from multiprocessing import sharedctypes
 
 os.environ["PYTHONUTF8"] = "1"
 os.environ["HF_HUB_OFFLINE"] = "1"
@@ -186,10 +181,10 @@ setup_logging()
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="FLAC Analyzer - Demucs Full-Throttle (Single File)")
-    p.add_argument(
-        "filepath", help="解析対象の単一 FLAC ファイルパス"
+    p = argparse.ArgumentParser(
+        description="FLAC Analyzer - Demucs Full-Throttle (Single File)"
     )
+    p.add_argument("filepath", help="解析対象の単一 FLAC ファイルパス")
     p.add_argument(
         "--workers",
         type=int,
@@ -246,4 +241,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

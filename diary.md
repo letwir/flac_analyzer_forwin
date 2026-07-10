@@ -102,3 +102,5 @@ Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in G
 > Result: Successful, committed to Git.
 ### 2026-07-01 00:28:00
 > Hypothesis/Tried/Rejected/Uncertainty/Search/Correction: Confirmed existing FLAC tags via Mutagen are actually "cue_trackXX_". Retained "CUE_TRACK{num:02d}" prefix for writes and updated regex to parse both. Logged findings and preparing for commit.
+
+### 2026-07-10 10:07:00 > Hypothesis: 旦那様のご要望により、ER図をdocsディレクトリに書き出し、Gitコミットを行う。/Tried: docs/database_er_diagram.md を作成/Rejected: なし/Uncertainty: なし/Search: なし/Correction: なし
