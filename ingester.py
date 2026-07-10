@@ -182,8 +182,74 @@ def main():
             logging.warning(f"Failed to clean up temporary files: {e}")
             
     except Exception as e:
-        logging.error(f"Database UPSERT failed: {e}")
-        sys.exit(1)
+        logging.error(f"Database UPSERT failed: {e}. Falling back to DLQ SQLite...")
+        
+        # DLQ Fallback
+        import sqlite3
+        import json
+        dlq_db_path = os.path.join(os.path.dirname(__file__), "send_failed.db")
+        
+        try:
+            dlq_conn = sqlite3.connect(dlq_db_path)
+            dlq_cur = dlq_conn.cursor()
+            dlq_cur.execute("""
+                CREATE TABLE IF NOT EXISTS failed_payloads (
+                    audio_hash TEXT PRIMARY KEY,
+                    filepath TEXT,
+                    filename TEXT,
+                    track_number INTEGER,
+                    album_artist TEXT,
+                    album TEXT,
+                    artist TEXT,
+                    title TEXT,
+                    meta JSON,
+                    features JSON,
+                    predictions JSON,
+                    failed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Re-read or just dump the objects
+            dlq_cur.execute("""
+                INSERT OR REPLACE INTO failed_payloads (
+                    audio_hash, filepath, filename, track_number, album_artist, album, artist, title, meta, features, predictions
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                args.track_hash,
+                args.flac_path,
+                os.path.basename(args.flac_path),
+                track_number,
+                album_artist,
+                album,
+                artist,
+                title,
+                json.dumps(meta) if isinstance(meta, dict) else meta,
+                json.dumps(features) if isinstance(features, dict) else features,
+                json.dumps(predictions) if isinstance(predictions, dict) else predictions
+            ))
+            dlq_conn.commit()
+            dlq_conn.close()
+            
+            logging.info(f"Successfully saved {args.track_hash} to DLQ (send_failed.db).")
+            
+            # Still clean up local JSON files since they are safe in DLQ
+            try:
+                os.remove(args.json_path)
+                if args.tensor_json_path and os.path.exists(args.tensor_json_path):
+                    os.remove(args.tensor_json_path)
+                import shutil
+                import tempfile
+                cache_dir = os.path.join(tempfile.gettempdir(), "flac_analyzer_cache", args.track_hash)
+                if os.path.exists(cache_dir):
+                    shutil.rmtree(cache_dir)
+            except Exception as cleanup_e:
+                logging.warning(f"Failed to clean up temporary files after DLQ: {cleanup_e}")
+                
+            sys.exit(2) # Return special exit code to orchestrator
+            
+        except Exception as dlq_e:
+            logging.error(f"Failed to write to DLQ SQLite: {dlq_e}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

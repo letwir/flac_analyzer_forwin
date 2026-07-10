@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     FLAC Analyzer 用の PowerShell 7 順次実行バッチスクリプトですわ！
-    GENRE-SUB フォルダ単位で python main.py を都度プロセス起動し、RAM断片化を防ぎますの。
+    すべての FLAC ファイルを Go オーケストレーターに POST します。スキップ判定は Go 側の SQLite DB で一元管理されます。
 
 .PARAMETER MusicRoot
     音楽ライブラリのルートパス（デフォルト: M:\Music\album）
@@ -17,7 +17,6 @@ param (
     [string]$MusicRoot = "M:\Music\album",
     [switch]$Test,
     [switch]$DryRun,
-    [switch]$Skip,
     [switch]$Rough
 )
 
@@ -39,13 +38,10 @@ if ($Test) {
     New-Item -ItemType Directory -Path $tempRoot | Out-Null
 
     # ダミーの GENRE-MAIN / GENRE-SUB 構成作成
-    # フォルダ1: FLACあり
     $sub1 = New-Item -ItemType Directory -Path (Join-Path $tempRoot "J-POP\Artist-A")
     New-Item -ItemType File -Path (Join-Path $sub1.FullName "track1.flac") -Value "dummy flac content" | Out-Null
-    # フォルダ2: FLACあり
     $sub2 = New-Item -ItemType Directory -Path (Join-Path $tempRoot "Rock\Artist-B")
     New-Item -ItemType File -Path (Join-Path $sub2.FullName "track2.flac") -Value "dummy flac content" | Out-Null
-    # フォルダ3: FLACなし (スキップ対象)
     $sub3 = New-Item -ItemType Directory -Path (Join-Path $tempRoot "Anime\Artist-C")
 
     $MusicRoot = $tempRoot
@@ -57,16 +53,6 @@ if ($Test) {
 import sys
 import os
 filepath = sys.argv[1]
-dir_abs = os.path.dirname(os.path.abspath(filepath))
-genre_sub_name = os.path.basename(dir_abs)
-genre_main_name = os.path.basename(os.path.dirname(dir_abs))
-log_file_name = f"log_{genre_main_name}__{genre_sub_name}.log"
-project_root = os.path.dirname(os.path.abspath(__file__))
-log_file_path = os.path.join(project_root, log_file_name)
-
-with open(log_file_path, "a", encoding="utf-8") as f:
-    f.write(f"[Direct-Process] OK: {os.path.abspath(filepath)}\n")
-
 print(f"[Dummy Target] Pythonが正常に起動されましたわ！ (Target: {filepath})")
 sys.exit(0)
 "@
@@ -74,10 +60,6 @@ sys.exit(0)
     $targetScript = $dummyPythonScript
 } else {
     $targetScript = Join-Path $PSScriptRoot "main.py"
-    if (-not (Test-Path $targetScript)) {
-        Write-Error "main.py がスクリプトと同じディレクトリに見つかりませんわ: $PSScriptRoot"
-        exit 1
-    }
 }
 
 # ディレクトリ存在チェック
@@ -107,67 +89,9 @@ if (-not $orchestratorProcess) {
     Write-Host "🟢 Orchestrator は既に起動済みですわ！" -ForegroundColor Green
 }
 
-# 単一の完了マークファイル flac.done の準備とロードしますわ
-$doneFilePath = Join-Path $PSScriptRoot "flac.done"
-$completedFiles = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-
-if ($Skip) {
-    if (-not (Test-Path $doneFilePath)) {
-        Write-Host "💡 過去のログファイルから完了履歴を flac.done に移行していますわ..." -ForegroundColor Yellow
-        $migratedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        $oldAnalyzerPath = Join-Path (Split-Path $PSScriptRoot -Parent) "flac_analyzer"
-        $logFiles = Get-ChildItem -Path $oldAnalyzerPath -Filter "log_*.log" -File -ErrorAction SilentlyContinue
-        if ($null -ne $logFiles) {
-            foreach ($logFile in $logFiles) {
-                try {
-                    $lines = Get-Content -Path $logFile.FullName -Encoding utf8
-                    foreach ($line in $lines) {
-                        if ($line -match "\[Direct-Process\] OK:\s*(.*)") {
-                            $null = $migratedPaths.Add($Matches[1].Trim())
-                        }
-                    }
-                } catch {}
-            }
-        }
-        
-        $oldDoneFilePath = Join-Path $oldAnalyzerPath "flac.done"
-        if (Test-Path $oldDoneFilePath) {
-            try {
-                $doneLines = Get-Content -Path $oldDoneFilePath -Encoding utf8
-                foreach ($line in $doneLines) {
-                    if (-not [System.String]::IsNullOrWhiteSpace($line)) {
-                        $null = $migratedPaths.Add($line.Trim())
-                    }
-                }
-            } catch {}
-        }
-        if ($migratedPaths.Count -gt 0) {
-            $contentStr = [System.String]::Join([System.Environment]::NewLine, @($migratedPaths)) + [System.Environment]::NewLine
-            [System.IO.File]::WriteAllText($doneFilePath, $contentStr, [System.Text.Encoding]::UTF8)
-            Write-Host "🟢 $($migratedPaths.Count) 件の履歴を flac.done に移行いたしましたの！" -ForegroundColor Green
-        } else {
-            [System.IO.File]::WriteAllText($doneFilePath, "", [System.Text.Encoding]::UTF8)
-        }
-    }
-
-    # flac.done のロード
-    try {
-        $doneLines = Get-Content -Path $doneFilePath -Encoding utf8
-        foreach ($line in $doneLines) {
-            if (-not [System.String]::IsNullOrWhiteSpace($line)) {
-                $null = $completedFiles.Add($line.Trim())
-            }
-        }
-        Write-Host "🟢 flac.done から $($completedFiles.Count) 件の完了パスをロードいたしましたわ！" -ForegroundColor Green
-    } catch {
-        Write-Host "⚠️ flac.done の読み込みに失敗しましたわ: $_" -ForegroundColor Yellow
-    }
-}
-
 # 1層目: GENRE-MAIN を走査
 $genreMains = Get-ChildItem -Path $MusicRoot -Directory
 $processedCount = 0
-$skippedCount = 0
 
 foreach ($genreMain in $genreMains) {
     # 2層目: GENRE-SUB を走査
@@ -180,36 +104,14 @@ foreach ($genreMain in $genreMains) {
             continue
         }
 
-        # 解析対象のフォルダ名から、プロジェクト直下に置くユニークなログファイル名を生成しますわ
-        $genreMainName = Split-Path (Split-Path $genreSub.FullName -Parent) -Leaf
-        $genreSubName = $genreSub.Name
-        $logFileName = "log_${genreMainName}__${genreSubName}.log"
-        $logFilePath = Join-Path $PSScriptRoot $logFileName
-
-        $subProcessedCount = 0
-        $subSkippedCount = 0
-
         foreach ($flac in $flacs) {
             $flacPath = $flac.FullName
-
-            # スキップ判定
-            if ($Skip -and $completedFiles.Contains($flacPath)) {
-                $subSkippedCount++
-                $skippedCount++
-                continue
-            }
-
             $processedCount++
-            $subProcessedCount++
-            Write-Host ""
-            Write-Host "==================================================" -ForegroundColor Cyan
-            Write-Host "[$processedCount] 処理開始: $flacPath" -ForegroundColor Cyan
-            Write-Host "==================================================" -ForegroundColor Cyan
+            
+            Write-Host "[$processedCount] POSTing to Orchestrator: $flacPath" -ForegroundColor Cyan
 
             if ($DryRun) {
-                $dryArgs = "--resume"
-                if ($Rough) { $dryArgs += " --rough" }
-                Write-Host "[DryRun] 実行予定コマンド: python `"$targetScript`" `"$flacPath`" $dryArgs" -ForegroundColor Gray
+                Write-Host "[DryRun] 実行予定コマンド: POST http://127.0.0.1:8080/task (Target: $flacPath)" -ForegroundColor Gray
                 continue
             }
 
@@ -222,25 +124,27 @@ foreach ($genreMain in $genreMains) {
                     targetScript = $targetScript
                 } | ConvertTo-Json -Compress
                 
-                Invoke-RestMethod -Uri "http://127.0.0.1:8080/task" -Method Post -Body $body -ContentType "application/json" | Out-Null
-                Write-Host "🟢 キューに投下いたしましたわ: $flacPath" -ForegroundColor Green
+                $response = Invoke-RestMethod -Uri "http://127.0.0.1:8080/task" -Method Post -Body $body -ContentType "application/json" -ErrorAction Stop
+                
+                # We can't strictly read the exact status code easily with simple Invoke-RestMethod if it's not an error.
+                # But it won't throw on 200 or 202.
+                if ($response -match "Skipped") {
+                    Write-Host "  [-] スキップ (Go判定済み): $flacPath" -ForegroundColor Yellow
+                } else {
+                    Write-Host "  [+] キューに投下いたしましたわ: $flacPath" -ForegroundColor Green
+                }
             }
             catch {
                 Write-Host "❌ 実行エラーが発生いたしましたわ: $_" -ForegroundColor Red
             }
-        }
-
-        if ($subSkippedCount -gt 0) {
-            Write-Host "  [-] スキップ (処理完了済み): $subSkippedCount 件 (サブフォルダ: $($genreSub.FullName))" -ForegroundColor Yellow
         }
     }
 }
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Green
-Write-Host " バッチ処理が終了いたしましたわ！"
-Write-Host " 処理完了: $processedCount 件"
-Write-Host " スキップ: $skippedCount 件"
+Write-Host " バッチ処理(タスク投下)が終了いたしましたわ！"
+Write-Host " 合計投下数: $processedCount 件"
 $stopWatch.Stop()
 Write-Host " 投下所要時間: $($stopWatch.Elapsed.ToString())"
 Write-Host "=========================================" -ForegroundColor Green
