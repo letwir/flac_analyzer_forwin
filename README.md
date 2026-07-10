@@ -130,41 +130,173 @@ python.exe test_integration.py
 
 音源ファイルの読み込みからメタデータの蒐集、ステム分離、特徴量解析、そしてデータベースへの統合（フォールバック付き）に至るパイプラインの全体フローは、以下の通りでございますわ！
 
+### プログラムの状態図 (State Diagram)
+
 ```mermaid
-flowchart TD
-    Start([FLACファイルの解析開始]) --> ReadFLAC[1. FLACファイルの読み込み & mutagen.FLACの生成]
-    ReadFLAC --> ExtractRawTags[2. mutagenから全メタデータを抽出 <br> <b>raw_tags</b> 辞書の構築 <br> ※1要素なら文字列へ平坦化、複数ならリスト維持]
+stateDiagram-v2
+    [*] --> Init
+    Init --> ReadFLAC: mutagenで読み込み
+    ReadFLAC --> ExtractTags: メタデータ抽出
     
-    ExtractRawTags --> DetectCuesheet{3. CUESHEETの存在判定}
+    ExtractTags --> MultiTrack: CUESHEETあり
+    ExtractTags --> SingleTrack: CUESHEETなし
     
-    %% Cuesheetありの分岐
-    DetectCuesheet -- Cuesheetあり (マルチトラック) --> LoopTracks[4. 各トラックのループ処理 (num = 1, 2, ...)]
-    LoopTracks --> FilterTrackTags[5. raw_tagsから自トラック用メタデータを抽出 <br> <b>CUE_TRACK_num_TAGNAME</b> に合致するもののみ <br> プレフィックスを剥いで <b>track_meta</b> にマージ]
-    FilterTrackTags --> ResolveTrackInfo[6. トラック個別解決値 (title, artist, duration 等) で上書き]
-    ResolveTrackInfo --> SliceAudio[7. トラック境界のサンプル位置で波形を切り出し]
-    SliceAudio --> run_demucs_multi[8. GLOBAL_DEMUCS による波形分離]
+    MultiTrack --> Mix
+    SingleTrack --> Mix: 波形分離
     
-    %% Cuesheetなしの分岐
-    DetectCuesheet -- Cuesheetなし (シングルトラック) --> FilterCommonTags[4'. raw_tagsから個別トラックタグを除外 <br> 共通タグのみを <b>track_meta</b> にマージ]
-    FilterCommonTags --> ResolveGlobalInfo[5'. ファイルグローバル情報 (title, artist, duration 等) で上書き]
-    ResolveGlobalInfo --> run_demucs_single[6'. GLOBAL_DEMUCS による波形分離]
+    Mix --> Bass
+    Mix --> Drums
+    Mix --> Vocals
+    Mix --> Other
     
-    %% 共通の解析・統合フロー
-    run_demucs_multi --> run_librosa[9. 各ステムへの Librosa 特徴量並列抽出 <br> ＆ 相対 SNR 算出]
-    run_demucs_single --> run_librosa
+    Bass --> FeatureExtraction
+    Drums --> FeatureExtraction
+    Vocals --> FeatureExtraction
+    Other --> FeatureExtraction
+    Mix --> FeatureExtraction
     
-    run_librosa --> run_essentia[10. mix ステムへの Essentia 直列ONNX推論]
+    FeatureExtraction --> EssentiaPredictions: mixのみONNX推論
+    EssentiaPredictions --> DatabaseUPSERT
+    FeatureExtraction --> DatabaseUPSERT: mix以外
     
-    run_essentia --> assemble_sql[11. SQLインサートデータの組み立て]
-    assemble_sql --> db_uri_check{12. 接続環境変数 の存在判定}
+    DatabaseUPSERT --> RealDB: 接続可能
+    DatabaseUPSERT --> DummySQL: 接続不可
+    RealDB --> WriteTags: FLACタグアトミック更新
+    DummySQL --> WriteTags: FLACタグアトミック更新
     
-    db_uri_check -- 存在し接続可能 --> actual_insert[13. PostgreSQLへの実インサート <br> <b>raw.library_flac</b> への UPSERT]
-    db_uri_check -- 存在しない or 接続失敗 --> dummy_sql[13'. ダミーSQLの標準出力ダンプへのフォールバック <br> ※UTF-8安全出力]
+    WriteTags --> [*]: 終了
+```
+
+### 処理のシーケンス図 (Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+    participant Main as main.py
+    participant Pipeline as pipeline.py
+    participant Models as models.py
+    participant Analyzer as analyzer.py
+    participant DB as db.py
     
-    actual_insert --> write_tags[14. 特徴量タグを FLAC ファイルへ書き戻し <br> ※アトミック更新 & タイムスタンプ完全継承]
-    dummy_sql --> write_tags
+    Main->>Pipeline: FLACファイル解析開始
+    activate Pipeline
+    Pipeline->>Pipeline: メタデータ&Cuesheet抽出
+    Pipeline->>Models: GLOBAL_DEMUCSによる波形分離
+    activate Models
+    Models-->>Pipeline: 各Stem波形 (mix, drums, bass, etc.)
+    deactivate Models
     
-    write_tags --> End([解析完了])
+    par Stemごとの特徴量抽出
+        Pipeline->>Analyzer: Stem波形の解析要求
+        activate Analyzer
+        Analyzer-->>Pipeline: Librosa音響特徴量 (features)
+        deactivate Analyzer
+    end
+    
+    Pipeline->>Models: ONNXモデルによるMood/Genre分類
+    activate Models
+    Models-->>Pipeline: Essentia予測結果 (predictions)
+    deactivate Models
+    
+    Pipeline->>DB: UPSERT (meta, features, predictions)
+    activate DB
+    DB-->>Pipeline: 保存完了
+    deactivate DB
+    
+    Pipeline->>Pipeline: FLACファイルへのタグ書き戻し
+    Pipeline-->>Main: 解析完了
+    deactivate Pipeline
+```
+
+---
+
+## 🗄️ データベース設計と永続化 (Database Architecture)
+
+PostgreSQL における `JSONB` のカプセル化と、トリガーを用いた履歴の自動退避（CoMonad的振る舞い）によって、極めて堅牢かつ柔軟なデータ永続化を実現しておりますの。
+
+### 実体関連モデル (ER Diagram)
+
+```mermaid
+erDiagram
+    raw_library_flac ||--o{ raw_library_flac_history : history
+    
+    raw_library_flac {
+        int id PK
+        string audio_hash
+        string filepath
+        string filename
+        int track_number
+        string album_artist
+        string album
+        string artist
+        string title
+        jsonb meta
+        jsonb features
+        jsonb predictions
+        timestamp collected_at
+        timestamp analyzed_at
+    }
+
+    raw_library_flac_history {
+        int history_id PK
+        int library_id FK
+        string audio_hash
+        string filepath
+        string filename
+        int track_number
+        string album_artist
+        string album
+        string artist
+        string title
+        jsonb meta
+        jsonb features
+        jsonb predictions
+        timestamp collected_at
+        timestamp analyzed_at
+        timestamp archived_at
+    }
+```
+
+### JSONB カラム構造の凡例
+
+データベースの `JSONB` カラムには、それぞれ以下のような構造でデータが動的に格納されますわ！
+
+```json
+// 【meta】: メタデータ (可変な文字列やリスト)
+{
+  "album": "Some Album Name",
+  "artist": "Some Artist",
+  "title": "Some Title",
+  "date": "2023-10-27",
+  "tracknumber": "01",
+  "genre": ["Electronic", "Ambient"]
+}
+
+// 【features】: Librosa 音響特徴量 (Stemごとに分離)
+{
+  "mix": {
+    "bpm": 128.0,
+    "rms_mean": 0.153,
+    "spectral_centroid_mean": 2500.5,
+    "zcr_mean": 0.052,
+    "chroma_mean": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.1, 0.2, 0.3]
+  },
+  "bass": {
+    "rms_mean": 0.081,
+    "spectral_centroid_mean": 450.2
+    // ... mixと同様の音響特徴量
+  }
+}
+
+// 【predictions】: Essentia 分類結果 (0.0〜1.0 の推論確率)
+{
+  "danceability": 0.852,
+  "genre_dortmund": {
+    "electronic": 0.950,
+    "rock": 0.050
+  },
+  "mood_happy": 0.720,
+  "mood_sad": 0.105
+}
 ```
 
 ---
