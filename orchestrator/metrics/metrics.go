@@ -37,6 +37,13 @@ var (
 			Help: "Number of Demucs concurrency slots currently in use",
 		},
 	)
+
+	AnalyzerErrorsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "analyzer_errors_total",
+			Help: "Total number of errors encountered in the orchestrator or Python workers",
+		},
+	)
 )
 
 func InitMetricsServer(addr string) error {

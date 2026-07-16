@@ -18,6 +18,36 @@ import (
 	"flac_analyzer/orchestrator/state"
 )
 
+type LogLevel int
+
+const (
+	LevelDebug LogLevel = iota
+	LevelInfo
+	LevelWarn
+	LevelError
+)
+
+func ParseLogLevel(s string) LogLevel {
+	switch strings.ToLower(s) {
+	case "debug":
+		return LevelDebug
+	case "info":
+		return LevelInfo
+	case "warn", "warning":
+		return LevelWarn
+	case "error":
+		return LevelError
+	default:
+		return LevelInfo
+	}
+}
+
+type EventLogger interface {
+	Info(eid uint32, msg string) error
+	Warning(eid uint32, msg string) error
+	Error(eid uint32, msg string) error
+}
+
 type TaskPayload struct {
 	FlacPath     string `json:"flacPath"`
 	FileSize     int64  `json:"fileSize"`
@@ -37,6 +67,8 @@ type Config struct {
 	ShmAllocationDelaySec int
 	QueueDir              string
 	PythonEnv             map[string]string
+	LogLevel              LogLevel
+	EventLog              EventLogger
 }
 
 type Dispatcher struct {
@@ -46,6 +78,8 @@ type Dispatcher struct {
 	allocMutex      sync.Mutex
 	demucsSemaphore chan struct{}
 	wg              sync.WaitGroup
+	logLevel        LogLevel
+	eventLog        EventLogger
 }
 
 const (
@@ -64,7 +98,42 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		db:              db,
 		taskQueue:       make(chan TaskPayload, 1000),
 		demucsSemaphore: make(chan struct{}, cfg.DemucsConcurrentLimit),
+		logLevel:        cfg.LogLevel,
+		eventLog:        cfg.EventLog,
 	}
+}
+
+func (d *Dispatcher) LogDebug(format string, v ...interface{}) {
+	if d.logLevel <= LevelDebug {
+		log.Printf(format, v...)
+	}
+}
+
+func (d *Dispatcher) LogInfo(format string, v ...interface{}) {
+	if d.logLevel <= LevelInfo {
+		log.Printf(format, v...)
+	}
+}
+
+func (d *Dispatcher) LogWarn(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	if d.logLevel <= LevelWarn {
+		log.Printf("%s[WARN] %s%s\n", ColorYellow, msg, ColorReset)
+	}
+	if d.eventLog != nil {
+		_ = d.eventLog.Warning(1001, msg)
+	}
+}
+
+func (d *Dispatcher) LogError(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	if d.logLevel <= LevelError {
+		log.Printf("%s[ERROR] %s%s\n", ColorRed, msg, ColorReset)
+	}
+	if d.eventLog != nil {
+		_ = d.eventLog.Error(1002, msg)
+	}
+	metrics.AnalyzerErrorsTotal.Inc()
 }
 
 func (d *Dispatcher) Start() {
@@ -85,21 +154,32 @@ func (d *Dispatcher) Stop() {
 	d.wg.Wait()
 }
 
-func streamColoredLog(pipe io.ReadCloser, workerID int, role string, color string) {
+func (d *Dispatcher) streamColoredLog(pipe io.ReadCloser, workerID int, role string, color string) {
 	scanner := bufio.NewScanner(pipe)
 	prefix := fmt.Sprintf("%s[W-%d] [%s] ", color, workerID, role)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.Contains(line, "[ERROR]") || strings.Contains(strings.ToLower(line), "error") || strings.Contains(strings.ToLower(line), "traceback") {
-			fmt.Printf("%s[W-%d] [%s] %s%s\n", ColorRed, workerID, role, line, ColorReset)
+		isError := strings.Contains(line, "[ERROR]") || strings.Contains(strings.ToLower(line), "error") || strings.Contains(strings.ToLower(line), "traceback")
+		if isError {
+			msg := fmt.Sprintf("[W-%d] [%s] %s", workerID, role, line)
+			fmt.Printf("%s%s%s\n", ColorRed, msg, ColorReset)
+			if d.eventLog != nil {
+				_ = d.eventLog.Error(1003, msg)
+			}
+			metrics.AnalyzerErrorsTotal.Inc()
 		} else {
-			fmt.Printf("%s%s%s\n", prefix, line, ColorReset)
+			if d.logLevel <= LevelInfo {
+				fmt.Printf("%s%s%s\n", prefix, line, ColorReset)
+			}
 		}
 	}
 }
 
 func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID int, role, color string, captureStdout bool) (string, error) {
-	exePath, _ := os.Executable()
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("failed to get executable path: %w", err)
+	}
 	parentDir := filepath.Dir(filepath.Dir(exePath))
 
 	pythonPath := "python.exe"
@@ -128,24 +208,27 @@ func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID 
 		cmd.Stdout = &outBuf
 	}
 
-	stderrPipe, _ := cmd.StderrPipe()
-	
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to get stderr pipe for %s: %w", role, err)
+	}
+
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start %s: %w", role, err)
 	}
-	
-	streamColoredLog(stderrPipe, workerID, role, color)
-	
-	err := cmd.Wait()
+
+	d.streamColoredLog(stderrPipe, workerID, role, color)
+
+	err = cmd.Wait()
 	if err != nil {
 		return "", fmt.Errorf("%s failed: %w", role, err)
 	}
-	
+
 	return outBuf.String(), nil
 }
 
 func (d *Dispatcher) failTask(task TaskPayload, errMsg string) {
-	log.Printf("%s[Dispatcher] Task Failed: %s -> %s%s\n", ColorRed, task.FlacPath, errMsg, ColorReset)
+	d.LogError("[Dispatcher] Task Failed: %s -> %s", task.FlacPath, errMsg)
 	d.db.UpdateStatus(task.FlacPath, state.StatusFailed, errMsg)
 	metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
 	metrics.AnalyzerActiveWorkers.Dec()
@@ -160,12 +243,12 @@ func (d *Dispatcher) worker(id int) {
 		metrics.AnalyzerQueueLength.Dec()
 		metrics.AnalyzerActiveWorkers.Inc()
 		
-		log.Printf("%s[W-%d] [IO Monad] Starting processing: %s%s\n", ColorGreen, id, task.FlacPath, ColorReset)
+		d.LogInfo("[W-%d] [IO Monad] Starting processing: %s", id, task.FlacPath)
 		d.db.UpdateStatus(task.FlacPath, state.StatusRunning, "")
 		
 		estimatedSize := EstimateShmSize(task.FileSize)
 		
-		log.Printf("%s[W-%d] [IO Monad] Waiting for Demucs execution slot...%s\n", ColorCyan, id, ColorReset)
+		d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot...", id)
 		d.demucsSemaphore <- struct{}{}
 		metrics.AnalyzerDemucsSlotsInUse.Inc()
 		
@@ -181,12 +264,12 @@ func (d *Dispatcher) worker(id int) {
 		for {
 			availPhys, err := GetAvailableMemory()
 			if err != nil {
-				log.Printf("%s[W-%d] Memory check failed: %v%s\n", ColorYellow, id, err, ColorReset)
+				d.LogWarn("[W-%d] Memory check failed: %v", id, err)
 				break 
 			}
 			requiredMem := uint64(estimatedSize) + (4 * 1024 * 1024 * 1024) 
 			if availPhys > requiredMem { break }
-			log.Printf("%s[W-%d] Waiting for memory... (Avail: %d MB)%s\n", ColorYellow, id, availPhys/1024/1024, ColorReset)
+			d.LogInfo("[W-%d] Waiting for memory... (Avail: %d MB)", id, availPhys/1024/1024)
 			d.allocMutex.Unlock()
 			time.Sleep(3 * time.Second)
 			d.allocMutex.Lock()
@@ -215,7 +298,14 @@ func (d *Dispatcher) worker(id int) {
 			continue
 		}
 		
-		tagsJson, _ := json.Marshal(tagsMap)
+		tagsJson, err := json.Marshal(tagsMap)
+		if err != nil {
+			<-d.demucsSemaphore
+			metrics.AnalyzerDemucsSlotsInUse.Dec()
+			for _, shm := range shmMap { shm.Close() }
+			d.failTask(task, fmt.Sprintf("Failed to marshal tagsMap: %v", err))
+			continue
+		}
 		
 		// 3. Demucs
 		endSampleParam := task.EndSample
@@ -252,7 +342,7 @@ func (d *Dispatcher) worker(id int) {
 		// 4. Freeze Shared Memory
 		for stem, shm := range shmMap {
 			if err := shm.Freeze(); err != nil {
-				log.Printf("[Worker %d] Failed to freeze SHM %s: %v\n", id, stem, err)
+				d.LogWarn("[Worker %d] Failed to freeze SHM %s: %v", id, stem, err)
 			}
 		}
 
@@ -349,7 +439,7 @@ func (d *Dispatcher) worker(id int) {
 			continue
 		}
 		
-		log.Printf("%s[W-%d] Successfully processed entire pipeline: %s%s\n", ColorGreen, id, task.FlacPath, ColorReset)
+		d.LogInfo("[W-%d] Successfully processed entire pipeline: %s", id, task.FlacPath)
 		d.db.UpdateStatus(task.FlacPath, state.StatusCompleted, "")
 		metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 		metrics.AnalyzerActiveWorkers.Dec()

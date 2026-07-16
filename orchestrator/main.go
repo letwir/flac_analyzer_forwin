@@ -16,6 +16,7 @@ import (
 	"flac_analyzer/orchestrator/metrics"
 	"flac_analyzer/orchestrator/state"
 	"github.com/pelletier/go-toml/v2"
+	"golang.org/x/sys/windows/svc/eventlog"
 )
 
 type Config struct {
@@ -24,13 +25,30 @@ type Config struct {
 		DemucsConcurrentLimit int    `toml:"demucs_concurrent_limit"`
 		ShmAllocationDelaySec int    `toml:"shm_allocation_delay_sec"`
 		QueueDir              string `toml:"queue_dir"`
+		LogLevel              string `toml:"log_level"`
 	} `toml:"orchestrator"`
 	PythonEnv map[string]string `toml:"python_env"`
 }
 
+func setupEventLog() *eventlog.Log {
+	const sourceName = "FlacAnalyzerOrchestrator"
+	// イベントソースのインストールを試みます
+	// 失敗してもすでに登録済み、または権限不足の可能性があります
+	_ = eventlog.InstallAsEventCreate(sourceName, eventlog.Error|eventlog.Warning|eventlog.Info)
+
+	elog, err := eventlog.Open(sourceName)
+	if err != nil {
+		log.Printf("Warning: Failed to open Windows event log (maybe run as non-admin?): %v\n", err)
+		return nil
+	}
+	return elog
+}
+
 func main() {
 	var configPath string
+	var logLevelStr string
 	flag.StringVar(&configPath, "config", "../config.toml", "Path to config.toml")
+	flag.StringVar(&logLevelStr, "log-level", "", "Log level (debug, info, warn, error)")
 	flag.Parse()
 
 	// 1. Load config
@@ -51,6 +69,15 @@ func main() {
 		cfg.Orchestrator.DemucsConcurrentLimit = 1
 	}
 
+	// Determine Log Level
+	targetLogLevelStr := "info"
+	if logLevelStr != "" {
+		targetLogLevelStr = logLevelStr
+	} else if cfg.Orchestrator.LogLevel != "" {
+		targetLogLevelStr = cfg.Orchestrator.LogLevel
+	}
+	logLevel := dispatcher.ParseLogLevel(targetLogLevelStr)
+
 	// 2. Initialize State DB
 	dbPath := "orchestrator.db"
 	stateDB, err := state.InitDB(dbPath)
@@ -67,6 +94,12 @@ func main() {
 		}
 	}()
 
+	// Initialize Windows Event Log
+	elog := setupEventLog()
+	if elog != nil {
+		defer elog.Close()
+	}
+
 	// 4. Initialize Dispatcher
 	dispConfig := dispatcher.Config{
 		NumWorkers:            cfg.Orchestrator.NumWorkers,
@@ -74,10 +107,12 @@ func main() {
 		ShmAllocationDelaySec: cfg.Orchestrator.ShmAllocationDelaySec,
 		QueueDir:              cfg.Orchestrator.QueueDir,
 		PythonEnv:             cfg.PythonEnv,
+		LogLevel:              logLevel,
+		EventLog:              elog,
 	}
 	disp := dispatcher.NewDispatcher(dispConfig, stateDB)
 	disp.Start()
-	log.Printf("Dispatcher started with %d workers (Demucs Limit: %d)\n", dispConfig.NumWorkers, dispConfig.DemucsConcurrentLimit)
+	log.Printf("Dispatcher started with %d workers (Demucs Limit: %d, LogLevel: %s)\n", dispConfig.NumWorkers, dispConfig.DemucsConcurrentLimit, targetLogLevelStr)
 
 	// 5. Setup Task Receiver Endpoint
 	mux := http.NewServeMux()

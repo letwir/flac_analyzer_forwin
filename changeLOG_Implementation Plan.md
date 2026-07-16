@@ -1,57 +1,33 @@
-# Go Orchestrator 汎用化・堅牢化計画 (Implementation Plan)
+# Go Orchestrator ログ制御・イベントログ連携・エラー追跡・エラー握りつぶし修正計画 (Implementation Plan)
 
 ## 概要と設計思想
-現在の `orchestrator/main.go` を、本プロジェクト（FLAC解析）専用 of ベタ書きから、**「汎用的なジョブ管理基盤」**として再利用できるアーキテクチャにリファクタリングします。
-現在の進捗として、主要モジュールの分離と動作検証が完了しました。
+Go Orchestrator においてログの出力を必要最小限に制御できるようにしつつ、発生したエラーを厳密に捕捉してメトリクスや Windows イベントログに通知できるようにし、観測性を大幅に強化しますわ。
 
 ## アーキテクチャの構成
 
 ```text
 orchestrator/
-├── main.go               # エントリーポイント、各パッケージ of 結合
-├── metrics/              # Prometheus Exporter
-├── dispatcher/           # ワーカー管理、SHMリソース制御、タスク実行
-└── state/                # 状態管理（DB操作）
+├── main.go               # エントリーポイント、Windowsイベントログ初期化、引数パース
+├── metrics/              # Prometheus Exporter（エラーカウンター追加）
+├── dispatcher/           # ログレベル制御、Windowsイベントログ書き込み、エラー握りつぶし修正
+└── state/                # 状態管理
 ```
 
 ---
 
 ## 提案された変更内容
 
-### 1. 状態管理DBの導入 (`state` パッケージ)
-- **CGOフリー化**: GCC不要で動作する `modernc.org/sqlite` に移行し、Windows上でのビルド・実行互換性を 100% 確保しました。
-- SQLite を用いて「処理中」「完了」「エラー」のステータスを管理します。
+### 1. ログレベル制御の導入
+- 標準コンソール（stdout）のデフォルトログレベルを `info` とし、`config.toml` またはコマンドライン引数 `--log-level` を用いてログレベルをオーバーライド可能にいたしましたの。
+- ログレベルに応じてコンソールログの出力をフィルタリングし、不要な情報ログの抑止に対応いたしましたわ。
+- Python プロセスからの標準エラー出力ストリームにおいても、ログレベルが `error` の時は通常行をミュートし、エラーに関する出力（`[ERROR]`, `error`, `traceback`）のみを赤字で出力するように制御いたしましたの。
 
-### 2. ディスパッチャの分離 (`dispatcher` パッケージ)
-- ワーカー管理、SHMリソース制御、およびPythonスクリプト群の呼び出しとルーティングを分離しました。
-- Python環境を `.venv` から優先的にロードするパス解決機構を導入し、依存パッケージのインポートエラーを解消しました。
+### 2. Windows アプリケーションイベントログへの連動
+- `golang.org/x/sys/windows/svc/eventlog` パッケージを用いて、`warn` 以上のログを Windows の「イベントビューアー（アプリケーションログ）」に自動で転送（マルチキャスト）するようにいたしましたわ（イベントソース名: `FlacAnalyzerOrchestrator`）。
+- 管理者権限不足でイベントソースの登録やオープンが失敗した場合でも、クラッシュせずコンソールに警告を出力して、安全に処理を続行するフォールバック設計を組み込みますわ。
 
-### 3. メトリクスの公開 (`metrics` パッケージ)
-- `/metrics` エンドポイントを開設し、Prometheus メトリクスを公開します。
+### 3. Prometheus エラー件数メトリクス
+- `metrics.go` に `analyzer_errors_total` カウンターメトリクスを追加し、Go Orchestrator 自身がエラーを出力した際、および Python の標準エラー出力からエラー行が検出された際にカウンターをインクリメントするようにしますわ。
 
-### 4. Postgres送信失敗時のDLQ (Dead Letter Queue) 実装
-- PostgreSQLへの接続・UPSERT失敗時に、例外をキャッチしてローカルの `send_failed.db` へペイロードを退避する機構を実装・検証しました。
-
----
-
-## v0.9 進捗状況 (Verification Progress)
-
-### Phase 1: 環境・依存関係の検証と単体テスト
-- [x] Goソースのビルド検証 (`go build`) と単体テスト (`go test ./...`) のパス確認 (2026-07-17 完了)
-- [x] Python仮想環境 (`.venv`) の依存パッケージ（`prometheus-client`, `sqlite3` 等）のインストール状況確認（※GoがPrometheus Exporter内蔵、Pythonは標準sqlite3使用のため追加不要）
-
-### Phase 2: SQLite タスク状態管理 (`state` パッケージ) の機能検証
-- [x] `/task` エンドポイントへのタスク投下による SQLite (`orchestrator.db`) への状態書き込み（PENDING -> RUNNING -> COMPLETED/FAILED） of 確認
-- [x] 重複したタスクを投げた際に `CheckOrInsert` で正しく重複が弾かれ、`Skipped` (200 OK) になることの確認
-
-### Phase 3: 共有メモリ（SHM）と Python ワーカーの連携・OOM 回避の検証
-- [x] Windows環境における共有メモリ確保、`worker_demucs.py` の書き込み、`Freeze()`（PAGE_READONLY化）がエラーなく動作することの確認
-- [x] 後続ワーカー（Librosa, Tensor, Essentia）が共有メモリを Read-Only で正しくアタッチし、並列動作することの確認
-
-### Phase 4: DLQ (Dead Letter Queue) と再送スクリプトの動作検証
-- [x] Postgres を一時停止させた状態で `ingester.py` を走らせ、`send_failed.db` にペイロードが正しく退避されることの確認
-- [x] Postgres 復帰後に `retry_ingest.py` を実行し、データが Postgres に無事 UPSERT され、DLQ（SQLite）から削除されることの確認
-
-### Phase 5: メトリクス監視と全体バッチ統合検証
-- [x] `:2112/metrics` 経由での Prometheus メトリクスが出力されることの確認（キューの長さやアクティブワーカー数）
-- [x] `run_batch.ps1` を用いた複数フォルダ・ファイルに対するエンドツーエンド of 自動実行検証
+### 4. エラー握りつぶしの修正
+- `dispatcher.go` 内でエラーを捨てていた `os.Executable()`, `cmd.StderrPipe()`, `json.Marshal(tagsMap)` 等の戻り値エラーを厳密にチェックし、エラー発生時は詳細なログ出力およびタスクの `StatusFailed` への遷移（およびメトリクス連携）を正しく行うよう修正いたしましたわ。

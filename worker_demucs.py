@@ -43,7 +43,7 @@ def main():
     try:
         shm_tags = json.loads(args.shm_tags)
     except Exception as e:
-        logger.error(f"Failed to parse --shm-tags: {e}")
+        logger.exception("Failed to parse --shm-tags")
         sys.exit(1)
 
     logger.info(f"Loading FLAC: {args.flac_path}")
@@ -63,7 +63,7 @@ def main():
         y = y.T # demucs_worker expects (channels, samples)
         sr = 44100
     except Exception as e:
-        logger.error(f"Failed to load audio: {e}")
+        logger.exception("Failed to load audio")
         sys.exit(1)
 
     logger.info("Initializing Demucs model...")
@@ -106,7 +106,7 @@ def main():
             }
             
     except Exception as e:
-        logger.error(f"Failed to write to SHM: {e}")
+        logger.exception("Failed to write to SHM")
         sys.exit(1)
 
     # 成功したら stdout にメタデータを吐き出して終了

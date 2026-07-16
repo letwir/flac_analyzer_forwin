@@ -37,7 +37,7 @@ def main():
         sr = metadata["sr"]
         stems_info = metadata["stems"]
     except Exception as e:
-        logger.error(f"Failed to parse --shm-metadata: {e}")
+        logger.exception("Failed to parse --shm-metadata")
         sys.exit(1)
         
     if "mix" not in stems_info:
@@ -66,7 +66,7 @@ def main():
         patches = models.extract_mel_patches(y, sr, n_patches=64)
         predictions = models.run_essentia_serialized(patches, essentia_models)
     except Exception as e:
-        logger.error(f"Essentia extraction failed: {e}")
+        logger.exception("Essentia extraction failed")
         shm.close()
         sys.exit(1)
         

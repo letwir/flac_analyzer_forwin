@@ -119,3 +119,27 @@ Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in G
 
 ### 2026-07-17 05:11:00 > Hypothesis: 旦那様の承認のもと、ローカルDB接続テスト用 config_test.toml を整備し、CGO_ENABLED=0 に起因する go-sqlite3 スタブクラッシュと、グローバル python.exe 呼び出しによる librosa ロードエラー、end-sample 0 境界による flac.exe 終了コード 1 エラー、huggingface オフラインモード制限を順次解決してテストを完走させる。/Tried: sqlite ドライバを modernc.org/sqlite へ移行、dispatcher.go での .venv パス優先解決、endSample 補正 (-1 変換) を適用し、hf_hub_offline を 0 に変更。1秒のダミーFLACファイルを用いたテスト短縮スクリプトを scratch で作動。/Result: 3曲すべてのパイプラインが 224秒で完結（STATUS: SUCCESS）し、終了後にオリジナルFLAC群を完全復元しましたわ。
 ### 2026-07-17 08:15:00 > Hypothesis: 旦那様からのご指示に基づき、DLQ再送処理 (retry_ingest.py) の検証を行うためローカルの PostgreSQL 接続環境を検証。/Tried: postgresql-x64-18 サービスの稼働を確認したが、データベース flac_analyzer_test が存在しないため psycopg2 接続時に UnicodeDecodeError (Shift_JISのエラーメッセージ起因) が発生。/Result: デフォルト postgres データベースに接続して flac_analyzer_test を CREATE DATABASE し、sql/schema.sql を適用してスキーマとロールの初期化を完了しましたの。
+
+### 2026-07-17 08:19:22
+> Hypothesis: リポジトリがクソデカくてGithubにpushできない原因は、コミット履歴に巨大なファイル（100MB以上の Demucs ONNX モデル関連の blob や、Go のビルド生成物である orchestrator.exe）が含まれているためですわ。
+> Tried: dust.exe および git ls-files と git log を用いて、ディスク上のサイズとGitが追跡しているファイルを調査。
+> Result: 130MB の HuggingFace ONNX blob ファイル `demucs/models--StemSplitio--htdemucs-6s-onnx/blobs/7ce55792e2231c93fbf92de95f5fd5b3a5e6c89f7db690dfd693e8f1dce56869` および 21MB の `orchestrator/orchestrator.exe` がコミット `b457d9bdfa9848d9f5af6bee1442da7973422d3d` でGit管理下に追加されていることを特定いたしましたの。
+
+### 2026-07-17 08:20:55
+> Hypothesis: 今後の再混入を防ぐため、`.gitignore` にモデルキャッシュディレクトリ `demucs/` を除外設定として追加する必要がございますわ。
+> Tried: `replace_file_content` を用いて、`.gitignore` の末尾に `demucs/` を追記。
+> Result: 設定が正常に反映されましたの。
+
+### 2026-07-17 08:39:53
+> Hypothesis: 旦那様のご要望に基づき、Go Orchestrator におけるログレベル制御（アプリケーションログのエラー以上への絞り込み）の実装、エラー件数メトリクスの追加、およびプロジェクト全体（Go/Python）のエラー握りつぶし個所の調査・修正を行う。
+> Tried: プロジェクト内の `except:` 句や Go 側のエラー無視（`_ :=` や `err != nil` 後の空処理）を rg.exe で調査。
+> Result: Go 側での `os.Executable()`, `cmd.StderrPipe()`, `json.Marshal()` 等の戻り値エラー無視を特定。これらを修正しつつ、ログレベル機能と Prometheus エラーカウンタメトリクスを増設する計画を立案。
+### 2026-07-17 08:42:50
+> Hypothesis: デフォルトで stdout に info 以上のログを流しつつ、Windowsのイベントログ（アプリケーションログ）に warn 以上のログを転送することは、golang.org/x/sys/windows/svc/eventlog パッケージを用いることで実現可能。管理者権限不足によるエラーを回避するための安全なフォールバック設計（レジストリ登録失敗時はイベントログ書き込みのみスキップ）を取り入れる。
+> Tried: Windows Event Log への連携方針を設計。
+> Result: 実装計画書（implementation_plan.md）に Windows イベントログへの連携定義を追加する。
+
+### 2026-07-17 08:46:06
+> Hypothesis: Python 側ワーカーや ingester.py の例外処理において、`logger.error(f"... {e}")` のみで終わっており、詳細なスタックトレースが Go 側に伝達されていない。これらを `logger.exception()` に置換することで、エラーの発生箇所（ファイル名、行数）を含む詳細な Traceback が Go を経由してログおよびイベントログへ伝達されるように改善する。
+> Tried: worker_*.py, functor_precache.py, ingester.py の例外処理を調査。
+> Result: 該当箇所を logger.exception にリファクタリングする。

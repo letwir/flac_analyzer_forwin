@@ -44,7 +44,7 @@ def main():
         sr = metadata["sr"]
         stems_info = metadata["stems"]
     except Exception as e:
-        logger.error(f"Failed to parse metadata: {e}")
+        logger.exception("Failed to parse metadata")
         sys.exit(1)
 
     t_start = time.perf_counter()
@@ -76,7 +76,7 @@ def main():
             
             logger.info(f"Cached spectro for {stem_name}: {S_mag.shape}")
         except Exception as e:
-            logger.error(f"Error calculating precache for {stem_name}: {e}")
+            logger.exception(f"Error calculating precache for {stem_name}")
             sys.exit(1)
         finally:
             shm.close()

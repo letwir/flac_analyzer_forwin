@@ -107,7 +107,7 @@ def main():
         sr = metadata["sr"]
         stems_info = metadata["stems"]
     except Exception as e:
-        logger.error(f"Failed to parse metadata: {e}")
+        logger.exception("Failed to parse metadata")
         sys.exit(1)
 
     t_start = time.perf_counter()
@@ -134,7 +134,7 @@ def main():
             extracted_features[stem_name] = stem_feats
             
         except Exception as e:
-            logger.error(f"Error processing {stem_name}: {e}")
+            logger.exception(f"Error processing {stem_name}")
             sys.exit(1)
         finally:
             shm.close()

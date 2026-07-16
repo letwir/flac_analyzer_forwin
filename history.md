@@ -359,3 +359,12 @@ Files: run_batch.ps1, orchestrator/main.go
 - [x] DONE: インテグレーションテスト `test_integration.py` を、一時的 `config_test.toml` 上書きによる DB 接続テスト形式に修正し、タスクの進捗判定を SQLite `task_state` の状態カウントにすることで `ingester.py` のクリーンアップに干渉されない頑健なテストへと改善。
 - [x] DONE: ダミーの極小 FLAC ファイルの自動生成・退避・復元スクリプトを用意し、CPU 推論によるテスト実行時間を数時間から 3 分台（STATUS: SUCCESS）へ劇的に最適化。
 
+### 2026-07-17 08:45:00
+- [x] DONE: Go Orchestrator にログレベル制御（コンソールのデフォルト info 出力、子プロセスのエラー行絞り込み）を実装。
+- [x] DONE: Windows のアプリケーションイベントログ（EventLog）へ warn 以上のログを転送する仕組みを追加（管理者権限不足時の安全なフォールバック付き）。
+- [x] DONE: Prometheus にエラー累積件数カウンター `analyzer_errors_total` を追加。
+- [x] DONE: Go の dispatcher.go における `os.Executable()`, `cmd.StderrPipe()`, `json.Marshal()` 等の戻り値エラー無視（握りつぶし）を修正。
+- Files: orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, orchestrator/metrics/metrics.go, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md
+### 2026-07-17 08:46:00
+- [x] DONE: Python 側ワーカー群（worker_*.py, functor_precache.py）および ingester.py における例外発生時の logger.error を logger.exception へリファクタリングし、Go 側へエラーの詳細なスタックトレースが漏れなく伝達されるよう堅牢化。
+- Files: worker_demucs.py, worker_librosa.py, worker_essentia.py, worker_tensor.py, functor_precache.py, ingester.py

@@ -37,7 +37,7 @@ def main():
         sr = metadata["sr"]
         stems_info = metadata["stems"]
     except Exception as e:
-        logger.error(f"Failed to parse --shm-metadata: {e}")
+        logger.exception("Failed to parse --shm-metadata")
         sys.exit(1)
 
     logger.info("Starting Librosa extraction from shared memory...")
@@ -85,7 +85,7 @@ def main():
             ctx.clear()
             
         except Exception as e:
-            logger.error(f"Error processing stem {stem_name}: {e}")
+            logger.exception(f"Error processing stem {stem_name}")
             sys.exit(1)
         finally:
             shm.close()

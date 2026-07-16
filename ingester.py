@@ -32,7 +32,7 @@ def main():
         with open(args.json_path, "r", encoding="utf-8") as f:
             json_data = json.load(f)
     except Exception as e:
-        logging.error(f"Failed to parse JSON: {e}")
+        logging.exception("Failed to parse JSON")
         sys.exit(1)
 
     features = json_data.get("features", {})
@@ -112,7 +112,7 @@ def main():
             config = tomllib.load(f)
         db_url = config.get("database", {}).get("url", "")
     except Exception as e:
-        logging.error(f"Failed to load DB URL from {config_path}: {e}")
+        logging.exception(f"Failed to load DB URL from {config_path}")
         sys.exit(1)
 
     if not db_url:
@@ -182,7 +182,7 @@ def main():
             logging.warning(f"Failed to clean up temporary files: {e}")
             
     except Exception as e:
-        logging.error(f"Database UPSERT failed: {e}. Falling back to DLQ SQLite...")
+        logging.exception("Database UPSERT failed. Falling back to DLQ SQLite...")
         
         # DLQ Fallback
         import sqlite3
@@ -247,7 +247,7 @@ def main():
             sys.exit(2) # Return special exit code to orchestrator
             
         except Exception as dlq_e:
-            logging.error(f"Failed to write to DLQ SQLite: {dlq_e}")
+            logging.exception("Failed to write to DLQ SQLite")
             sys.exit(1)
 
 if __name__ == "__main__":
