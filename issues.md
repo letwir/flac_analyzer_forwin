@@ -5,7 +5,6 @@
 ## v0.9 中期目標：Go Orchestrator & DLQ 安定化と動作検証
 
 ### Phase 1: 環境・依存関係の検証と単体テスト
-- [ ] Goソースのビルド検証 (`go build`) と単体テスト (`go test ./...`) のパス確認
 - [ ] Python仮想環境 (`.venv`) の依存パッケージ（`prometheus-client`, `sqlite3` 等）のインストール状況確認
 
 ### Phase 2: SQLite タスク状態管理 (`state` パッケージ) の機能検証

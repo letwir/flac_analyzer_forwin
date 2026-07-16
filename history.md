@@ -339,3 +339,6 @@ Files: run_batch.ps1, orchestrator/main.go
 
 ### 2026-07-16 08:15:05
 - [x] DONE: 中期目標（Go Orchestrator & DLQ 安定化）に関する詳細検討書（懸念点、破滅的改変の可能性、犠牲要素）を作成し、旦那様へ提示。
+
+### 2026-07-17 04:40:00
+- [x] DONE: Goソースのビルド検証 (`go build`) と単体テスト (`go test ./...`) のパス確認。
