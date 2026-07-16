@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type TaskStatus string
@@ -23,7 +23,7 @@ type DB struct {
 
 // InitDB initializes the SQLite database for state management.
 func InitDB(dbPath string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", dbPath)
+	conn, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}

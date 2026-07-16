@@ -99,9 +99,19 @@ func streamColoredLog(pipe io.ReadCloser, workerID int, role string, color strin
 }
 
 func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID int, role, color string, captureStdout bool) (string, error) {
-	pythonPath := "python.exe"
 	exePath, _ := os.Executable()
 	parentDir := filepath.Dir(filepath.Dir(exePath))
+
+	pythonPath := "python.exe"
+	venvPython := filepath.Join(parentDir, ".venv", "Scripts", "python.exe")
+	if _, err := os.Stat(venvPython); err == nil {
+		pythonPath = venvPython
+	} else {
+		venvPythonUnix := filepath.Join(parentDir, ".venv", "bin", "python")
+		if _, err := os.Stat(venvPythonUnix); err == nil {
+			pythonPath = venvPythonUnix
+		}
+	}
 
 	cmdArgs := append([]string{scriptName}, args...)
 	cmd := exec.Command(pythonPath, cmdArgs...)
@@ -208,11 +218,15 @@ func (d *Dispatcher) worker(id int) {
 		tagsJson, _ := json.Marshal(tagsMap)
 		
 		// 3. Demucs
+		endSampleParam := task.EndSample
+		if endSampleParam == 0 {
+			endSampleParam = -1
+		}
 		demucsOut, err := d.runPythonScript("worker_demucs.py", []string{
 			"--flac-path", task.FlacPath, 
 			"--shm-tags", string(tagsJson), 
 			"--start-sample", fmt.Sprintf("%d", task.StartSample), 
-			"--end-sample", fmt.Sprintf("%d", task.EndSample),
+			"--end-sample", fmt.Sprintf("%d", endSampleParam),
 		}, id, "Demucs", ColorCyan, true)
 		
 		<-d.demucsSemaphore

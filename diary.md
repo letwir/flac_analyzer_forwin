@@ -115,4 +115,7 @@ Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in G
 
 ### 2026-07-17 04:40:00 > Hypothesis: 旦那様の指示に従い、まず前回の未コミット変更をコミットし、v0.9 Phase 1 の最初の課題である Go ソースのビルド検証と単体テストを実行する。/Tried: `git.exe add` および `commit` を実行後、`orchestrator` ディレクトリで `go.exe test ./...` および `go.exe build` を実行。/Result: テストはすべて ok (14s) でパスし、ビルドもエラーなく成功することを確認しましたの。
 
-### 2026-07-17 04:45:00 > Hypothesis: 旦那様からのご指示に基づき、プロジェクト内に残存する古い未使用ファイル（デバッグ用・移行用スクリプト等）を特定し、一括削除することでリポジトリをクリーンアップする。/Tried: `grep_search` による参照確認を行った上で、`patch.py` や `refactor_db.py` などの10ファイルを確認。`git.exe rm` を用いて正常に削除を適用。/Result: 不要ファイルを一掃し、リポジトリの整理を完了しましたの。
+### 2026-07-17 04:45:00 > Hypothesis: 旦那様からのご指示に基づき、プロジェクト内に残存する古い未使用ファイル（デバッグ用・移行用スクリプト等）を特定し、一括削除することでリポジトリをクリーンアップする。/Tried: `grep_search` による参照確認を行った上で、`patch.py` や `refactor_db.py` などの10ファイルを確認. `git.exe rm` を用いて正常に削除を適用。/Result: 不要ファイルを一掃し、リポジトリの整理を完了しましたの。
+
+### 2026-07-17 05:11:00 > Hypothesis: 旦那様の承認のもと、ローカルDB接続テスト用 config_test.toml を整備し、CGO_ENABLED=0 に起因する go-sqlite3 スタブクラッシュと、グローバル python.exe 呼び出しによる librosa ロードエラー、end-sample 0 境界による flac.exe 終了コード 1 エラー、huggingface オフラインモード制限を順次解決してテストを完走させる。/Tried: sqlite ドライバを modernc.org/sqlite へ移行、dispatcher.go での .venv パス優先解決、endSample 補正 (-1 変換) を適用し、hf_hub_offline を 0 に変更。1秒のダミーFLACファイルを用いたテスト短縮スクリプトを scratch で作動。/Result: 3曲すべてのパイプラインが 224秒で完結（STATUS: SUCCESS）し、終了後にオリジナルFLAC群を完全復元しましたわ。
+### 2026-07-17 08:15:00 > Hypothesis: 旦那様からのご指示に基づき、DLQ再送処理 (retry_ingest.py) の検証を行うためローカルの PostgreSQL 接続環境を検証。/Tried: postgresql-x64-18 サービスの稼働を確認したが、データベース flac_analyzer_test が存在しないため psycopg2 接続時に UnicodeDecodeError (Shift_JISのエラーメッセージ起因) が発生。/Result: デフォルト postgres データベースに接続して flac_analyzer_test を CREATE DATABASE し、sql/schema.sql を適用してスキーマとロールの初期化を完了しましたの。

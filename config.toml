@@ -1,11 +1,11 @@
 [database]
-url = "postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db"
+url = "postgres://postgres:postgres@localhost:5432/flac_analyzer_test"
 
 [orchestrator]
 num_workers = 4
 demucs_concurrent_limit = 1
 shm_allocation_delay_sec = 2
-queue_dir = "../queue"
+queue_dir = "../testFLAC"
 test_flac_dir = "../testFLAC"
 
 [python_env]

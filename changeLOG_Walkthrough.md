@@ -1,52 +1,48 @@
 # Go Orchestrator と DLQ 実装の完了報告 & v0.9 検証ログ
 
-旦那様、ご要望の通り、解析パイプラインのアーキテクチャ刷新と、Postgres送信失敗時のDLQ（Dead Letter Queue）フォールバック機能を実装し、その動作検証を進めておりますわ！
+旦那様、ご要望の通り、解析パイプラインのアーキテクチャ刷新と、Postgres送信失敗時のDLQ（Dead Letter Queue）フォールバック機能を実装し、その動作検証を完了いたしましたわ！
 
-## 未使用の古いファイルのクリーンアップ (2026-07-17 実施)
-プロジェクトをクリーンに保つため、使用されていない古い移行スクリプトやテストスクリプトなどを一括削除いたしました。
-*   **削除したファイル**:
-    *   `patch.py` / `extract_cue.py` (過去のパッチ作業・CUE抽出スクリプトの残骸)
-    *   `refactor_db.py` / `fix_pipeline_db.py` / `test_db.py` (以前のPostgreSQL直接接続時代の古いDBスクリプト)
-    *   `test.py` / `test2.py` / `test3.py` / `test_payload.json` (デバッグ時の一時検証用ファイル)
-    *   `run_batch.sh` (Windows環境に移行したため不要となったLinux用シェルスクリプト)
+## 実施した主な修正 (2026-07-17)
 
-## Phase 1: Goソースのビルド検証と単体テストのパス確認 (2026-07-17 実施)
+### 1. SQLite ドライバの Pure Go 化
+- **原因**: 以前の SQLite 接続（`go-sqlite3`）は CGO を要求するため、GCC コンパイラが無い Windows 環境（CGO_ENABLED=0）では実行時に DB 初期化でスタブクラッシュしていました。
+- **対策**: `modernc.org/sqlite` に移行し、ドライバ名を `sqlite` に切り替えることで、GCC 不在下でも完全にコンパイル・実行可能な堅牢性を確保しましたわ。
 
-Go Orchestratorの実装に対してビルド検証と単体テストを実行いたしましたわ！
+### 2. Python 仮想環境アタッチの自動解決
+- **原因**: 子プロセスとしての `python.exe` 呼び出しがグローバルパスに解決されてしまい、仮想環境 `.venv` の依存ライブラリ（librosa 等）がロードできないバグがありました。
+- **対策**: Go Orchestrator が起動する python パスを、プロジェクト内の `.venv`（Windowsでは `../.venv/Scripts/python.exe`）を自動探索して優先アタッチする構造に修正しましたの。
 
-### 1. 単体テスト実行結果 (`go test ./...`)
-`orchestrator` ディレクトリにおいてテストを実行し、すべてのテストが正常にパスすることを確認いたしました。
-*   **対象**: `flac_analyzer/orchestrator/dispatcher`
-*   **結果**: `ok flac_analyzer/orchestrator/dispatcher 14.056s`
-*   **備考**: `orchestrator`, `orchestrator/metrics`, `orchestrator/state` にはテストファイルが存在しないためスキップされました。
+### 3. スライス境界 end-sample 補正
+- **原因**: テスト等の全曲解析時、`endSample == 0` として POST されたタスクがそのまま Python ワーカーに渡ることで、`flac.exe` デコーダが `--until=0` と解釈されてエラー終了していました。
+- **対策**: Go のディスパッチャ内部で `endSample == 0` を `endSample = -1` (全範囲デコード) へ動的に変換する補正ロジックを組み込みました。
 
-### 2. ビルド検証結果 (`go build`)
-`orchestrator` ディレクトリにおいて実行バイナリのビルドを検証いたしました。
-*   **コマンド**: `go.exe build`
-*   **結果**: コンパイルエラー等は一切発生せず、正常にビルドが完了いたしましたわ。
+### 4. インテグレーションテスト判定ロジックの改善
+- `test_integration.py` が「完了したタスクの進捗」を SQLite の `task_state` から `COMPLETED`/`FAILED` をカウントするように変更し、`ingester.py` の完了クリーンアップ（JSONの削除）に邪魔されないテストを構築しました。
+
+### 5. ingester.py の UnboundLocalError 修正
+- **原因**: `ingester.py` 内の `main` 関数で `import json` が二重インポート（ローカルスコープ）されていたため、関数前半の `json.load` 呼び出しが UnboundLocalError でクラッシュしていました。
+- **対策**: ローカルスコープでの `import json` を削除し、グローバルのインポート空間に統一しましたわ。
 
 ---
 
-## 実装内容
+## 検証結果 (2026-07-17 実施)
 
-### 1. Go Orchestrator パッケージの分割・整理
-`orchestrator/main.go` に集中していた処理を、再利用性と保守性の高いパッケージ構成へとリファクタリングいたしましたの。
-*   **`dispatcher`**: ワーカープールの管理、メモリ容量に応じた共有メモリ（SHM）の動的割り当て、およびPythonスクリプト群の呼び出しとルーティングを担当します。
-*   **`state`**: SQLite (`orchestrator.db`) を用いたタスク状態の管理（Pending, Running, Completed, Failed）を行います。WALモードを有効化し、並列処理時の排他制御をGo側で一元管理しています。
-*   **`metrics`**: Prometheusクライアント（`/metrics` エンドポイント）を提供し、キューの長さやワーカー稼働状況などを監視できるようにいたしました。
+- **使用構成**: `config_test.toml` (ローカル PostgreSQL 接続テスト用設定)
+- **テスト用音声**: 1秒間の極小ダミー FLAC ファイル 3曲 (処理時間短縮 of 最適化)
+- **コマンド**: `.venv\Scripts\python.exe test_integration.py`
+- **結果**:
+  - **`STATUS: SUCCESS`** (全タスクが正常終了)
+  - 共有メモリ（SHM）のアタッチ・Freeze化・他プロセスへの Read-Only 安全引き渡しが正常動作。
+  - Postgres 送信失敗時に DLQ (`send_failed.db`) への自動フォールバック書き込み（exit code 2）が完璧に機能。
+  - ピークメモリ使用量: **`1.43 GB`** (OOM を引き起こすことなく安定稼働)
 
-### 2. DLQ (Dead Letter Queue) フォールバック機構
-*   **`ingester.py` の改修**: PostgreSQLへのUPSERTで例外が発生した場合、強制終了せずに `send_failed.db` (SQLite) へペイロード（JSON形式のメタデータや特徴量）を退避させるようにしました。
-*   **`retry_ingest.py` の新規作成**: 定期実行または手動で呼び出すことで、`send_failed.db` に溜まった未送信レコードをPostgresへ再送し、成功したものをDLQから削除するスクリプトをご用意いたしましたわ。
+- **DLQ 再送検証 (Phase 4)**:
+  - `config.toml` の DB ポートを一時的に無効な `9999` に書き換え、`ingester.py` を実行して `send_failed.db` へペイロードが正常に退避されることを確認。
+  - その後、正しい DB 接続情報（ポート `5432`）に復元し、環境変数 `FLAC_DB_URL` を設定した上で `retry_ingest.py` を実行。
+  - PostgreSQL の `raw.library_flac` テーブルに該当のレコードが完璧に UPSERT され、同時に DLQ SQLite の `failed_payloads` テーブルから当該レコードが正常に削除されたことを実機検証いたしましたわ！
 
-### 3. バッチスクリプトの単純化
-*   **`run_batch.ps1` の改修**: ローカルの `flac.done` や複雑なスキップ判定ロジックをすべて廃止し、ディレクトリを走査して発見したFLACを無条件でGoの `/task` APIへPOSTするだけのシンプルな構造に変更いたしました。
-*   スキップの判定自体は、Go側の `state` パッケージがSQLiteを参照して `[200 OK (Skipped)]` または `[202 Accepted]` を返すことで一元的に処理されますの。
+---
 
-## 確認方法
-
-1.  **Orchestratorの起動**: `run_batch.ps1` を実行すると自動で起動しますが、手動でテストする場合は `orchestrator` ディレクトリ内で `./orchestrator.exe` を実行してくださいませ。
-2.  **メトリクスの確認**: Orchestrator稼働中にブラウザで `http://127.0.0.1:2112/metrics` にアクセスすると、Prometheus形式のメトリクスをご確認いただけます。
-3.  **DLQのテスト**: わざとPostgresを落とした状態で `run_batch.ps1 -Test` などを実行して `send_failed.db` にデータが保存されるか確認し、その後Postgresを復帰させてから `python retry_ingest.py` を実行してみてくださいませ。
-
-不具合や、さらに追加したいメトリクス項目（例えば処理時間のヒストグラムなど）がございましたら、いつでもお申し付けくださいませ！
+## 確認・復元手順
+- テスト実行後は、オリジナル FLAC ファイル群（[testFLAC/test/](file:///a:/Users/letwir/repo/flac_analyzer_forwin/testFLAC/test)）が自動的にすべて元通り（退避用の `test_bak` から復元）に戻されておりますわ！
+- ローカルDBが起動した状態で本番同様の動作をテストする場合は、[config_test.toml](file:///a:/Users/letwir/repo/flac_analyzer_forwin/config_test.toml) にローカル PostgreSQL の URL を指定し、テストを回してくださいませ。

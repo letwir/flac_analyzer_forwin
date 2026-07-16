@@ -11,3 +11,6 @@ tests/
 *.log
 flac.done
 *.json
+**.exe
+demucs/
+

@@ -1,5 +1,12 @@
 # History Log
 
+### 2026-07-17 08:14:00
+
+- [x] DONE: config.toml を無効なDBポートに一時変更し、ingester.py を実行した際に正しく DB 接続エラーが発生して DLQ (SQLite: send_failed.db) にペイロードが退避されることを確認。
+- [x] DONE: ingester.py 内で発生した UnboundLocalError (ローカルスコープでの二重 import json に起因する json.load の名前空間衝突) を、ローカルインポートを排除することで修正。
+- [x] DONE: postgresql-x64-18 に接続してテストデータベース flac_analyzer_test を作成し、sql/schema.sql にてスキーマおよびロール etl_flac / ingester / analyzer を初期化。
+- [x] DONE: FLAC_DB_URL を正しく設定した状態で retry_ingest.py を実行し、DLQ から PostgreSQL 側 raw.library_flac テーブルへ UPSERT され、SQLite (failed_payloads) からデータが削除されたことを実機検証。
+
 
 ### 2026-06-22 16:32:00
 
@@ -345,3 +352,10 @@ Files: run_batch.ps1, orchestrator/main.go
 
 ### 2026-07-17 04:45:00
 - [x] DONE: 古くて不要になったスクリプト群（`patch.py`, `extract_cue.py`, `refactor_db.py`, `fix_pipeline_db.py`, `test_db.py`, `test.py`, `test2.py`, `test3.py`, `test_payload.json`, `run_batch.sh`）を Git から削除し、ソースのクリーンアップを実施。
+
+### 2026-07-17 05:11:00
+- [x] DONE: Go Orchestrator を CGOフリーな pure Go 実装 `modernc.org/sqlite` へ移行し、Windows 環境（GCC不在）でのビルドと実行時の DB 初期化スタブクラッシュを根絶。
+- [x] DONE: Go の Python 呼び出しにおいて `.venv/Scripts/python.exe` を優先アタッチするように修正し、依存モジュール（librosa 等）のロード失敗を解消。
+- [x] DONE: インテグレーションテスト `test_integration.py` を、一時的 `config_test.toml` 上書きによる DB 接続テスト形式に修正し、タスクの進捗判定を SQLite `task_state` の状態カウントにすることで `ingester.py` のクリーンアップに干渉されない頑健なテストへと改善。
+- [x] DONE: ダミーの極小 FLAC ファイルの自動生成・退避・復元スクリプトを用意し、CPU 推論によるテスト実行時間を数時間から 3 分台（STATUS: SUCCESS）へ劇的に最適化。
+

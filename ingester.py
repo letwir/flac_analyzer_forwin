@@ -186,7 +186,6 @@ def main():
         
         # DLQ Fallback
         import sqlite3
-        import json
         dlq_db_path = os.path.join(os.path.dirname(__file__), "send_failed.db")
         
         try:

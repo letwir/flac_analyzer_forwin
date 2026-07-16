@@ -306,11 +306,28 @@ class HTDemucsSeparator:
         if self.canonical in inf.MODEL_REGISTRY and inf.MODEL_REGISTRY[self.canonical].kind == "single":
             self.model_info = inf.MODEL_REGISTRY[self.canonical]
             import os
+            import glob
             cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demucs")
             os.makedirs(cache_dir, exist_ok=True)
-            self.model_path = inf.download_single_model(
-                self.canonical, precision=precision, cache_dir=cache_dir
+
+            # キャッシュ済みモデルの実体パスを優先探索し、あればダウンロードをスキップしますわ
+            model_pattern = os.path.join(
+                cache_dir, 
+                "models--StemSplitio--htdemucs-6s-onnx", 
+                "snapshots", 
+                "*", 
+                "htdemucs_6s_fp16weights.onnx"
             )
+            cached_models = glob.glob(model_pattern)
+            
+            if cached_models and os.path.exists(cached_models[0]):
+                self.model_path = cached_models[0]
+                logging.info(f"ローカルキャッシュから Demucs モデルを直接ロードしますの: {self.model_path}")
+            else:
+                logging.info("キャッシュモデルが見つからないため、Hugging Face Hub からダウンロードしますわ...")
+                self.model_path = inf.download_single_model(
+                    self.canonical, precision=precision, cache_dir=cache_dir
+                )
             # ONNXセッションの構築 (カスタム作成フックを経由)
             self.session = _custom_make_session(self.model_path, self.providers)
         else:

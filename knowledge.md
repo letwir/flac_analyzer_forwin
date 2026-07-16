@@ -430,3 +430,27 @@ Context/Finding/Source/Gotchas:
 - Use "EXCLUDED.column_name" to reference the values proposed for insertion.
 - Pass values as parameters to avoid SQL injection.
 </api>
+
+<api id="PURE_GO_SQLITE_WINDOWS">
+<title>WindowsにおけるCGOフリーなSQLiteの利用 (modernc.org/sqlite)</title>
+Context/Finding/Source/Gotchas:
+- `github.com/mattn/go-sqlite3` は CGO（GCC等のCコンパイラ）を要求する。GCC の存在しない Windows 環境下で CGO_ENABLED=0 を指定してビルドすると、エラーを出さずにコンパイルが通りバイナリが生成されるが、実行時のDB初期化等で `go-sqlite3 requires cgo to work. This is a stub` という致命的なスタブクラッシュを発生させる。
+- GCC不要でコンパイル・動作可能な完全 Pure Go の SQLite 実装である `modernc.org/sqlite` を代わりに使用することで、いかなる環境下でもビルドと安定稼働を保証できる。
+- ドライバ名は `sqlite3` ではなく `sqlite` になる点に注意（`sql.Open("sqlite", dbPath)` と指定する）。
+</api>
+
+<api id="GO_SUBPROCESS_VENV_PYTHON">
+<title>Goの子プロセス起動におけるPython仮想環境のパス解決</title>
+Context/Finding/Source/Gotchas:
+- Go から単に `exec.Command("python.exe", ...)` を実行すると、環境変数 PATH の優先順位によりシステムのグローバルな Python や Windows Store の Python 実行ファイルが起動される。
+- これにより、プロジェクトの仮想環境 `.venv` にインストールされている依存ライブラリ（`librosa` や `psycopg2` 等）がインポートできず `ModuleNotFoundError` を発生させる。
+- 実行バイナリのパス（`os.Executable()`）から動的に相対パスを探索し、`parentDir/.venv/Scripts/python.exe` (Windows) または `parentDir/.venv/bin/python` (Unix系) が存在すればそれを優先的に `exec.Command` の第1引数として渡す動的パス解決の実装が不可欠である。
+</api>
+
+<api id="DEMUCS_ONNX_OFFLINE_MODE">
+<title>HuggingFace Hubのオフラインモード環境変数によるモデルダウンロードエラーとローカルキャッシュ直接解決</title>
+Context/Finding/Source/Gotchas:
+- 環境変数 `HF_HUB_OFFLINE = 1` が設定されていると、Hugging Face Hub API クライアントはオフラインモードで動作し、リモート接続を行わない。
+- ローカルキャッシュ（huggingface_hubのフォルダ構造）にモデルファイルが存在している場合でも、`huggingface_hub` ライブラリの仕様上、明示的に `local_files_only=True` を指定して呼び出さない限り、リモートに HEAD リクエスト等を送ろうとしてしまい、結果的にオフラインエラー `OfflineModeIsEnabled` または `LocalEntryNotFoundError` がスローされる。
+- これを完全に回避するため、`models.py` 内で `glob` を用いてローカルのキャッシュ先（`cache_dir/models--StemSplitio--htdemucs-6s-onnx/snapshots/*/htdemucs_6s_fp16weights.onnx`）を直接探索するロジックを導入。キャッシュファイルが物理的に見つかった場合は `huggingface_hub` API の呼び出しを完全にバイパスして直接ファイルパスを渡すことで、オフラインモード（`HF_HUB_OFFLINE=1`）下でも 100% 安定して瞬時にモデルがロードされるようになった。
+</api>
