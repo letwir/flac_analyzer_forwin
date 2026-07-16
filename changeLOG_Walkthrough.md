@@ -2,6 +2,14 @@
 
 旦那様、ご要望の通り、解析パイプラインのアーキテクチャ刷新と、Postgres送信失敗時のDLQ（Dead Letter Queue）フォールバック機能を実装し、その動作検証を進めておりますわ！
 
+## 未使用の古いファイルのクリーンアップ (2026-07-17 実施)
+プロジェクトをクリーンに保つため、使用されていない古い移行スクリプトやテストスクリプトなどを一括削除いたしました。
+*   **削除したファイル**:
+    *   `patch.py` / `extract_cue.py` (過去のパッチ作業・CUE抽出スクリプトの残骸)
+    *   `refactor_db.py` / `fix_pipeline_db.py` / `test_db.py` (以前のPostgreSQL直接接続時代の古いDBスクリプト)
+    *   `test.py` / `test2.py` / `test3.py` / `test_payload.json` (デバッグ時の一時検証用ファイル)
+    *   `run_batch.sh` (Windows環境に移行したため不要となったLinux用シェルスクリプト)
+
 ## Phase 1: Goソースのビルド検証と単体テストのパス確認 (2026-07-17 実施)
 
 Go Orchestratorの実装に対してビルド検証と単体テストを実行いたしましたわ！

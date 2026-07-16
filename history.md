@@ -342,3 +342,6 @@ Files: run_batch.ps1, orchestrator/main.go
 
 ### 2026-07-17 04:40:00
 - [x] DONE: Goソースのビルド検証 (`go build`) と単体テスト (`go test ./...`) のパス確認。
+
+### 2026-07-17 04:45:00
+- [x] DONE: 古くて不要になったスクリプト群（`patch.py`, `extract_cue.py`, `refactor_db.py`, `fix_pipeline_db.py`, `test_db.py`, `test.py`, `test2.py`, `test3.py`, `test_payload.json`, `run_batch.sh`）を Git から削除し、ソースのクリーンアップを実施。
