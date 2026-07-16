@@ -1,244 +1,169 @@
 # Flac_Analyzer
-### 💎 圏論的トポロジーに即した極上の音響解析 ＆ 高貴なる Mood Tagger 💎
 
-**Flac_Analyzer** は、FLACファイル（特にCUEシート埋め込みタイプ）から音響特徴量および音楽的 Mood などを高精度に抽出し、FLACメタデータへの安全なアトミック書き込み（タイムスタンプ完全継承）と PostgreSQL データベースへの永続化（JSONB形式 ＆ CoMonad的履歴自動退避）を同時に成し遂げる、極めて堅牢で美しい音響解析パイプラインですわ！おーほほほほ！
+## 何これ？
+FLAC形式の音楽ファイル（CUEシートによるインデックス分割を含む）から音響特徴量（テンポ、音量、周波数成分など）を抽出し、AIモデルによってジャンルやムードを分類・永続化するツールです。
 
----
-
-
-
-## 🏛️ 圏論的モジュール構成 (Architecture)
-
-本スクリプトは、モジュール間の依存関係を射（Morphism）として厳密に定義し、不要な関心の混在を徹底的に排除した美しいトポロジー構成を採用しておりますの！
-
-```mermaid
-graph TD
-    constants[constants.py <br> 極小対象定義空間] --> models[models.py <br> 余代数的リソース状態空間]
-    constants --> analyzer[analyzer.py <br> 自己随伴的 Applicative ドメイン層]
-    models --> pipeline[pipeline.py <br> 自然変換合成空間]
-    analyzer --> pipeline
-    db[db.py <br> IO Monad 境界空間] --> pipeline
-    pipeline --> main[main.py <br> 自明な開始射 / Entrypoint]
-```
-
-*   **`constants.py` (極小対象定義空間)**:
-    *   他の如何なるモジュールにも依存しない、純粋データ定義対象（和音辞書、ノート名リスト等）の配置。
-*   **`models.py` (余代数的リソース状態空間 / Comonad)**:
-    *   `GLOBAL_ONNX_SESSIONS` / `GLOBAL_DEMUCS` というハードウェア資源（ONNX/分離モデル）の Cofree 構造の管理と、直列実行による推論射の定義。
-*   **`analyzer.py` (自己随伴的 Applicative ドメイン層)**:
-    *   遅延キャッシュ (CSE) 内包対象 `AudioContext`、特徴量抽出を合成する Applicative 関手 `FeatureExtractor`、およびコドメイン対象 `LibrosaFeatures`/`EssentiaFeatures` のドメイン集約。
-*   **`db.py` (IO Monad 境界空間)**:
-    *   PostgreSQL への接続・UPSERT副作用を末端に押し出す境界作用の隔離。
-*   **`pipeline.py` (自然変換合成空間)**:
-    *   音声デコード、Cuesheetパース、セグメンテーション、および解析・DB挿入・タグ書込フローの合成。`psutil` によるシステム資源動的検知（`get_segment_workers`）もここにカプセル化（Lazy Evaluation）されています。
-*   **`main.py` (自明な開始射)**:
-    *   極薄のエントリーポイント。ディレクトリ走査と `pipeline` への起動命令のみを記述。
+Windows環境でのバッチ処理に特化しており、50GBを超える大量の楽曲ライブラリを処理する際でもメモリ不足（OOM）でクラッシュしないよう、以下の仕組みを組み込んでいます。
+- **Go言語による並行ジョブ管理**: ディスパッチャが利用可能なシステム空きメモリやCPU負荷を監視し、ワーカープロセスの同時実行数を制御します。
+- **Windows共有メモリ（Shared Memory）WORM転送**: Pythonワーカーでデコード・音源分離した巨大な波形データをメモリ上の共有領域（Write-Once Read-Many）にアタッチさせ、プロセス間での不要なデータコピーや断片化を防止します。
+- **PostgreSQL への非同期永続化**: 抽出結果を JSONB フォーマットでDBへUPSERTし、失敗時はローカルの SQLite データベースへ一時退避（DLQ）します。
+- **タイムスタンプ保護（Timestamp Preservation）**: 解析結果の一部を FLAC 本体のタグへ安全に書き戻しますが、その前後でファイルの「作成日時」「最終アクセス日時」「更新日時」を取得し、寸分違わず完全に復元します。
 
 ---
 
-## 🚀 使い方 (Usage)
+## 使い方
 
-### 1. 解析モデルの準備
-`models/` ディレクトリを作成し、必要な ONNX 推論モデル（Essentia分類器など）およびクラス定義（JSON）を配置してください。
-> [!NOTE]
-> `discogs-effnet-bs64-1.onnx` や各分類器モデル (`genre_rosamerica-discogs-effnet-1.onnx` 等)、および対応するクラス定義 JSON ファイルが必要です。
+### 1. 動作環境の要件
+- OS: Windows 11 (64bit)
+- Python 3.12 または 3.13（仮想環境を推奨）
+- Go (開発・ビルド用。事前コンパイル済みの `orchestrator.exe` を直接利用することも可能)
+- PostgreSQL (解析結果の保存先)
 
-### 2. 動作環境の構築
-Python 3.12 または 3.13 の仮想環境（venv）を構築し、パッケージをインストールいたしますわ。
-> [!WARNING]
-> Python 3.14 では動作確認が取れておりません。3.13 以下の環境をご用意ください。
+### 2. 環境構築
+Python 仮想環境（venv）を作成し、必要なライブラリをインストールします。
 
 ```powershell
 # 仮想環境の作成と有効化
-py -3.13 -m venv .venv
+python.exe -m venv .venv
 . .\.venv\Scripts\Activate.ps1
 
-# pipのアップグレードと依存パッケージの導入
+# 依存パッケージのインストール
 python.exe -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 3. データベースの設定 (任意)
-PostgreSQL データベースへの自動インサートを行いたい場合は、環境変数 `INGESTER_DATABASE_URL` または `DATABASE_URL` に接続URIを設定してください。
-（設定されていない場合は、標準出力へダミーの SQL INSERT クエリが出力されますわ）
+### 3. 解析モデルの配置
+`models/` ディレクトリを作成し、推論用の ONNX 分類器モデルおよびクラス定義 JSON を配置します。
+- 例: `discogs-effnet-bs64-1.onnx`
+- 各分類モデル（`genre_rosamerica-discogs-effnet-1.onnx` 等）
+- 対応するラベルマッピング用 JSON ファイル
 
-```powershell
-$env:INGESTER_DATABASE_URL = "postgres://username:password@hostname:port/dbname"
-```
-※事前に `sql/schema.sql` (および必要に応じて `sql/migration_v2.sql`) を PostgreSQL 内で実行して、テーブルを初期化しておいてくださいませ。
+### 4. データベースと設定ファイルの準備
+PostgreSQL に `sql/schema.sql` を実行して、テーブルおよびトリガー関数を作成しておきます。
+また、プロジェクトルートの `config.toml` に、PostgreSQL の接続情報および同時実行ワーカー数を指定します。
 
-### 4. 解析パイプラインの起動
-準備が整いましたら、対象のディレクトリを指定して実行するだけですわ！おーほほほほ！
+```toml
+[database]
+url = "postgres://username:password@hostname:port/dbname"
 
-```powershell
-python.exe main.py <探査したいFLACディレクトリ>
-```
-
-### 5. 【次世代】Go Orchestrator ＆ OOM監視テスト
-現在、Peak RAM 効率とプロセスの堅牢性を極限まで高めるため、Pythonから **Go 言語ベースのオーケストレーター (`orchestrator/orchestrator.exe`)** への移行を進めておりますの。
-結合テストや OOM (Out Of Memory) 監視、実行時間の精密な計測を行うには、以下の専用スクリプトを実行してくださいませ。DB（PostgreSQL）への書き込みは自動的に回避（`--no-db`）され、ローカルへJSON出力されますわ。
-
-```powershell
-python.exe test_integration.py
+[orchestrator]
+num_workers = 4
+demucs_concurrent_limit = 1
+shm_allocation_delay_sec = 2
+queue_dir = "../queue"
 ```
 
-## 🌹 高貴なる主要機能 (Features)
+### 5. 実行手順
+解析の実行は、常駐型のGoオーケストレーターと、ディレクトリ走査用スクリプトの組み合わせで行います。
 
-### 1. 音響特徴量の圏論的 Applicative 抽出 (Librosa ドメイン層)
-*   **遅延キャッシュ機構（共通部分式除去: CSE）**
-    *   `AudioContext` 内に遅延評価プロパティを配備。多重スレッドによる並列解析時でも、重い DSP 計算（STFT, Mel-Spectrogram, Chroma, ビートトラッキング等）の重複計算を完全に根絶し、CPUボトルネックを解消いたしましたわ！
-*   **多角的な音響特徴量（16種類以上）の自動算出**
-    *   BPM、RMS (Mean/Peak)、Energy (波形平方根平均)、Spectral Centroid (平均/標準偏差)、Spectral Bandwidth、Spectral Flatness、Spectral Rolloff、Zero Crossing Rate、Contrast (7つのサブバンド)、MFCC (8バンド)、および 0-1 スケールの相対 SNR を贅沢に算出。
-*   **HNR (調波対雑音比) の厳密なる NAP 評価**
-    *   正規化自己相関ピーク (Normalized Autocorrelation Peak: NAP) に基づき、0.0〜1.0 の間で高精度に調波の純度を定量化いたします。
+#### ステップ1: Go オーケストレーターの起動
+`orchestrator` ディレクトリでプログラムを起動します。タスク受付用の HTTP サーバー（ポート `8080`）とメトリクス公開用サーバー（ポート `2112`）が立ち上がります。
 
-### 2. ONNX推論による音楽的 Mood の直列解析 (Essentia 予測層)
-*   **純ONNX特化設計**
-    *   重厚で不安定な PyTorch 依存を排除し、推論エンジンを `onnxruntime` に完全統一。Windows環境の GPU 加速（NVIDIA CUDA / AMD DirectML）に動的フォールバック対応しておりますの。
-*   **スレッドセーフな直列推論**
-    *   並列推論時のセグメンテーションフォルト（Segmentation Fault）を防ぐため、`ONNX_LOCK` による排他制御と `SessionOptions` スレッド制限（`intra_op=1`）により、メモリ安全で優雅な直列推論フローを徹底いたしましたわ。
-*   **多面的な音楽性分類**
-    *   `danceability`, `genre_dortmund`, `genre_rosamerica`, `genre_tzanetakis`, `mood_acoustic`, `mood_aggressive`, `mood_electronic`, `mood_happy`, `mood_party`, `mood_relaxed`, `mood_sad`, `moods_mirex`, `tonal_atonal` などの多角的な推論値（確率）を 1000倍 にスケーリングしてFLACタグに書き込みます。
+```powershell
+# ビルドして実行する場合
+cd orchestrator
+go build -o orchestrator.exe
+.\orchestrator.exe
+```
 
-### 3. 前段 GLOBAL_DEMUCS による波形分離と Stem 解析 (予測分離層)
-*   **将来の HTDemucs (ONNX) 統合を予見したインターフェース設計**
-    *   オリジナルである `mix` に加え、`drums`, `bass`, `other`, `vocals`, `guitar`, `piano` の計6つの分離ステムの `AudioContext` を格納する `StemContext` を定義。ステム単位での Librosa 解析およびエネルギー比に基づく 0-1 相対 SNR を算出し、ボーカルやベースの強度を的確に把握しますわ。
+#### ステップ2: 解析リクエストの送信（ディレクトリ一括走査）
+別ウィンドウで PowerShell スクリプトを実行し、解析したいFLACディレクトリを指定します。発見されたファイルパスが自動的にオーケストレーターの API へ転送されます。
 
-### 4. Cuesheet のマルチパーシング ＆ 柔軟なフォールバック
-*   **三系統 of Cuesheet 境界検出**
-    *   Vorbis comment 内の `CUESHEET` タグ、FLACメタデータブロック内の CueSheet 情報、さらには個別の `cue_trackXX_` / `track_XX_` タグから境界（インデックス）を自動検出。
-*   **高精度なトラック情報のマージ・フォールバック**
-    *   アルバムアーティスト、タイトル、トラック番号、コンポーザー（Composer）を複数の階層（`albumartist` ➔ `artist` ➔ `Unknown` 等）から高精度に補完・マージし、抜けのない解析を保障しますの。
+```powershell
+.\run_batch.ps1 -Dir "D:\Music\FLAC_Library"
+```
 
-### 5. アトミックタグ書き込み ＆ タイムスタンプ完全継承 (`Timestamp Inheritance`)
-*   **安全なアトミック更新**
-    *   一時ファイルにメタデータを書き出し、正常書き換えを確認した後にリプレース（`os.replace`）を行うことで、書き込み中の電源切断や強制終了によるFLACファイルの破損を防ぎます。
-*   **タイムスタンプの完全継承**
-    *   Windows環境では `ctypes` による Win32 API（`CreateFileW` + `SetFileTime`）を直接召喚、Unix/Linux環境では `os.utime` を駆使し、ファイルの作成日時（`ctime`）、アクセス日時（`atime`）、更新日時（`mtime`）を完璧に元の状態へ復元いたしますわ！
+#### ステップ3: PostgreSQL送信失敗時（DLQ）の再送処理
+万が一解析の完了時に PostgreSQL がダウンしていた場合、解析データはローカルの `send_failed.db` (SQLite) に自動退避されます。DB復帰後に以下のスクリプトを呼び出すことで、未送信データを安全に PostgreSQL に再送できます。
 
-### 6. PostgreSQL JSONB によるデータ永続化 ＆ CoMonad的履歴管理
-*   **JSONB カプセル化による DDL 変更不要設計**
-    *   音響特徴量（`features`）や分類結果（`predictions`）は生 float 値のまま JSONB 形式にまとめて PostgreSQL へ UPSERT。将来特徴量が増減してもテーブル定義の変更（`ALTER TABLE`）は不要ですわ。
-*   **CoMonad的履歴自動退避**
-    *   同一音源の `audio_hash`（デコード後波形のMD5）を用いた重複排除に加え、メタデータや特徴量の差分更新を検知した際、PostgreSQLのトリガー関数が旧レコードを自動的に `raw.library_flac_history` へ退避する堅牢なデータ構造を誇ります。
-*   **検索性能を高める平坦化カラムとインデックス (Schema v2)**
-    *   検索頻度の極めて高い `album_artist`, `album`, `artist`, `title` を専用カラムとして平坦化。B-Treeインデックスおよび JSONB に対する GIN インデックスを適切に設計し、数十万件規模のライブラリでも瞬時にクエリ可能ですわ。
+```powershell
+python.exe retry_ingest.py
+```
 
----
+-------------
 
-## 🌊 解析パイプラインフロー (Pipeline Flow)
+## 詳しい内容
+本解析システムが備える詳細な特徴と実装の強みは以下の通りです。
 
-音源ファイルの読み込みからメタデータの蒐集、ステム分離、特徴量解析、そしてデータベースへの統合（フォールバック付き）に至るパイプラインの全体フローは、以下の通りでございますわ！
+- 🧠 **高度な音源分離（Demucs ONNX）**
+  - 入力された音源から `mix` / `drums` / `bass` / `vocals` / `other` などの各ステムに自動分離します。ボーカル単体の明瞭度やベース・ドラムの強度を個別に測定可能です。
+- 🧱 **メモリ安全性とOOM対策（Freeze SHM）**
+  - メモリ枯渇を防止するため、分離後の numpy 配列を Windows の共有メモリハンドル経由で後続プロセスに渡します。Go 側が一時的にメモリ領域を `PAGE_READONLY`（Freeze）化することで、読み取り専用として安全に複数ワーカーが並列アタッチします。
+- 🎨 **16種類以上の音響特徴量抽出**
+  - Librosa を使用し、BPM、RMS (平均/ピーク値)、ZCR (ゼロ交差率)、Spectral Centroid、Contrast、MFCC (8バンド) などを抽出。時間発展を固定フレームに補間した時系列シーケンスデータも蓄積します。
+  - 自己相関ピーク（NAP）による HNR（調波対雑音比）測定を実装し、ハーモニクスの純度を数値化します。
+- 🔮 **ONNXランタイムによる多次元 Mood & ジャンル推論**
+  - 重厚な PyTorch に依存せず、推論エンジンを `onnxruntime` に統一。
+  - `danceability`, `genre_rosamerica`, `mood_happy`, `mood_sad` などの推論値（確率）を 1000倍 にスケーリングして保持します。
+- 💾 **PostgreSQL JSONB 永続化とトリガー履歴退避**
+  - 予測スコアや時系列データは PostgreSQL の `JSONB` 型へ UPSERT。将来のモデル増設による項目追加時もテーブル定義の変更（`ALTER TABLE`）が不要です。
+  - 同一音源（波形MD5）のメタデータや特徴量に変更を検知した際は、DB側トリガーが古いデータを `raw.library_flac_history` へ自動退避し、詳細な編集履歴を残します。
+- 📈 **Prometheus を用いたリアルタイム監視**
+  - ポート `2112/metrics` にて Prometheus 形式のメトリクスを自動公開します。処理中のキュー件数や実行中のワーカー数、OOM による強制待機の有無などを Grafana 等で可視化可能です。
 
-### プログラムの状態図 (State Diagram)
+-------------
+
+## プログラムの状態遷移図
+Go オーケストレーターと Python ワーカープロセス群の連携およびタスク処理の流れを示す状態遷移図です。
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Init
-    Init --> ReadFLAC: mutagenで読み込み
-    ReadFLAC --> ExtractTags: メタデータ抽出
+    [*] --> Idle
+    Idle --> TaskReceived: /task APIへファイルパスがPOSTされる
+    TaskReceived --> CheckState: state.db（SQLite）で処理状況を確認
     
-    ExtractTags --> MultiTrack: CUESHEETあり
-    ExtractTags --> SingleTrack: CUESHEETなし
+    CheckState --> Skipped: 重複あり (COMPLETED / RUNNING)
+    CheckState --> Queued: 未処理または過去にFAILED (PENDINGとして登録)
     
-    MultiTrack --> Mix
-    SingleTrack --> Mix: 波形分離
+    Skipped --> [*]: レスポンス 200 OK (スキップ)
     
-    Mix --> Bass
-    Mix --> Drums
-    Mix --> Vocals
-    Mix --> Other
+    state Dispatcher_Loop {
+        Queued --> ResourceWait: 空きRAMおよびDemucs並行上限セマフォを監視
+        ResourceWait --> AllocatingSHM: Windows 共有メモリ領域を動的確保
+        AllocatingSHM --> DemucsProcessing: python worker_demucs.py 起動（波形デコード・分離・SHMへ書込）
+        DemucsProcessing --> FreezingSHM: Go側で共有メモリを PAGE_READONLY 化 (Freeze)
+        FreezingSHM --> FeatureExtracting: 各種解析プロセスを並列起動（Librosa / Tensor / Essentia）
+        FeatureExtracting --> Ingesting: python ingester.py 起動（解析結果のJSON集約）
+    }
     
-    Bass --> FeatureExtraction
-    Drums --> FeatureExtraction
-    Vocals --> FeatureExtraction
-    Other --> FeatureExtraction
-    Mix --> FeatureExtraction
+    Ingesting --> PostgreSQL_Upsert: PostgreSQL 接続可能
+    Ingesting --> DLQ_Fallback: PostgreSQL 接続不可 (send_failed.db へ保存)
     
-    FeatureExtraction --> EssentiaPredictions: mixのみONNX推論
-    EssentiaPredictions --> DatabaseUPSERT
-    FeatureExtraction --> DatabaseUPSERT: mix以外
+    PostgreSQL_Upsert --> Cleanup: 共有メモリの破棄、一時JSONファイルの削除
+    DLQ_Fallback --> Cleanup
     
-    DatabaseUPSERT --> RealDB: 接続可能
-    DatabaseUPSERT --> DummySQL: 接続不可
-    RealDB --> WriteTags: FLACタグアトミック更新
-    DummySQL --> WriteTags: FLACタグアトミック更新
-    
-    WriteTags --> [*]: 終了
+    Cleanup --> TaskCompleted: state.db の status を COMPLETED (または FAILED) に更新
+    TaskCompleted --> [*]
 ```
 
-### 処理のシーケンス図 (Sequence Diagram)
-
-```mermaid
-sequenceDiagram
-    participant Main as main.py
-    participant Pipeline as pipeline.py
-    participant Models as models.py
-    participant Analyzer as analyzer.py
-    participant DB as db.py
-    
-    Main->>Pipeline: FLACファイル解析開始
-    activate Pipeline
-    Pipeline->>Pipeline: メタデータ&Cuesheet抽出
-    Pipeline->>Models: GLOBAL_DEMUCSによる波形分離
-    activate Models
-    Models-->>Pipeline: 各Stem波形 (mix, drums, bass, etc.)
-    deactivate Models
-    
-    par Stemごとの特徴量抽出
-        Pipeline->>Analyzer: Stem波形の解析要求
-        activate Analyzer
-        Analyzer-->>Pipeline: Librosa音響特徴量 (features)
-        deactivate Analyzer
-    end
-    
-    Pipeline->>Models: ONNXモデルによるMood/Genre分類
-    activate Models
-    Models-->>Pipeline: Essentia予測結果 (predictions)
-    deactivate Models
-    
-    Pipeline->>DB: UPSERT (meta, features, predictions)
-    activate DB
-    DB-->>Pipeline: 保存完了
-    deactivate DB
-    
-    Pipeline->>Pipeline: FLACファイルへのタグ書き戻し
-    Pipeline-->>Main: 解析完了
-    deactivate Pipeline
-```
-
----
-
-## 🗄️ データベース設計と永続化 (Database Architecture)
-
-PostgreSQL における `JSONB` のカプセル化と、トリガーを用いた履歴の自動退避（CoMonad的振る舞い）によって、極めて堅牢かつ柔軟なデータ永続化を実現しておりますの。
-
-### 実体関連モデル (ER Diagram)
+## ER図
+システムが使用するデータベース（PostgreSQL メメインおよび履歴、Go側管理用の SQLite 2種）の実体関連図です。
 
 ```mermaid
 erDiagram
-    raw_library_flac ||--o{ raw_library_flac_history : history
+    %% PostgreSQL Tables
+    raw_library_flac ||--o{ raw_library_flac_history : "BEFORE UPDATE (Trigger)"
     
     raw_library_flac {
-        int id PK
-        string audio_hash
-        string filepath
-        string filename
-        int track_number
-        string album_artist
-        string album
-        string artist
-        string title
-        jsonb meta
-        jsonb features
-        jsonb predictions
-        timestamp collected_at
-        timestamp analyzed_at
+        int id PK "主キー(SERIAL)"
+        string audio_hash UK "波形デコードデータのMD5(32文字)"
+        string filepath "ファイル絶対パス"
+        string filename "ファイル名"
+        int track_number "トラック番号"
+        string album_artist "アルバムアーティスト(平坦化)"
+        string album "アルバム名(平坦化)"
+        string artist "曲アーティスト(平坦化)"
+        string title "曲タイトル(平坦化)"
+        jsonb meta "FLACタグ等の生データ"
+        jsonb features "Librosa等の抽出特徴量"
+        jsonb predictions "Essentiaによる予測スコア"
+        timestamp collected_at "レコード収集日時"
+        timestamp analyzed_at "解析完了日時"
     }
 
     raw_library_flac_history {
-        int history_id PK
-        int library_id FK
+        int history_id PK "履歴主キー"
+        int library_id FK "メインテーブルへの参照"
         string audio_hash
         string filepath
         string filename
@@ -252,51 +177,107 @@ erDiagram
         jsonb predictions
         timestamp collected_at
         timestamp analyzed_at
-        timestamp archived_at
+        timestamp archived_at "履歴退避日時"
+    }
+
+    %% SQLite Tables (Orchestrator State: orchestrator.db)
+    task_state {
+        string file_path PK "ファイル絶対パス"
+        string status "タスク状態(PENDING/RUNNING/COMPLETED/FAILED)"
+        string error_message "例外・クラッシュ詳細"
+        datetime updated_at "更新日時"
+    }
+
+    %% SQLite Tables (Dead Letter Queue: send_failed.db)
+    failed_payloads {
+        string audio_hash PK "波形MD5"
+        string filepath "ファイル絶対パス"
+        string filename "ファイル名"
+        int track_number "トラック番号"
+        string album_artist
+        string album
+        string artist
+        string title
+        json meta "退避タグデータ"
+        json features "退避特徴量データ"
+        json predictions "退避予測データ"
+        datetime failed_at "送信失敗日時"
     }
 ```
 
-### JSONB カラム構造の凡例
+## ER図に載せると冗長なjsonB内容
+テーブルに格納される `JSONB` カラム（`meta`, `features`, `predictions`）の具体的なデータフォーマット構造のサンプルです。
 
-データベースの `JSONB` カラムには、それぞれ以下のような構造でデータが動的に格納されますわ！
-
+### 1. `meta` カラム
+FLACタグ（VorbisComment）から抽出した全ての生データをそのままディクショナリ構造で記録します。
 ```json
-// 【meta】: メタデータ (可変な文字列やリスト)
 {
   "album": "Some Album Name",
   "artist": "Some Artist",
   "title": "Some Title",
   "date": "2023-10-27",
   "tracknumber": "01",
-  "genre": ["Electronic", "Ambient"]
-}
-
-// 【features】: Librosa 音響特徴量 (Stemごとに分離)
-{
-  "mix": {
-    "bpm": 128.0,
-    "rms_mean": 0.153,
-    "spectral_centroid_mean": 2500.5,
-    "zcr_mean": 0.052,
-    "chroma_mean": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.1, 0.2, 0.3]
-  },
-  "bass": {
-    "rms_mean": 0.081,
-    "spectral_centroid_mean": 450.2
-    // ... mixと同様の音響特徴量
-  }
-}
-
-// 【predictions】: Essentia 分類結果 (0.0〜1.0 の推論確率)
-{
-  "danceability": 0.852,
-  "genre_dortmund": {
-    "electronic": 0.950,
-    "rock": 0.050
-  },
-  "mood_happy": 0.720,
-  "mood_sad": 0.105
+  "genre": ["Electronic", "Ambient"],
+  "albumartist": "Some Album Artist",
+  "cuesheet": "..."
 }
 ```
 
----
+### 2. `features` カラム
+分離されたステム (`mix`, `bass`, `drums`, `vocals`, `other` など) ごとに、スカラー値（scalars）および固定フレーム数に補間された時間発展のシーケンスデータ（sequences）を格納します。
+```json
+{
+  "mix": {
+    "scalars": {
+      "bpm": 128.0,
+      "rms_mean": 0.153,
+      "rms_std": 0.045,
+      "energy": 45.2,
+      "spectral_centroid_mean": 2500.5,
+      "spectral_centroid_std": 600.2,
+      "spectral_bandwidth_mean": 1800.3,
+      "spectral_flatness_mean": 0.012,
+      "spectral_rolloff_mean": 5200.0,
+      "zcr_mean": 0.052,
+      "hnr_nap": 0.825
+    },
+    "sequences": {
+      "rms": [0.08, 0.12, 0.15, 0.18, 0.16, "...(合計32要素)"],
+      "spectral_centroid": [1200.0, 1500.0, 2200.0, 2600.0, "..."],
+      "mfcc": [
+        [-120.0, -115.0, -110.0, "..."],
+        [40.0, 42.0, 45.0, "..."],
+        ["...(各バンドごとの配列、計8バンド)"]
+      ]
+    }
+  },
+  "bass": {
+    "scalars": {
+      "rms_mean": 0.081,
+      "spectral_centroid_mean": 450.2
+    }
+    // ... mixと同様の項目がステム特性に応じて格納されます
+  }
+}
+```
+
+### 3. `predictions` カラム
+Essentiaの分類モデルで推定された確率スコアを格納します（パーセンテージに合わせるため 0.0〜1.0 の値を 1000 倍した整数値で格納します）。
+```json
+{
+  "danceability": 852,
+  "tonal_atonal": 910,
+  "mood_happy": 720,
+  "mood_sad": 105,
+  "genre_dortmund": {
+    "electronic": 950,
+    "rock": 50,
+    "pop": 0
+  },
+  "genre_rosamerica": {
+    "house": 800,
+    "techno": 150,
+    "classical": 50
+  }
+}
+```

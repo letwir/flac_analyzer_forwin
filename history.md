@@ -336,3 +336,6 @@ Files: run_batch.ps1, orchestrator/main.go
 ### 2026-07-01 07:19:24 > BugFix/Fixed orchestrator ingester.py invocation (use pythonPath, append envVars, capture logs)/orchestrator/main.go
 
 ### 2026-07-10 10:07:00 > Add DB ER Diagram/ER図（Markdown+Mermaid）をドキュメントとして追加/docs/database_er_diagram.md
+
+### 2026-07-16 08:15:05
+- [x] DONE: 中期目標（Go Orchestrator & DLQ 安定化）に関する詳細検討書（懸念点、破滅的改変の可能性、犠牲要素）を作成し、旦那様へ提示。

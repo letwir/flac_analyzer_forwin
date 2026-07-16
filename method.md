@@ -47,4 +47,16 @@
     <why>並列 P/C パイプラインでのマルチプロセス起動および SharedMemory 状態共有が、Windows環境における深刻な RAM リークおよび OOM を引き起こすため、Python プロセスをファイル単位で完全に分離・破棄したいからですわ。</why>
     <how>PowerShell側ですべての FLAC ファイルパスを再帰的に列挙して一次保存（配列保持）し、ループ処理で python main.py &lt;flacfullpath&gt; を1個ずつ同期呼び出ししますの。Python側はインプロセスでデコードから分離、特徴量抽出、DB書き込み、タグ保存までを直列で完結させ、処理終了とともにプロセスを完全に破棄してメモリを全解放しますわ。(※ このパスは ZERO_COPY_DECOUPLED_PIPELINE によって Goオーケストレーションへと昇華しました)</how>
   </target>
+  <target id="STATE_MANAGEMENT_SQLITE">
+    <why>To prevent redundant task execution and monitor overall pipeline status concurrently without database lockups.</why>
+    <how>Use Go standard sql package with github.com/mattn/go-sqlite3. Open the database in WAL mode and transactionally verify status in CheckOrInsert before task dispatching.</how>
+  </target>
+  <target id="DLQ_FALLBACK_INGESTER">
+    <why>To prevent loss of heavy audio feature extraction payloads in case of database unavailability or network faults.</why>
+    <how>Catch database connection exceptions in Python's ingester, serialize the payload to SQLite (send_failed.db), and expose retry_ingest.py for batch replay once connectivity restores.</how>
+  </target>
+  <target id="PROMETHEUS_METRICS_EXPORTER">
+    <why>To gain observability into active workers, demucs semaphore slots, and queue lengths under heavy batch processing load.</why>
+    <how>Expose a prometheus metrics endpoint using the official prometheus go client library on port 2112, incrementing and decrementing gauges within the Go dispatcher.</how>
+  </target>
 </methods>

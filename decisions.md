@@ -34,3 +34,17 @@
 
 - 新たな分析モデル（Essentiaの新規分類器や、Demucsの追加モデル等）がパイプラインに増設された場合、既存楽曲に対する再解析および部分的な JSONB マージ（UPSERT）が発生します。
 - この変更をシステム全体で追跡可能にするため、データベース側の `analyzed_at` (解析実行日時) カラムを更新し、どの楽曲が最新の検出器群を通過したかを常にトラッキングいたします。
+
+## 5. Go+SQLite による並列タスク状態管理 (Single Process DB Write)
+
+- **状態管理の集約**: タスクの重複実行防止と進行状態（PENDING/RUNNING/COMPLETED/FAILED）の管理を Go 側の SQLite (`orchestrator.db`) に一元化します。
+- **書き込みブロッキングの根絶**: SQLiteの WAL（Write-Ahead Logging）モードおよび `synchronous=NORMAL` を適用。書き込みを唯一のGoプロセスに制限し、PythonプロセスのDBブロッキングやロック競合を排除します。
+
+## 6. エラー情報のキャプチャと終了ステータスの伝達
+
+- **エラーキャプチャ**: Pythonワーカーの異常終了時（終了コード非0）、Goのディスパッチャが標準エラー出力を捕捉し、その最後の詳細なトレースバックやエラーメッセージを SQLite に `error_message` として保存します。
+
+## 7. Postgres送信失敗時のローカルDLQ (Dead Letter Queue) フォールバック
+
+- **データの永続性保証**: Postgresへの接続エラー等が発生した場合、`ingester.py` は解析結果（JSONペイロード）を失うことなく、ローカルの独立した SQLite DB (`send_failed.db`) に退避します。
+- **非同期復旧**: `retry_ingest.py` を手動またはスケジューラで起動し、DLQ内の未送信レコードを順次 Postgres へ再送し、成功したレコードのみを DLQ から自動削除します。

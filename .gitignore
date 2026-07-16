@@ -10,3 +10,4 @@ tests/
 *.zip
 *.log
 flac.done
+*.json

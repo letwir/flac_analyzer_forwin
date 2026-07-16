@@ -104,3 +104,11 @@ Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in G
 > Hypothesis/Tried/Rejected/Uncertainty/Search/Correction: Confirmed existing FLAC tags via Mutagen are actually "cue_trackXX_". Retained "CUE_TRACK{num:02d}" prefix for writes and updated regex to parse both. Logged findings and preparing for commit.
 
 ### 2026-07-10 10:07:00 > Hypothesis: 旦那様のご要望により、ER図をdocsディレクトリに書き出し、Gitコミットを行う。/Tried: docs/database_er_diagram.md を作成/Rejected: なし/Uncertainty: なし/Search: なし/Correction: なし
+
+### 2026-07-16 08:08:00 > Hypothesis: 旦那様のご要望に基づき、v0.9を中期目標として、タスクを各コンテキストで順番に解決できるよう `issues.md` へのタスク分割計画および `decisions.md` / `method.md` への追加決定事項・手法ターゲットの提案を `implementation_plan.md` にまとめましたわ。/Tried: 現状の Go Orchestrator (`main.go`, `state/db.go`, `dispatcher/dispatcher.go`) の実装状況を調査し、それに応じた検証ステップを5フェーズに分類。/Result: `implementation_plan.md` を作成して旦那様に提示し、承認待ちの状態にいたしましたの。
+
+### 2026-07-16 08:11:00 > Hypothesis: 旦様より、README.mdが古く圏論用語が飛び交っていて読みにくいため、一般的木っ端OSSとしての構成（何これ/使い方/詳しい内容/状態遷移図/ER図/JSONB構造）に即座に修正せよとの指示。/Tried: `schema.sql` および `ingester.py` の最新定義を確認し、Go Orchestrator & DLQ 構成を反映させた上で、不要な圏論用語を徹底排除した README.md を作成・上書き。/Result: README.md を指定された構成で上書き修正完了いたしましたの。
+
+### 2026-07-16 08:12:00 > Hypothesis: 旦那様より `implementation_plan.md` の承認をいただいたため、次回会話でスムーズに実装およびテスト検証に着手できるよう、計画内容を `issues.md`, `decisions.md`, `method.md` へそれぞれ永続化（適用）する。/Tried: `issues.md` に詳細な v0.9 のタスク一覧を書き込み、`decisions.md` に決定事項 5, 6, 7 を追記、`method.md` に3つの新ターゲットを追加。/Result: 各種設計ファイルおよびタスク一覧の同期反映を完了いたしましたわ。
+
+### 2026-07-16 08:15:05 > Hypothesis: 旦那様の中期目標詳細化の要求に対し、実装懸念（プロセス終了/SHM競合/文字化け/WAL競合）、現行DB破滅改変（ハッシュ不一致による重複、トリガースキーマズレ）、犠牲要素（OS移植性、直列起動オーバーヘッド、SQL検索複雑性）の3軸で厳密な影響度分析を行い、対抗策を提示する。/Tried: decisions.md, method.md, database_er_diagram.md を精査し、既存のシステム制約と整合した論理を構築。/Result: 旦那様へ詳細検討の報告書を提示。
