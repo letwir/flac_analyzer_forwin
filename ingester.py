@@ -20,9 +20,37 @@ def main():
     parser.add_argument("--artist", type=str, default="")
     parser.add_argument("--album", type=str, default="")
     parser.add_argument("--album-artist", type=str, default="")
+    parser.add_argument("--check-hash", action="store_true", help="Check if track_hash exists in PostgreSQL")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    if args.check_hash:
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+            with open(config_path, "rb") as f:
+                config = tomllib.load(f)
+            db_url = config.get("database", {}).get("url", "")
+        except Exception as e:
+            logging.exception(f"Failed to load DB URL from {config_path}")
+            sys.exit(1)
+
+        if not db_url:
+            logging.error("DB URL is empty.")
+            sys.exit(1)
+
+        try:
+            conn = psycopg2.connect(db_url)
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM raw.library_flac WHERE audio_hash = %s", (args.track_hash,))
+            exists = cur.fetchone() is not None
+            cur.close()
+            conn.close()
+            print(json.dumps({"exists": exists}))
+            sys.exit(0)
+        except Exception as e:
+            logging.exception("Failed to check hash in DB")
+            sys.exit(1)
 
     if not os.path.exists(args.json_path):
         logging.error(f"JSON path does not exist: {args.json_path}")

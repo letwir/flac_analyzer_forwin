@@ -59,4 +59,8 @@
     <why>To gain observability into active workers, demucs semaphore slots, and queue lengths under heavy batch processing load.</why>
     <how>Expose a prometheus metrics endpoint using the official prometheus go client library on port 2112, incrementing and decrementing gauges within the Go dispatcher.</how>
   </target>
+  <target id="CONFIG_TOML_CENTRALIZATION">
+    <why>To avoid dependency on environment variables, ensure configuration consistency across execution modes, and treat local PostgreSQL purely as a test target.</why>
+    <how>All database connections and run options must be unified into and managed by config.toml. Fallbacks to default values should only occur if the config is not present, and retry/ingestion scripts must parse config.toml rather than relying on environment variables (like FLAC_DB_URL).</how>
+  </target>
 </methods>

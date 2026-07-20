@@ -69,6 +69,7 @@ type Config struct {
 	PythonEnv             map[string]string
 	LogLevel              LogLevel
 	EventLog              EventLogger
+	SkipDupByHash         bool
 }
 
 type Dispatcher struct {
@@ -80,6 +81,7 @@ type Dispatcher struct {
 	wg              sync.WaitGroup
 	logLevel        LogLevel
 	eventLog        EventLogger
+	skipDupByHash   bool
 }
 
 const (
@@ -100,6 +102,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		demucsSemaphore: make(chan struct{}, cfg.DemucsConcurrentLimit),
 		logLevel:        cfg.LogLevel,
 		eventLog:        cfg.EventLog,
+		skipDupByHash:   cfg.SkipDupByHash,
 	}
 }
 
@@ -246,6 +249,62 @@ func (d *Dispatcher) worker(id int) {
 		d.LogInfo("[W-%d] [IO Monad] Starting processing: %s", id, task.FlacPath)
 		d.db.UpdateStatus(task.FlacPath, state.StatusRunning, "")
 		
+		var trackHash string
+		var endSampleParam int64
+		
+		if d.skipDupByHash {
+			// 2.1 Calculate MD5 hash only (Lightweight decoding)
+			endSampleParam = task.EndSample
+			if endSampleParam == 0 {
+				endSampleParam = -1
+			}
+			hashOut, err := d.runPythonScript("worker_demucs.py", []string{
+				"--flac-path", task.FlacPath,
+				"--shm-tags", "{}",
+				"--start-sample", fmt.Sprintf("%d", task.StartSample),
+				"--end-sample", fmt.Sprintf("%d", endSampleParam),
+				"--check-hash-only",
+			}, id, "HashCheck", ColorCyan, true)
+			
+			if err != nil {
+				d.failTask(task, fmt.Sprintf("Hash calculation failed: %v", err))
+				continue
+			}
+			
+			var hashMeta struct {
+				Status    string `json:"status"`
+				AudioHash string `json:"audio_hash"`
+			}
+			if err := json.Unmarshal([]byte(hashOut), &hashMeta); err != nil || hashMeta.AudioHash == "" {
+				d.failTask(task, "Failed to parse calculated hash")
+				continue
+			}
+			trackHash = hashMeta.AudioHash
+			
+			// 2.2 Query PostgreSQL via ingester.py --check-hash
+			checkOut, err := d.runPythonScript("ingester.py", []string{
+				"--flac-path", task.FlacPath,
+				"--json-path", "dummy",
+				"--track-hash", trackHash,
+				"--check-hash",
+			}, id, "DBCheck", ColorGreen, true)
+			
+			if err == nil {
+				var checkMeta struct {
+					Exists bool `json:"exists"`
+				}
+				if err := json.Unmarshal([]byte(checkOut), &checkMeta); err == nil && checkMeta.Exists {
+					d.LogInfo("[W-%d] [IO Monad] Skip processing: Hash %s already exists in PostgreSQL", id, trackHash)
+					d.db.UpdateStatus(task.FlacPath, state.StatusCompleted, "")
+					metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
+					metrics.AnalyzerActiveWorkers.Dec()
+					continue
+				}
+			} else {
+				d.LogWarn("[W-%d] DB check failed (will proceed anyway): %v", id, err)
+			}
+		}
+		
 		estimatedSize := EstimateShmSize(task.FileSize)
 		
 		d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot...", id)
@@ -308,7 +367,7 @@ func (d *Dispatcher) worker(id int) {
 		}
 		
 		// 3. Demucs
-		endSampleParam := task.EndSample
+		endSampleParam = task.EndSample
 		if endSampleParam == 0 {
 			endSampleParam = -1
 		}
@@ -337,7 +396,7 @@ func (d *Dispatcher) worker(id int) {
 			d.failTask(task, "Demucs metadata invalid")
 			continue
 		}
-		trackHash := demucsMeta.AudioHash
+		trackHash = demucsMeta.AudioHash
 		
 		// 4. Freeze Shared Memory
 		for stem, shm := range shmMap {
@@ -405,15 +464,27 @@ func (d *Dispatcher) worker(id int) {
 		queueDir := d.config.QueueDir
 		if queueDir == "" { queueDir = filepath.Join("..", "queue") }
 		
-		os.MkdirAll(queueDir, 0755)
+		if err := os.MkdirAll(queueDir, 0755); err != nil {
+			d.failTask(task, fmt.Sprintf("Failed to create queue dir: %v", err))
+			continue
+		}
 		
 		outPath := filepath.Join(queueDir, outName)
 		outPathEss := filepath.Join(queueDir, outNameEss)
 		outPathTensor := filepath.Join(queueDir, outNameTensor)
 		
-		os.WriteFile(outPathEss, []byte(essOut), 0644)
-		os.WriteFile(outPathTensor, []byte(tensorOut), 0644)
-		os.WriteFile(outPath, []byte(libOut), 0644)
+		if err := os.WriteFile(outPathEss, []byte(essOut), 0644); err != nil {
+			d.failTask(task, fmt.Sprintf("Failed to write Essentia JSON: %v", err))
+			continue
+		}
+		if err := os.WriteFile(outPathTensor, []byte(tensorOut), 0644); err != nil {
+			d.failTask(task, fmt.Sprintf("Failed to write Tensor JSON: %v", err))
+			continue
+		}
+		if err := os.WriteFile(outPath, []byte(libOut), 0644); err != nil {
+			d.failTask(task, fmt.Sprintf("Failed to write Librosa JSON: %v", err))
+			continue
+		}
 		
 		// 6.5 Ingester
 		// Ingester handles DB upsert and DLQ logic

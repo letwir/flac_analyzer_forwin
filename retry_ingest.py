@@ -10,7 +10,17 @@ import argparse
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def get_db_url():
-    db_url = os.environ.get("FLAC_DB_URL")
+    db_url = None
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+        with open(config_path, "rb") as f:
+            import tomllib
+            config = tomllib.load(f)
+        db_url = config.get("database", {}).get("url", "")
+    except Exception:
+        pass
+    if not db_url:
+        db_url = os.environ.get("FLAC_DB_URL")
     if not db_url:
         db_url = "postgresql://postgres:postgres@localhost:5432/postgres"
     return db_url

@@ -27,3 +27,21 @@ tf2onnx
 torch
 torchaudio
 psycopg2-binary
+
+# =====================================================================
+# GPU (NVIDIA CUDA / DirectML) 加速のための依存関係に関する注意事項ですわ
+# =====================================================================
+# 1. onnxruntime の選択:
+#   - NVIDIA GPU (RTX等) で CUDA 実行する場合:
+#     pip uninstall onnxruntime onnxruntime-directml (共存は不可ですの)
+#     pip install onnxruntime-gpu
+#     ※ 環境に合わせて適した CUDA Toolkit (e.g. 11.x, 12.x) および cuDNN がシステムに導入されている必要がありますわ。
+#   - AMD/Intel iGPU などの DirectX 12 経由で実行する場合:
+#     pip uninstall onnxruntime onnxruntime-gpu
+#     pip install onnxruntime-directml
+#
+# 2. PyTorch の CUDA サポート:
+#   - デフォルトでは上記の --extra-index-url を用いて CUDA 13.2 / 12.x 互換の PyTorch/TorchAudio を導入しますの。
+#   - システムの GPU ドライバーが古い場合は、cu121 または cu124 に下げてインストールしてくださいませ：
+#     pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+# =====================================================================

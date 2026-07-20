@@ -179,7 +179,7 @@ class AudioContext:
                 if math.isnan(bpm_val) or math.isinf(bpm_val):
                     bpm_val = 0.0
             except Exception as e:
-                logging.warning(f"beat_track 計算失敗 (source: {self.source}): {e}")
+                logging.exception(f"beat_track 計算失敗 (source: {self.source}): {e}")
                 bpm_val = 0.0
                 beats = np.array([], dtype=int)
             self._tempobeat = (bpm_val, beats)
@@ -955,7 +955,7 @@ def _calc_chord_sequence(ctx: AudioContext) -> list[str]:
         return result[:FIXED_SEQ_FRAMES]
 
     except Exception as e:
-        logging.warning(
+        logging.exception(
             f"[ChordSequence] コード列推定エラー (source: {ctx.source}): {e}"
         )
         return ["C" for _ in range(FIXED_SEQ_FRAMES)]
@@ -980,7 +980,7 @@ def _calc_vocal_f0_seq(ctx: AudioContext) -> list[float] | None:
         seq = _resample_to_fixed_frames(f0)
         return seq
     except Exception as e:
-        logging.warning(f"[VocalF0] ピッチ検出エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[VocalF0] ピッチ検出エラー (source: {ctx.source}): {e}")
         return [0.0] * FIXED_SEQ_FRAMES
 
 
@@ -1015,7 +1015,7 @@ def _calc_scipy_stats_features(ctx: AudioContext) -> ScipyStatsFeatures | None:
             kurtosis_seq=kurt_seq,
         )
     except Exception as e:
-        logging.warning(f"[ScipyStats] Skew/Kurt 計算エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[ScipyStats] Skew/Kurt 計算エラー (source: {ctx.source}): {e}")
         return None
 
 
@@ -1052,7 +1052,7 @@ def _calc_hilbert_features(ctx: AudioContext) -> HilbertFeatures | None:
             inst_freq_seq=inst_freq_seq,
         )
     except Exception as e:
-        logging.warning(f"[Hilbert] Hilbert変換計算エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[Hilbert] Hilbert変換計算エラー (source: {ctx.source}): {e}")
         return None
 
 
@@ -1095,7 +1095,7 @@ def _calc_peak_features(ctx: AudioContext) -> PeakFeatures | None:
             temporal_seq=temporal_seq,
         )
     except Exception as e:
-        logging.warning(f"[Peak] ピーク特徴量計算エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[Peak] ピーク特徴量計算エラー (source: {ctx.source}): {e}")
         return None
 
 
@@ -2035,7 +2035,7 @@ def _calc_section_features(ctx: AudioContext) -> SectionFeatures:
         )
 
     except Exception as e:
-        logging.warning(
+        logging.exception(
             f"[Section] セクション特徴量算出エラー (source: {ctx.source}): {e}"
         )
         return SectionFeatures()
@@ -2114,7 +2114,7 @@ def _calc_groove_features(ctx: AudioContext) -> GrooveFeatures:
         )
 
     except Exception as e:
-        logging.warning(f"[Groove] Groove特徴量算出エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[Groove] Groove特徴量算出エラー (source: {ctx.source}): {e}")
         return GrooveFeatures()
 
 
@@ -2195,7 +2195,7 @@ def _calc_temporal_seq(ctx: AudioContext) -> TemporalSeqFeatures | None:
         )
 
     except Exception as e:
-        logging.warning(
+        logging.exception(
             f"[TemporalSeq] 時系列特徴量算出エラー (source: {ctx.source}): {e}"
         )
         return None
@@ -2282,7 +2282,7 @@ def _calc_key_features(ctx: AudioContext) -> KeyFeatures:
         )
 
     except Exception as e:
-        logging.warning(f"[Key] キー特徴量算出エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[Key] キー特徴量算出エラー (source: {ctx.source}): {e}")
         return KeyFeatures()
 
 
@@ -2326,7 +2326,7 @@ def _calc_tempogram_features(ctx: AudioContext) -> TempogramFeatures:
         )
 
     except Exception as e:
-        logging.warning(
+        logging.exception(
             f"[Tempogram] テンポグラム特徴量算出エラー (source: {ctx.source}): {e}"
         )
         return TempogramFeatures()
@@ -2389,7 +2389,7 @@ def _calc_onset_features(ctx: AudioContext) -> OnsetFeatures:
         )
 
     except Exception as e:
-        logging.warning(
+        logging.exception(
             f"[Onset] オンセット強度特徴量算出エラー (source: {ctx.source}): {e}"
         )
         return OnsetFeatures()

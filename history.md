@@ -365,6 +365,18 @@ Files: run_batch.ps1, orchestrator/main.go
 - [x] DONE: Prometheus にエラー累積件数カウンター `analyzer_errors_total` を追加。
 - [x] DONE: Go の dispatcher.go における `os.Executable()`, `cmd.StderrPipe()`, `json.Marshal()` 等の戻り値エラー無視（握りつぶし）を修正。
 - Files: orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, orchestrator/metrics/metrics.go, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md
+
 ### 2026-07-17 08:46:00
 - [x] DONE: Python 側ワーカー群（worker_*.py, functor_precache.py）および ingester.py における例外発生時の logger.error を logger.exception へリファクタリングし、Go 側へエラーの詳細なスタックトレースが漏れなく伝達されるよう堅牢化。
 - Files: worker_demucs.py, worker_librosa.py, worker_essentia.py, worker_tensor.py, functor_precache.py, ingester.py
+
+### 2026-07-21 08:40:00
+- Category: Refactoring & Cleanup
+- Summary: Gitの不要ファイル追跡の即時是正、Python/Goのエラーハンドリング徹底、MD5ハッシュ比較による事前重複チェックおよび解析スキップロジックの導入、設定の config.toml 一元管理化、CUDA/GPUビルド手順の明文化。
+- Decisions:
+  - SQLiteの DB ファイルや一時 json 等がコミットに含まれないよう `.gitignore` に追加し、`git rm --cached` で追跡を解除。
+  - 特徴量抽出中の例外がスタックトレースなしで警告だけになっていた箇所を `logging.exception` に修正。Go側の一時ファイル書き込みエラーチェックを追加。
+  - 軽量デコードにより `audio_hash` を算出し、`ingester.py --check-hash` を介して PostgreSQL に問い合わせることで、すでにDBに登録済みの曲は Demucs 分離や Librosa 解析を丸ごとスキップするバイパス処理を Go Orchestrator に実装。
+  - 事前ハッシュ重複チェックの ON/OFF を `config.toml` 内の `skip_dup_by_hash` から動的に制御できるように Go 側へ統合。
+  - `retry_ingest.py` の DB 接続先 URL 取得順序を `config.toml` 最優先に変更し、ローカルの Postgres はテスト用として扱い、動作設定は極力 `config.toml` に一元管理する方針を `method.md` に明記。
+- Files: .gitignore, ingester.py, worker_demucs.py, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, retry_ingest.py, config.toml, method.md, analyzer.py, pipeline.py, requirements.txt, README.md

@@ -48,3 +48,9 @@
 
 - **データの永続性保証**: Postgresへの接続エラー等が発生した場合、`ingester.py` は解析結果（JSONペイロード）を失うことなく、ローカルの独立した SQLite DB (`send_failed.db`) に退避します。
 - **非同期復旧**: `retry_ingest.py` を手動またはスケジューラで起動し、DLQ内の未送信レコードを順次 Postgres へ再送し、成功したレコードのみを DLQ から自動削除します。
+
+## 8. デコード波形ハッシュ（MD5）による事前重複判定と解析バイパス
+
+- **無駄なリソース消費の回避**: 解析実行前に `worker_demucs.py --check-hash-only` により波形データのハッシュ（MD5）のみを抽出し、`ingester.py --check-hash` を通して PostgreSQL に問い合わせる。
+- **解析のバイパス**: すでにデータベース（PostgreSQL）に該当ハッシュのレコードが存在する場合は、重い音源分離（Demucs）や各種特徴量抽出（Librosa, Essentia等）をすべてスキップし、タスクを即時完了とみなすことで、CPU/GPUおよびVRAMの浪費を100%防止する。
+

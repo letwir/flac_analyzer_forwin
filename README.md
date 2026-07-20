@@ -32,6 +32,28 @@ python.exe -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+#### 💡 GPU (NVIDIA CUDA / DirectML) 加速のためのセットアップ手順
+システム上の物理 GPU を活用して音源分離（Demucs）や分類推論（Essentia/ONNX）を高速化したい場合は、環境に合わせて以下の追加設定を行いますわ。
+
+1. **NVIDIA GPU (CUDA) を使用する場合**:
+   - `onnxruntime-gpu` をインストールします（通常の `onnxruntime` や `onnxruntime-directml` とは同じ環境に共存できませんの）。
+     ```powershell
+     pip uninstall onnxruntime onnxruntime-directml
+     pip install onnxruntime-gpu
+     ```
+   - システムに適切なバージョンの **CUDA Toolkit** および **cuDNN** が導入されている必要がありますわ（onnxruntime-gpu の公式対応表をご確認ください）。
+   - PyTorch で CUDA を有効化するため、互換性のあるバージョンを明示してインストールします：
+     ```powershell
+     pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+     ```
+
+2. **AMD / Intel iGPU などの DirectX 12 経由で実行する場合**:
+   - `onnxruntime-directml` をインストールしますわ。
+     ```powershell
+     pip uninstall onnxruntime onnxruntime-gpu
+     pip install onnxruntime-directml
+     ```
+
 ### 3. 解析モデルの配置
 `models/` ディレクトリを作成し、推論用の ONNX 分類器モデルおよびクラス定義 JSON を配置します。
 - 例: `discogs-effnet-bs64-1.onnx`

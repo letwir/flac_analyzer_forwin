@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--use-dml", action="store_true", help="Use DirectML")
     parser.add_argument("--start-sample", type=int, default=0)
     parser.add_argument("--end-sample", type=int, default=-1)
+    parser.add_argument("--check-hash-only", action="store_true", help="Only compute hash of target track and exit")
     args = parser.parse_args()
 
     try:
@@ -60,6 +61,14 @@ def main():
             handle.sample_rate,
             handle.channels
         )
+        if args.check_hash_only:
+            metadata = {
+                "status": "hash_only",
+                "audio_hash": md5_hash
+            }
+            print(json.dumps(metadata))
+            sys.exit(0)
+
         y = y.T # demucs_worker expects (channels, samples)
         sr = 44100
     except Exception as e:

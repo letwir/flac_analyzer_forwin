@@ -26,6 +26,7 @@ type Config struct {
 		ShmAllocationDelaySec int    `toml:"shm_allocation_delay_sec"`
 		QueueDir              string `toml:"queue_dir"`
 		LogLevel              string `toml:"log_level"`
+		SkipDupByHash         *bool  `toml:"skip_dup_by_hash"`
 	} `toml:"orchestrator"`
 	PythonEnv map[string]string `toml:"python_env"`
 }
@@ -100,6 +101,12 @@ func main() {
 		defer elog.Close()
 	}
 
+	// Skip duplicate by hash setting (default: true)
+	skipDup := true
+	if cfg.Orchestrator.SkipDupByHash != nil {
+		skipDup = *cfg.Orchestrator.SkipDupByHash
+	}
+
 	// 4. Initialize Dispatcher
 	dispConfig := dispatcher.Config{
 		NumWorkers:            cfg.Orchestrator.NumWorkers,
@@ -109,6 +116,7 @@ func main() {
 		PythonEnv:             cfg.PythonEnv,
 		LogLevel:              logLevel,
 		EventLog:              elog,
+		SkipDupByHash:         skipDup,
 	}
 	disp := dispatcher.NewDispatcher(dispConfig, stateDB)
 	disp.Start()

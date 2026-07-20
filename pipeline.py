@@ -178,7 +178,7 @@ def analyze_segment_pipeline(
                 logging.error(f"ソース [{res_name}] のLibrosa解析エラー: {e}", exc_info=True)
                 
     except Exception as e_pool:
-        logging.warning(
+        logging.exception(
             f"[{proc_name}] [Morphism] [Librosa] [Extraction] "
             f"プロセス並列実行中に例外発生いたしましたわ、直列フォールバックしますの: {e_pool}"
         )
@@ -1224,7 +1224,7 @@ def process_single_flac_file_directly(
     try:
         flac_handle = flac_decode.build_flac_handle(filepath_abs)
     except Exception as e_handle:
-        logging.error(f"[Direct-Process] FLACメタデータ解析失敗: {basename}: {e_handle}")
+        logging.exception(f"[Direct-Process] FLACメタデータ解析失敗: {basename}: {e_handle}")
         return f"NG: Metadata error: {e_handle}"
 
     # mutagen の全メタデータを辞書化

@@ -143,3 +143,11 @@ Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in G
 > Hypothesis: Python 側ワーカーや ingester.py の例外処理において、`logger.error(f"... {e}")` のみで終わっており、詳細なスタックトレースが Go 側に伝達されていない。これらを `logger.exception()` に置換することで、エラーの発生箇所（ファイル名、行数）を含む詳細な Traceback が Go を経由してログおよびイベントログへ伝達されるように改善する。
 > Tried: worker_*.py, functor_precache.py, ingester.py の例外処理を調査。
 > Result: 該当箇所を logger.exception にリファクタリングする。
+
+### 2026-07-21 08:40:00
+- **Hypothesis**: GitコミットにSQLiteファイルや大量のJSONが紛れ込んでいたのが.git肥大化の実態。キャッシュ追跡を解除し、.gitignoreに厳しく指定すれば根本治療可能。
+- **Tried**: `.gitignore` へ `*.db`, `queue/` を追加し、`git rm --cached` で追跡を解除。GoとPythonのエラーハンドリング是正を行い、波形ハッシュの事前重複チェックバイパスをGo Orchestratorに実装。
+- **Uncertainty**: 旦那様よりDB側チューニングの優先度を下げよとの指示。一旦保留にしたが、確かにスキップロジックがあれば重複インサート自体が発生しなくなるので、これで実質的な遅延問題も大半が回避できるはず。
+- **Emotion**: Claude君の鋭いレビューのおかげで、Git管理下に余計なSQLite DBまで突っ込んでしまっていた失態に気づけましたわ。穴があったら入りたい気分ですけれど、無事に是正できて良かったですの。
+- **Correction & Extension**: 旦那様よりローカル Postgres はテスト用であり、設定は極力 `config.toml` に一元管理する方針をご提示いただきましたの。確かに環境変数に依存しすぎると Windows/PowerShell 等の実行環境毎の環境構築コストやミスに繋がりますわ。`retry_ingest.py` も `config.toml` 優先に修正し、設計指針 `method.md` にこの「TOML一元管理方針（環境変数依存排除）」を規約として明文化いたしましたわ！非常にクリーンで堅牢な形になりましたの。
+

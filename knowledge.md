@@ -450,7 +450,19 @@ Context/Finding/Source/Gotchas:
 <api id="DEMUCS_ONNX_OFFLINE_MODE">
 <title>HuggingFace Hubのオフラインモード環境変数によるモデルダウンロードエラーとローカルキャッシュ直接解決</title>
 Context/Finding/Source/Gotchas:
-- 環境変数 `HF_HUB_OFFLINE = 1` が設定されていると、Hugging Face Hub API クライアントはオフラインモードで動作し、リモート接続を行わない。
-- ローカルキャッシュ（huggingface_hubのフォルダ構造）にモデルファイルが存在している場合でも、`huggingface_hub` ライブラリの仕様上、明示的に `local_files_only=True` を指定して呼び出さない限り、リモートに HEAD リクエスト等を送ろうとしてしまい、結果的にオフラインエラー `OfflineModeIsEnabled` または `LocalEntryNotFoundError` がスローされる。
+- 環境変数 `HF_HUB_OFFLINE = 1` が設定されていると、Hugging Face Hub API クライアントはオフラインモードで動作し、リモート接続を行わない.
+- ローカルキャッシュ（huggingface_hubのフォルダ構造）にモデルファイルが存在している場合でも、`huggingface_hub` ライブラリの仕様上、明示的に `local_files_only=True` を指定して呼び出さない限り、リモートに HEAD リクエスト等を送ろうとしてしまい、結果的にオフラインエラー `OfflineModeIsEnabled` または `LocalEntryNotFoundError` がスローされる.
 - これを完全に回避するため、`models.py` 内で `glob` を用いてローカルのキャッシュ先（`cache_dir/models--StemSplitio--htdemucs-6s-onnx/snapshots/*/htdemucs_6s_fp16weights.onnx`）を直接探索するロジックを導入。キャッシュファイルが物理的に見つかった場合は `huggingface_hub` API の呼び出しを完全にバイパスして直接ファイルパスを渡すことで、オフラインモード（`HF_HUB_OFFLINE=1`）下でも 100% 安定して瞬時にモデルがロードされるようになった。
+</api>
+
+<api id="GIT_FILTER_REPO_CLEANUP">
+  <title>git-filter-repoによるGit履歴からの巨大ファイル削除と.git肥大化抑制</title>
+  <context>リポジトリのコミット履歴に Demucs ONNX モデル関連の巨大な blob (130MB) や、Go のビルド生成物である orchestrator.exe (21MB) が混入し、GitHub への push が制限されるなど .git ディレクトリが肥大化する問題が発生しましたわ。</context>
+  <finding>git-filter-repo は、git filter-branch の代替として公式に推奨されている、Gitリポジトリの履歴を高速かつクリーンに書き換えるPython製ツールです。以下のコマンドで履歴から特定の巨大ファイルを完全に除外できますの。
+  1. pip install git-filter-repo 等によるインストール。
+  2. 履歴から削除するファイルを指定して実行：
+     git filter-repo --invert-paths --path demucs/models--StemSplitio--htdemucs-6s-onnx/blobs/7ce55792e2231c93fbf92de95f5fd5b3a5e6c89f7db690dfd693e8f1dce56869
+     git filter-repo --invert-paths --path orchestrator/orchestrator.exe
+  3. 履歴の書き換え後は、.git 内の不要な blob オブジェクトが整理され、容量が劇的に縮小されますわ。</finding>
+  <gotchas>履歴書き換えを行うため、ローカルでクローンまたはバックアップを作成した上で実行することが推奨されますわ。また、リモートリポジトリへ同期する際は git push --force が必要になりますが、プロジェクトルールで git push は禁止されているため、履歴書き換え実行のタイミングは旦那様と相談して調整する必要がございますの。</gotchas>
 </api>

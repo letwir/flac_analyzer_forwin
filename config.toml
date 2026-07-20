@@ -7,6 +7,7 @@ demucs_concurrent_limit = 1
 shm_allocation_delay_sec = 2
 queue_dir = "../testFLAC"
 test_flac_dir = "../testFLAC"
+skip_dup_by_hash = true
 
 [python_env]
 omp_num_threads = "1"

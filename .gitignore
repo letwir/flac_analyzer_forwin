@@ -13,4 +13,8 @@ flac.done
 *.json
 **.exe
 demucs/
+*.db
+*.db-shm
+*.db-wal
+queue/
 
