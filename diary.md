@@ -161,3 +161,8 @@ Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in G
 - **Tried**: `LICENSE` ファイルを MIT License に差し替え、ONNX モデルの個別ライセンスに関する留意事項（Notice）を日本語・英語で追記。`README.md` にも `[!WARNING]` アラートとしてライセンス項目を増設。
 - **Emotion**: AGPLの縛りから解放され、より多くの人に使ってもらえるクリーンなライセンス形態になりましたわ！おーほほほほ！
 
+### 2026-07-22 08:27:06
+- **Hypothesis**: `.gitignore` に `search/` を追加し、過去の Git コミット履歴からも `search/` ディレクトリを削除（Rewrite）することで、不要ファイルやキャッシュの再混入を防ぎリポジトリを完璧なクリーン状態に維持できる。
+- **Tried**: `.gitignore` に `search/` を追加。`git-filter-repo --path search --invert-paths --force` を実行し、`origin` リモートを再構成。
+- **Emotion**: `demucs/` に加えて `search/` も過去の歴史から完全に削除完了！非の打ち所のない完璧でピカピカなリポジトリになりましたわ！おーほほほほ！
+

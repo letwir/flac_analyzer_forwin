@@ -397,3 +397,11 @@ Files: run_batch.ps1, orchestrator/main.go
   - リポジトリのソースコード自体は MIT License を適用。
   - LICENSE ファイルおよび README.md (JA/EN) に、ダウンロード・使用する外部 ONNX モデル (Essentia / Discogs / Demucs 等の AGPLv3 / CC ライセンス) に対する注意書き (Warning Notice) を追加。
 - Files: LICENSE, README.md
+
+### 2026-07-22 08:27:00
+- Category: Repository Cleanup & Configuration
+- Summary: `git-filter-repo` を使用して `search/` ディレクトリを Git 全履歴から削除し、`.gitignore` に `demucs/` および `search/` を明記。
+- Decisions:
+  - `.gitignore` に `search/` を追記。
+  - `git-filter-repo --path search --invert-paths --force` を実行し、`search/` の履歴を完全抹消。
+- Files: .gitignore, .git (History rewritten)

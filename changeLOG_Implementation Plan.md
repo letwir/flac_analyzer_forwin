@@ -1,8 +1,8 @@
-# ライセンス変更（AGPLv3 ➔ MIT License）実装計画
+# .gitignore 更新および search/ ディレクトリ履歴削除計画
 
 ## 概要
-リポジトリのライセンスを AGPLv3 から MIT License に切り替え、外部学習済み ONNX モデル（Essentia/Discogs等の AGPLv3/CC ライセンス）に関する留意事項を明記します。
+`.gitignore` に `demucs/` および `search/` を追加し、`git-filter-repo` によって過去のコミット履歴からも `search/` ディレクトリを完全削除します。
 
 ## 変更内容
-1. **LICENSE**: AGPLv3 から MIT License へ置換。末尾に ONNX モデルライセンスに関する Notice (日/英) を追加。
-2. **README.md**: 日英両方のセクションの末尾に `## ライセンス (License)` 項目および警告アラートを追加。
+1. `.gitignore`: `demucs/` および `search/` を除外リストへ追加。
+2. Git 履歴: `git-filter-repo --path search --invert-paths --force` の実行。
