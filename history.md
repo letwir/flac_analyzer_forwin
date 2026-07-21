@@ -380,3 +380,12 @@ Files: run_batch.ps1, orchestrator/main.go
   - 事前ハッシュ重複チェックの ON/OFF を `config.toml` 内の `skip_dup_by_hash` から動的に制御できるように Go 側へ統合。
   - `retry_ingest.py` の DB 接続先 URL 取得順序を `config.toml` 最優先に変更し、ローカルの Postgres はテスト用として扱い、動作設定は極力 `config.toml` に一元管理する方針を `method.md` に明記。
 - Files: .gitignore, ingester.py, worker_demucs.py, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, retry_ingest.py, config.toml, method.md, analyzer.py, pipeline.py, requirements.txt, README.md
+
+### 2026-07-22 08:15:00
+- Category: Documentation / Refactoring
+- Summary: README.md の構成再構築と圏論用語の完全排除、日本語・英語の二言語並記化。
+- Decisions:
+  - 概要、必要なもの、使い方 (USAGE)、状態図 (Mermaid)、ER図およびJSONB構造の順序で構成を統一。
+  - 圏論的用語（射、コモナド、アプリーカティブ等）を全て平易なシステムエンジニアリング用語へ置換。
+  - 前半に日本語ドキュメントを配置し、`---` (区切り) の後に英語ドキュメントを並記。
+- Files: README.md
