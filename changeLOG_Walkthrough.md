@@ -1,10 +1,9 @@
-# README.md 変更完了報告 (Walkthrough)
+# ライセンス変更完了報告 (Walkthrough)
 
 ## 実施した変更
-- [x] `README.md` から「圏論」「射」「コモナド」「アプリーカティブ」等の難解な用語を全て削除・平易化。
-- [x] 指定された目次構成（概要 ➔ 必要なもの ➔ 使い方 ➔ 状態図 ➔ ER図とデータ構造）へ順序を整理。
-- [x] 日本語セクションの後に `---` を挟み、同等内容の英語セクション（English Version）を追加。
-- [x] 状態図（Mermaid stateDiagram-v2）に「波形MD5による事前重複チェック（CheckHash）」のステップを反映。
+- [x] `LICENSE` ファイルを AGPLv3 から MIT License に更新。
+- [x] `LICENSE` および `README.md` に外部 ONNX モデル（Essentia等）のライセンス遵守に関する注記（Notice / Warning Alert）を追加。
+- [x] [README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md) の日本語・英語双方の末尾に `ライセンス (License)` セクションを追加。
 
 ## 検証
-- Markdown の構文および Mermaid ダイヤグラムが正しくパース・表示されることを確認。
+- ライセンス文章および注記が正確にファイルに反映されていることを確認。

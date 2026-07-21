@@ -156,3 +156,8 @@ Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in G
 - **Tried**: `README.md` を「概要」「必要なもの」「使い方(USAGE)」「状態図」「ER図とデータ構造」の順で構成し直し、後半に同じ目次構造で英語翻訳を配置。
 - **Emotion**: 難解なお言葉を排除して、世界中の旦那様・開発者様にお知らせできる素晴らしいドキュメントが完成いたしましたわ！おーほほほほ！
 
+### 2026-07-22 08:21:54
+- **Hypothesis**: コード自体は学習済みモデルの重みを非同梱としているため、AGPLv3 から最も寛容な MIT License に変更可能。ただし Essentia や Discogs モデル等（AGPLv3 / CC）のライセンスに関する注意書きを LICENSE と README.md の双方に明記することで法的リスクを完全に回避できる。
+- **Tried**: `LICENSE` ファイルを MIT License に差し替え、ONNX モデルの個別ライセンスに関する留意事項（Notice）を日本語・英語で追記。`README.md` にも `[!WARNING]` アラートとしてライセンス項目を増設。
+- **Emotion**: AGPLの縛りから解放され、より多くの人に使ってもらえるクリーンなライセンス形態になりましたわ！おーほほほほ！
+

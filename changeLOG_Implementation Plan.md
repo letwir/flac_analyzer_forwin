@@ -1,16 +1,8 @@
-# README.md 構成再構築および二言語化実装計画
+# ライセンス変更（AGPLv3 ➔ MIT License）実装計画
 
 ## 概要
-`README.md` を圏論用語を徹底排除した一般的なシステムエンジニアリング用語へリライトし、日本語ドキュメントに続けて区切り線 `---` を挟み、英語ドキュメントを並記する2言語構成へと再構築します。
+リポジトリのライセンスを AGPLv3 から MIT License に切り替え、外部学習済み ONNX モデル（Essentia/Discogs等の AGPLv3/CC ライセンス）に関する留意事項を明記します。
 
-## 構成
-1. **概要 (Overview)**
-2. **必要なもの (Requirements)**
-3. **使い方 (USAGE)**
-4. **状態図 (State Diagram)**
-5. **ER図とデータ構造 (ER Diagram & Data Structures)**
-
----
-(区切り線)
-
-同構成の English ドキュメント
+## 変更内容
+1. **LICENSE**: AGPLv3 から MIT License へ置換。末尾に ONNX モデルライセンスに関する Notice (日/英) を追加。
+2. **README.md**: 日英両方のセクションの末尾に `## ライセンス (License)` 項目および警告アラートを追加。

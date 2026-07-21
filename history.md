@@ -389,3 +389,11 @@ Files: run_batch.ps1, orchestrator/main.go
   - 圏論的用語（射、コモナド、アプリーカティブ等）を全て平易なシステムエンジニアリング用語へ置換。
   - 前半に日本語ドキュメントを配置し、`---` (区切り) の後に英語ドキュメントを並記。
 - Files: README.md
+
+### 2026-07-22 08:22:00
+- Category: Licensing
+- Summary: リポジトリライセンスを AGPLv3 から MIT License に変更。ONNXモデルの個別ライセンスに関する留意事項の追加。
+- Decisions:
+  - リポジトリのソースコード自体は MIT License を適用。
+  - LICENSE ファイルおよび README.md (JA/EN) に、ダウンロード・使用する外部 ONNX モデル (Essentia / Discogs / Demucs 等の AGPLv3 / CC ライセンス) に対する注意書き (Warning Notice) を追加。
+- Files: LICENSE, README.md

@@ -285,6 +285,18 @@ erDiagram
 ```
 
 ---
+
+## ライセンス (License)
+
+本プロジェクトのソースコードは [MIT License](file:///a:/Users/letwir/repo/flac_analyzer_forwin/LICENSE) のもとで公開されています。
+
+> [!WARNING]
+> **学習済みモデル (ONNX) のライセンスに関する注意点**
+> 本リポジトリには AI モデルの重みファイル（ONNX 等）は同梱されていません。
+> 本ツールで使用・自動ダウンロードされる外部モデル（Essentia の ONNX 分類器モデル、Discogs 分類器等）には、配布元（MTG / Music Technology Group UPF）の **AGPLv3** や Creative Commons などのライセンスが適用されている場合があります。
+> モデルファイルの再配布や商用利用を行う際は、使用する各モデルのライセンス条項を必ずご確認ください。
+
+---
 ---
 
 # Flac_Analyzer (English)
@@ -572,3 +584,15 @@ Sample structures for `JSONB` columns in `raw.library_flac`:
   }
 }
 ```
+
+---
+
+## License
+
+The source code of this project is licensed under the [MIT License](file:///a:/Users/letwir/repo/flac_analyzer_forwin/LICENSE).
+
+> [!WARNING]
+> **Notice Regarding Pre-trained AI Models (ONNX)**
+> This repository contains source code only and does NOT include any pre-trained model weights.
+> External models fetched or used by this tool (e.g., Essentia ONNX models, Discogs classifiers) may be subject to their original licensing terms, such as **AGPLv3** (by MTG / Music Technology Group UPF) or Creative Commons licenses.
+> Users are responsible for checking and complying with the licensing terms of any third-party models when redistributing or using them for commercial purposes.
