@@ -177,3 +177,13 @@ Search: AttributeError in models.py
 Correction: Used ORT_LOGGING_LEVEL env var
 Emotion: 秒殺できてスカッとしましたわ！
 Thoughts: ONNXRuntime API clean up complete
+
+### 2026-07-24 00:26:00
+Hypothesis: Long track titles/album names (>255 chars) caused psycopg2 StringDataRightTruncation in ingester.py resulting in DLQ fallback. Missing models dir caused warning in worker_essentia.
+Tried: Truncated album_artist, album, artist, title fields to 255 chars in ingester.py and retry_ingest.py. Ensured models/ directory exists.
+Rejected: PostgreSQL ALTER TABLE due to permission constraint.
+Uncertainty: None
+Search: Found StringDataRightTruncation exception in DLQ log analysis.
+Correction: Added [:255] string slicing protection for varchar metadata fields.
+Emotion: クラシックの長大タイトルによるDB打ち切りエラーを完璧に補縛してやったわ！オホホホ！
+Thoughts: 長いアルバム名はクラシック音楽あるあるですわね。

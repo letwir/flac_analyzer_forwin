@@ -412,3 +412,10 @@ Files: run_batch.ps1, orchestrator/main.go
 - Summary: Fix AttributeError caused by non-existent ort.set_default_logger_severity
 - Decisions: Replaced invalid attribute with os.environ[\ ORT_LOGGING_LEVEL\] = \n- Blockers: None
 - Files: models.py
+
+### 2026-07-24 00:26:00
+- Category: BugFix
+- Summary: Prevent Ingester failure and DLQ fallback by truncating long metadata string fields to 255 characters
+- Decisions: Added [:255] string truncation in ingester.py and retry_ingest.py for album, title, artist, and album_artist fields. Created models/.gitkeep
+- Blockers: None
+- Files: ingester.py, retry_ingest.py, models/.gitkeep

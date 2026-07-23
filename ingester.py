@@ -124,6 +124,11 @@ def main():
         if not title:
             title = flac.get("title", [""])[0]
         
+        album_artist = (album_artist or "")[:255]
+        album = (album or "")[:255]
+        artist = (artist or "")[:255]
+        title = (title or "")[:255]
+        
         if track_number == 0:
             trck = flac.get("tracknumber", ["0"])[0]
             try:
