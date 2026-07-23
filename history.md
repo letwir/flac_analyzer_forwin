@@ -405,3 +405,10 @@ Files: run_batch.ps1, orchestrator/main.go
   - `.gitignore` に `search/` を追記。
   - `git-filter-repo --path search --invert-paths --force` を実行し、`search/` の履歴を完全抹消。
 - Files: .gitignore, .git (History rewritten)
+
+0
+### 2026-07-23 22:56:00
+- Category: BugFix
+- Summary: Fix AttributeError caused by non-existent ort.set_default_logger_severity
+- Decisions: Replaced invalid attribute with os.environ[\ ORT_LOGGING_LEVEL\] = \n- Blockers: None
+- Files: models.py

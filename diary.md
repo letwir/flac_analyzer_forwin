@@ -166,3 +166,14 @@ Correction: 1) os.Executable() instead of cwd. 2) SetConsoleOutputCP(65001) in G
 - **Tried**: `.gitignore` に `search/` を追加。`git-filter-repo --path search --invert-paths --force` を実行し、`origin` リモートを再構成。
 - **Emotion**: `demucs/` に加えて `search/` も過去の歴史から完全に削除完了！非の打ち所のない完璧でピカピカなリポジトリになりましたわ！おーほほほほ！
 
+
+0
+### 2026-07-23 22:56:00
+Hypothesis: onnxruntime lacks set_default_logger_severity
+Tried: Replaced with ORT_LOGGING_LEVEL
+Rejected: None
+Uncertainty: None
+Search: AttributeError in models.py
+Correction: Used ORT_LOGGING_LEVEL env var
+Emotion: 秒殺できてスカッとしましたわ！
+Thoughts: ONNXRuntime API clean up complete

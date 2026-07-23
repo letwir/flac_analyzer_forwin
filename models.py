@@ -22,7 +22,7 @@ import demucs_onnx.inference
 from constants import CLASS_ALIAS, DEFAULT_CLASS_MAP
 
 # ONNX Runtime のグローバル警告ログをミュート (ScatterND等の警告抑制)
-ort.set_default_logger_severity(3)
+os.environ["ORT_LOGGING_LEVEL"] = "3"
 
 # Load global config
 CONFIG = {}
