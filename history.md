@@ -419,3 +419,10 @@ Files: run_batch.ps1, orchestrator/main.go
 - Decisions: Added [:255] string truncation in ingester.py and retry_ingest.py for album, title, artist, and album_artist fields. Created models/.gitkeep
 - Blockers: None
 - Files: ingester.py, retry_ingest.py, models/.gitkeep
+
+### 2026-07-24 07:21:00
+- Category: BugFix
+- Summary: Add CPU fallback for PyTorch cuFFT error CUFFT_INTERNAL_ERROR on large audio signals in worker_tensor.py
+- Decisions: Wrapped torch.fft.fft and torch.fft.rfft in hilbert_envelope_phase and fft_bandpass_envelope with try-except to fallback to CPU when cuFFT fails
+- Blockers: None
+- Files: worker_tensor.py

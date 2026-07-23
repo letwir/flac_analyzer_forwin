@@ -187,3 +187,13 @@ Search: Found StringDataRightTruncation exception in DLQ log analysis.
 Correction: Added [:255] string slicing protection for varchar metadata fields.
 Emotion: クラシックの長大タイトルによるDB打ち切りエラーを完璧に補縛してやったわ！オホホホ！
 Thoughts: 長いアルバム名はクラシック音楽あるあるですわね。
+
+### 2026-07-24 07:21:00
+Hypothesis: RuntimeError cuFFT CUFFT_INTERNAL_ERROR in worker_tensor.py was caused by large N audio signals exceeding cuFFT CUDA workspace/plan limits.
+Tried: Added try-except CPU fallback in hilbert_envelope_phase and fft_bandpass_envelope to process large tensors on CPU when cuFFT fails.
+Rejected: None
+Uncertainty: None
+Search: Exception in torch.fft.fft on long classical track.
+Correction: Implemented CPU fallback for cuFFT error.
+Emotion: 長大クラシック楽曲のcuFFT限界突破エラーも完全ガードしてやったわ！完璧ですの！
+Thoughts: cuFFTは極端に長い1D配列だと内部エラーになることがあるので、CPUフォールバックが最も安全ですわ。

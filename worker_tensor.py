@@ -27,16 +27,32 @@ def setup_logger():
 def hilbert_envelope_phase(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """1Dテンソルに対するHilbert変換を行い、エンベロープと瞬時位相を返しますの。"""
     N = x.shape[-1]
-    Xf = torch.fft.fft(x)
-    h = torch.zeros(N, device=x.device, dtype=Xf.dtype)
-    if N % 2 == 0:
-        h[0] = h[N//2] = 1
-        h[1:N//2] = 2
-    else:
-        h[0] = 1
-        h[1:(N+1)//2] = 2
-    xa = torch.fft.ifft(Xf * h)
-    return xa.abs(), xa.angle()
+    try:
+        Xf = torch.fft.fft(x)
+        h = torch.zeros(N, device=x.device, dtype=Xf.dtype)
+        if N % 2 == 0:
+            h[0] = h[N//2] = 1
+            h[1:N//2] = 2
+        else:
+            h[0] = 1
+            h[1:(N+1)//2] = 2
+        xa = torch.fft.ifft(Xf * h)
+        return xa.abs(), xa.angle()
+    except Exception as e:
+        if x.device.type == "cuda":
+            # cuFFT の制限やメモリ不足が発生した場合、CPUへ安全にフォールバックしますの
+            x_cpu = x.cpu()
+            Xf = torch.fft.fft(x_cpu)
+            h = torch.zeros(N, device=x_cpu.device, dtype=Xf.dtype)
+            if N % 2 == 0:
+                h[0] = h[N//2] = 1
+                h[1:N//2] = 2
+            else:
+                h[0] = 1
+                h[1:(N+1)//2] = 2
+            xa = torch.fft.ifft(Xf * h)
+            return xa.abs().to(x.device), xa.angle().to(x.device)
+        raise e
 
 def welch_psd(x: torch.Tensor, sr: int, n_fft: int = 2048) -> tuple[torch.Tensor, torch.Tensor]:
     """Welch法に近い平均化PSDを求めますわ。"""
@@ -50,13 +66,25 @@ def welch_psd(x: torch.Tensor, sr: int, n_fft: int = 2048) -> tuple[torch.Tensor
 
 def fft_bandpass_envelope(x: torch.Tensor, sr: int, f_lo: float, f_hi: float) -> torch.Tensor:
     """FFTベースの理想バンドパスフィルタリング後のエンベロープ抽出ですわ。"""
-    Xf = torch.fft.rfft(x)
-    freqs = torch.fft.rfftfreq(x.shape[-1], d=1/sr).to(x.device)
-    mask = (freqs >= f_lo) & (freqs <= f_hi)
-    Xf_filtered = Xf * mask
-    x_filtered = torch.fft.irfft(Xf_filtered, n=x.shape[-1])
-    env, _ = hilbert_envelope_phase(x_filtered)
-    return env
+    try:
+        Xf = torch.fft.rfft(x)
+        freqs = torch.fft.rfftfreq(x.shape[-1], d=1/sr).to(x.device)
+        mask = (freqs >= f_lo) & (freqs <= f_hi)
+        Xf_filtered = Xf * mask
+        x_filtered = torch.fft.irfft(Xf_filtered, n=x.shape[-1])
+        env, _ = hilbert_envelope_phase(x_filtered)
+        return env
+    except Exception as e:
+        if x.device.type == "cuda":
+            x_cpu = x.cpu()
+            Xf = torch.fft.rfft(x_cpu)
+            freqs = torch.fft.rfftfreq(x_cpu.shape[-1], d=1/sr)
+            mask = (freqs >= f_lo) & (freqs <= f_hi)
+            Xf_filtered = Xf * mask
+            x_filtered = torch.fft.irfft(Xf_filtered, n=x_cpu.shape[-1])
+            env, _ = hilbert_envelope_phase(x_filtered)
+            return env.to(x.device)
+        raise e
 
 def extract_tensor_features(y: torch.Tensor, sr: int, device: torch.device, spectro_path: str = None) -> dict:
     y = y.to(device)
