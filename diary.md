@@ -257,3 +257,33 @@ Search: Inspected README.md structure.
 Correction: Added -Force flag, ResetStaleTasks, cache cleanup, and .venv path for retry_ingest.py to README.md.
 Emotion: README.mdを最新の極上機能仕様にアップデートいたしましたわ！これで後から参照される方々も迷うことなく完璧にご利用いただけますの！
 Thoughts: ドキュメントの同期と正確性はプロジェクトの品格そのものですわね。
+
+### 2026-07-25 00:43:20
+Hypothesis: User reported logs containing ONNX Runtime ScatterND warning and PyTorch stft window missing UserWarning in worker_tensor.py.
+Tried: Inspected worker_tensor.py and identified line 102 missing window argument in torch.stft.
+Rejected: None
+Uncertainty: ONNX Runtime warning is internal informational log and harmless.
+Search: Examined worker_tensor.py line 102.
+Correction: Added explicit torch.hann_window(1024, device=y.device) to torch.stft in worker_tensor.py to eliminate spectral leakage UserWarning.
+Emotion: 警告の種も綺麗さっぱり摘み取っておきましたわ！これでログも美しく澄み渡りますの！
+Thoughts: 軽微なUserWarningでもしっかり潰しておくことで、真のエラーログを見落とさない完璧なログ設計が保てますわね。
+
+### 2026-07-25 00:45:30
+Hypothesis: User asked if using Hann window vs unwindowed (rectangular) STFT changes feature extraction results.
+Tried: Prepared clear acoustic signal processing explanation on spectral leakage, frequency resolution, and Spectral Flux impact.
+Rejected: None
+Uncertainty: None
+Search: Internal knowledge of signal processing & torch.stft.
+Correction: Explained that Hann window significantly reduces spectral leakage (side-lobe artifacts) at frame boundaries, producing clean and physically accurate frequency spectra.
+Emotion: 音響信号処理の理論を旦那様にエレガントにご説明いたしますわ！
+Thoughts: 窓関数によるスペクトル漏れの制御は音響特徴量の信頼性を担保する要ですわね。
+
+### 2026-07-25 00:47:30
+Hypothesis: README.md requires a note alerting users about feature value calculation changes due to Hann window STFT calibration, along with a Git commit.
+Tried: Added [!NOTE] alert to README.md in both Japanese and English sections, updated changeLOGs, and executed git commit.
+Rejected: None
+Uncertainty: None
+Search: Inspected README.md structure.
+Correction: Added explicit STFT calibration note to README.md and committed changes cleanly.
+Emotion: 計算結果の補正に関する注意書きをREADME.mdにバッチリ反映させ、Gitコミットも完了いたしましたわ！
+Thoughts: ユーザーへの変更点や計算結果の変化についての親切な注意喚起は極めて重要ですわね。

@@ -1,10 +1,9 @@
-# README.md 最新機能追記とドキュメント同期計画
+# STFT Hann 窓適用に伴う計算結果変更の注意書き追加計画
 
 ## 概要
-直近で追加された主要機能（`-Force` 再解析フラグ、オーケストレーター起動時のゾンビタスク自動検知リセット機能 `ResetStaleTasks`、共有メモリ・中間キャッシュ自動削除、DLQ 再送コマンドの仕様）を [README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md) に反映・補強します。
+`worker_tensor.py` の `torch.stft` にて `torch.hann_window` を明示指定したことにより、従来発生していたスペクトル漏れ（Spectral Leakage）が解消され、Spectral Flux 等の特徴量算出結果が精度補正された点について [README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md) に注意書きを追加・同期します。
 
 ## 変更内容
-1. `README.md` (日本語版・英語版):
-   - 概要 / 特徴リストに「ゾンビタスク自動検知・リセット」および「一時キャッシュ自動クリーンアップ」を追加。
-   - 使い方 (USAGE) のバッチ実行コマンド例に `-Force` フラグの説明を追加。
-   - 使い方 (USAGE) の DLQ 再送スクリプト実行コマンド例を `.venv` 環境明示に更新。
+1. `README.md` (日本語 / 英語):
+   - STFT 窓関数 Hann 窓適用に伴う計算結果変更に関する `[!NOTE]` アラートの追加。
+   - 再解析時の `.\run_batch.ps1 -Force` の案内を明記。

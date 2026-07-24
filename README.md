@@ -114,6 +114,10 @@ PostgreSQL 送信失敗により `send_failed.db` へ一時退避（Dead Letter 
 .venv\Scripts\python.exe retry_ingest.py
 ```
 
+> [!NOTE]
+> **Tensor特徴量抽出（STFT Hann窓適用）に関する計算結果変更の注意点**
+> `worker_tensor.py` の STFT 計算にて `torch.hann_window` を明示指定したことで、従来の矩形窓で発生していたスペクトル漏れ（Spectral Leakage）が解消され、Spectral Flux 等の算出精度が向上・補正されています。旧バージョンで解析済みの楽曲と数値結果がわずかに異なる場合があります。必要に応じて `.\run_batch.ps1 -Force` を使用して再解析を行ってください。
+
 ---
 
 ## 状態図 (State Diagram)
@@ -420,6 +424,10 @@ If PostgreSQL was unreachable during processing, manually retry sending saved pa
 ```powershell
 .venv\Scripts\python.exe retry_ingest.py
 ```
+
+> [!NOTE]
+> **Notice Regarding Tensor STFT Window Calibration & Feature Numerical Output**
+> `worker_tensor.py` now explicitly applies `torch.hann_window` during STFT processing. This eliminates spectral leakage caused by rectangular windowing, resulting in refined Spectral Flux and Tensor feature outputs. If you wish to re-analyze existing tracks to apply this calibration, run `.\run_batch.ps1 -Force`.
 
 ---
 

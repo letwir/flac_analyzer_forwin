@@ -99,7 +99,8 @@ def extract_tensor_features(y: torch.Tensor, sr: int, device: torch.device, spec
         psd = stft_mag.pow(2).mean(dim=-1)
         freqs = torch.linspace(0, sr / 2, psd.shape[-1], device=device)
     else:
-        stft_mag = torch.stft(y, n_fft=1024, return_complex=True).abs()
+        window_1024 = torch.hann_window(1024, device=device)
+        stft_mag = torch.stft(y, n_fft=1024, window=window_1024, return_complex=True).abs()
         flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
         freqs, psd = welch_psd(y, sr=sr)
         
