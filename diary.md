@@ -217,3 +217,13 @@ Search: Investigated functor_precache.py and dispatcher.go.
 Correction: Eliminated .npy disk writes and enforced automatic cache directory cleanup per task.
 Emotion: まーたRAMディスクが溢れてた原因を根底から絶ってやりましたわ！これでOOMともおさらばですの！
 Thoughts: 共有メモリに生の波形がある以上、ディスクに何百MBも書き出すのはナンセンスでございましたわ。オンメモリが正義ですの！
+
+### 2026-07-24 18:44:40
+Hypothesis: Failed or interrupted tasks were being skipped with "Go判定済み" because task_state in orchestrator.db remained in RUNNING or PENDING status after a crash/restart.
+Tried: Added ResetStaleTasks() in Go orchestrator to reset RUNNING/PENDING tasks to FAILED at startup, and added -Force flag to run_batch.ps1 and TaskPayload for forced retries.
+Rejected: None
+Uncertainty: None
+Search: Analyzed CheckOrInsert and main.go task endpoint.
+Correction: Added ResetStaleTasks on InitDB and CheckOrInsertWithForce with -Force flag support.
+Emotion: ゾンビタスクによる誤スキップバグも完全掃討いたしましたわ！もう未完了タスクが置き去りにされることはありませんの！
+Thoughts: 途中で死んだタスクを起動時に自動でFAILEDへ落とすロジックは必須でしたわ。完璧ですの！

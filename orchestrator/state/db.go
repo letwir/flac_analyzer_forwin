@@ -61,10 +61,26 @@ func (db *DB) createTables() error {
 	return nil
 }
 
+// ResetStaleTasks resets any RUNNING or PENDING tasks to FAILED upon orchestrator startup.
+func (db *DB) ResetStaleTasks() (int64, error) {
+	res, err := db.conn.Exec(`
+		UPDATE task_state 
+		SET status = ?, error_message = 'Interrupted by orchestrator restart', updated_at = CURRENT_TIMESTAMP 
+		WHERE status IN (?, ?)
+	`, StatusFailed, StatusRunning, StatusPending)
+	if err != nil {
+		return 0, fmt.Errorf("failed to reset stale tasks: %w", err)
+	}
+	return res.RowsAffected()
+}
+
 // CheckOrInsert checks if a task is already processed or processing.
-// Returns true if the task was newly inserted (should be processed).
-// Returns false if it already exists and is not FAILED (skip processing).
 func (db *DB) CheckOrInsert(filePath string) (bool, error) {
+	return db.CheckOrInsertWithForce(filePath, false)
+}
+
+// CheckOrInsertWithForce checks if a task should be executed, supporting a force override flag.
+func (db *DB) CheckOrInsertWithForce(filePath string, force bool) (bool, error) {
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return false, err
@@ -79,17 +95,15 @@ func (db *DB) CheckOrInsert(filePath string) (bool, error) {
 
 	if err == nil {
 		// Found existing record
-		if status == string(StatusCompleted) || status == string(StatusRunning) || status == string(StatusPending) {
-			// Already in progress or done
-			return false, nil
-		}
-		// If FAILED, we allow retry (update to PENDING)
-		if status == string(StatusFailed) {
+		if force || status == string(StatusFailed) {
 			_, err = tx.Exec(`UPDATE task_state SET status = ?, error_message = NULL, updated_at = CURRENT_TIMESTAMP WHERE file_path = ?`, StatusPending, filePath)
 			if err != nil {
 				return false, err
 			}
 			return true, tx.Commit()
+		}
+		if status == string(StatusCompleted) || status == string(StatusRunning) || status == string(StatusPending) {
+			return false, nil
 		}
 	}
 
@@ -115,3 +129,4 @@ func (db *DB) UpdateStatus(filePath string, status TaskStatus, errMsg string) er
 func (db *DB) Close() error {
 	return db.conn.Close()
 }
+

@@ -59,6 +59,7 @@ type TaskPayload struct {
 	Artist       string `json:"artist"`
 	Album        string `json:"album"`
 	AlbumArtist  string `json:"albumArtist"`
+	Force        bool   `json:"force"`
 }
 
 type Config struct {

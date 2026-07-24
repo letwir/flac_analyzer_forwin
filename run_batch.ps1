@@ -17,7 +17,8 @@ param (
     [string]$MusicRoot = "M:\Music\album",
     [switch]$Test,
     [switch]$DryRun,
-    [switch]$Rough
+    [switch]$Rough,
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -122,6 +123,7 @@ foreach ($genreMain in $genreMains) {
                     flacPath = $flacPath
                     fileSize = $fileSize
                     targetScript = $targetScript
+                    force = $Force.IsPresent
                 } | ConvertTo-Json -Compress
                 
                 $response = Invoke-RestMethod -Uri "http://127.0.0.1:8080/task" -Method Post -Body $body -ContentType "application/json" -ErrorAction Stop

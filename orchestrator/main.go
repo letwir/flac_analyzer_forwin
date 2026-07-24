@@ -87,6 +87,13 @@ func main() {
 	}
 	defer stateDB.Close()
 
+	// 2.1 Reset any stale RUNNING/PENDING tasks from previous interrupted runs
+	if resetCount, err := stateDB.ResetStaleTasks(); err != nil {
+		log.Printf("Warning: Failed to reset stale tasks: %v", err)
+	} else if resetCount > 0 {
+		log.Printf("Reset %d interrupted/stale tasks to FAILED state for clean retry", resetCount)
+	}
+
 	// 3. Initialize Metrics Server
 	go func() {
 		log.Println("Starting Prometheus metrics server on :2112/metrics")
@@ -136,8 +143,8 @@ func main() {
 			return
 		}
 
-		// State check (Skip logic inside Go!)
-		shouldRun, err := stateDB.CheckOrInsert(payload.FlacPath)
+		// State check (Skip logic inside Go with force override support!)
+		shouldRun, err := stateDB.CheckOrInsertWithForce(payload.FlacPath, payload.Force)
 		if err != nil {
 			log.Printf("DB error for %s: %v", payload.FlacPath, err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)

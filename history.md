@@ -445,3 +445,12 @@ Files: run_batch.ps1, orchestrator/main.go
   - Added `defer cleanupCache(trackHash)` in `orchestrator/dispatcher/dispatcher.go` to guarantee automatic removal of `flac_analyzer_cache` on task completion or failure.
 - Blockers: None
 - Files: functor_precache.py, orchestrator/dispatcher/dispatcher.go
+
+### 2026-07-24 18:44:45
+- Category: BugFix / Feature
+- Summary: Fix interrupted tasks being improperly skipped by adding startup stale task reset (ResetStaleTasks) and -Force retry option.
+- Decisions:
+  - Added `ResetStaleTasks()` in `orchestrator/state/db.go` to automatically reset any leftover `RUNNING` or `PENDING` tasks to `FAILED` status when `orchestrator.exe` starts.
+  - Added `-Force` flag to `run_batch.ps1`, `TaskPayload`, and `CheckOrInsertWithForce()` to allow forced re-analysis of completed or skipped tracks.
+- Blockers: None
+- Files: orchestrator/state/db.go, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, run_batch.ps1
