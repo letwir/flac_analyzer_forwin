@@ -1,5 +1,5 @@
 [database]
-url = "postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db"
+url = "postgres://postgres:postgres@localhost:5432/flac_analyzer_test"
 
 [orchestrator]
 num_workers = 4

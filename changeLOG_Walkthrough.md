@@ -1,6 +1,11 @@
-# .gitignore 更新および search/ 履歴削除完了報告 (Walkthrough)
+# README.md 最新機能追記とドキュメント同期 Walkthrough
 
-## 実施した変更
-- [x] `.gitignore` に `search/` を追加。
-- [x] `git-filter-repo` により、過去の全コミット履歴から `search/` ディレクトリを削除（Rewrite History）。
-- [x] `origin` リモート URL の再登録を完了。
+## 変更内容
+- **README.md (日本語 / 英語)**:
+  - `-Force` フラグによる強制再解析コマンドの記載を追加。
+  - `ResetStaleTasks` によるオーケストレーター起動時のゾンビタスク自動リセット機能を明記。
+  - ディスク・RAMディスク枯渇を防止する一時キャッシュ自動削除機能を明記。
+  - `retry_ingest.py` による DLQ データの再送・復元コマンドを強化。
+
+## 検証
+- [README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md) の構文およびMermaidダイアグラム、リンク形式の正常性を確認。

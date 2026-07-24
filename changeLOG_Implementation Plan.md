@@ -1,8 +1,10 @@
-# .gitignore 更新および search/ ディレクトリ履歴削除計画
+# README.md 最新機能追記とドキュメント同期計画
 
 ## 概要
-`.gitignore` に `demucs/` および `search/` を追加し、`git-filter-repo` によって過去のコミット履歴からも `search/` ディレクトリを完全削除します。
+直近で追加された主要機能（`-Force` 再解析フラグ、オーケストレーター起動時のゾンビタスク自動検知リセット機能 `ResetStaleTasks`、共有メモリ・中間キャッシュ自動削除、DLQ 再送コマンドの仕様）を [README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md) に反映・補強します。
 
 ## 変更内容
-1. `.gitignore`: `demucs/` および `search/` を除外リストへ追加。
-2. Git 履歴: `git-filter-repo --path search --invert-paths --force` の実行。
+1. `README.md` (日本語版・英語版):
+   - 概要 / 特徴リストに「ゾンビタスク自動検知・リセット」および「一時キャッシュ自動クリーンアップ」を追加。
+   - 使い方 (USAGE) のバッチ実行コマンド例に `-Force` フラグの説明を追加。
+   - 使い方 (USAGE) の DLQ 再送スクリプト実行コマンド例を `.venv` 環境明示に更新。

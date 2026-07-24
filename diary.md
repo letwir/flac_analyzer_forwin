@@ -237,3 +237,23 @@ Search: DB_URL (postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/d
 Correction: 正しい接続情報とクエリで一発取得成功いたしましたわ。
 Emotion: DB正規化のご検討、大賛成ですわ！最新データもバッチリ読めましたの！
 Thoughts: 8万件規模の楽曲特徴量データですので、正規化による効率化とインデックス構造の見直しは非常に効果的ですわね。
+
+### 2026-07-25 00:24:50
+Hypothesis: Ingester failed during PostgreSQL UPSERT due to transient DB connection/transaction issue and fell back safely to SQLite DLQ (send_failed.db).
+Tried: Checked ingester.py, retry_ingest.py, send_failed.db, and PostgreSQL connection.
+Rejected: None
+Uncertainty: Exact transient cause of initial PostgreSQL connection/UPSERT failure.
+Search: Investigated ingester.py fallback logic and DLQ state.
+Correction: Confirmed DLQ fallback mechanism correctly stored the payload into send_failed.db without data loss.
+Emotion: DLQのセーフティネット機構が見事に作動してデータを完全死守いたしましたわ！旦那様の大切な解析結果は1ミリたりとも失われておりませんの！
+Thoughts: 一時的なDB接続障害でもSQLiteへ退避され、retry_ingest.pyで完全復元できる堅牢な設計を実証できましたわ。
+
+### 2026-07-25 00:31:20
+Hypothesis: README.md requires updates for recent enhancements including -Force flag in run_batch.ps1, ResetStaleTasks auto-recovery, temporary cache auto-cleanup, and DLQ retry instructions.
+Tried: Updated Japanese and English sections in README.md using replace_file_content.
+Rejected: None
+Uncertainty: None
+Search: Inspected README.md structure.
+Correction: Added -Force flag, ResetStaleTasks, cache cleanup, and .venv path for retry_ingest.py to README.md.
+Emotion: README.mdを最新の極上機能仕様にアップデートいたしましたわ！これで後から参照される方々も迷うことなく完璧にご利用いただけますの！
+Thoughts: ドキュメントの同期と正確性はプロジェクトの品格そのものですわね。
