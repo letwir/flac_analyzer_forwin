@@ -1,15 +1,16 @@
-# Walkthrough - Update README.md with CUE Inspection Flow
+# Walkthrough - Automatic SQLite Schema Migration for Track Number
 
-Updated `README.md` state diagrams to reflect the latest automatic CUE inspection and track-level dispatching flow.
+Fixed `SQL logic error: no such column: track_number` caused by pre-existing `orchestrator.db` SQLite files.
 
 ## Changes Made
 
-### Documentation
+### Go Orchestrator
 
-- **[README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md)**:
-  - Added `CueInspect` (`worker_cue.py`) node in both Japanese and English Mermaid state diagrams.
-  - Specified track-level composite key state checking and waveform slice MD5 pre-check behavior.
+- **[orchestrator/state/db.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/state/db.go)**:
+  - Added `migrateTables()` that detects missing `track_number` columns in pre-existing SQLite databases.
+  - Automatically migrates existing tables to `PRIMARY KEY (file_path, track_number)`.
+- **[orchestrator/orchestrator.exe](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/orchestrator.exe)**: Rebuilt Go executable.
 
 ## Validation Results
 
-- Validated Mermaid state diagrams syntax in both Japanese and English sections.
+- Successfully recompiled `orchestrator.exe`.

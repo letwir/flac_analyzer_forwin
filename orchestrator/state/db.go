@@ -60,6 +60,53 @@ func (db *DB) createTables() error {
 	if err != nil {
 		return fmt.Errorf("failed to create task_state table: %w", err)
 	}
+
+	return db.migrateTables()
+}
+
+func (db *DB) migrateTables() error {
+	rows, err := db.conn.Query(`PRAGMA table_info(task_state);`)
+	if err != nil {
+		return nil
+	}
+	hasTrackNumber := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err == nil {
+			if name == "track_number" {
+				hasTrackNumber = true
+				break
+			}
+		}
+	}
+	rows.Close()
+
+	if !hasTrackNumber {
+		migrationQuery := `
+		CREATE TABLE IF NOT EXISTS task_state_new (
+			file_path TEXT NOT NULL,
+			track_number INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL,
+			error_message TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (file_path, track_number)
+		);
+		INSERT OR IGNORE INTO task_state_new (file_path, track_number, status, error_message, updated_at)
+			SELECT file_path, 0, status, error_message, updated_at FROM task_state;
+		DROP TABLE task_state;
+		ALTER TABLE task_state_new RENAME TO task_state;
+		`
+		_, err := db.conn.Exec(migrationQuery)
+		if err != nil {
+			log.Printf("Warning: failed to migrate task_state table: %v", err)
+		} else {
+			log.Println("Successfully migrated orchestrator.db task_state to composite primary key (file_path, track_number)")
+		}
+	}
 	return nil
 }
 
