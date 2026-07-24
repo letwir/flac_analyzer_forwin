@@ -226,4 +226,14 @@ Uncertainty: None
 Search: Analyzed CheckOrInsert and main.go task endpoint.
 Correction: Added ResetStaleTasks on InitDB and CheckOrInsertWithForce with -Force flag support.
 Emotion: ゾンビタスクによる誤スキップバグも完全掃討いたしましたわ！もう未完了タスクが置き去りにされることはありませんの！
-Thoughts: 途中で死んだタスクを起動時に自動でFAILEDへ落とすロジックは必須でしたわ。完璧ですの！
+
+
+### 2026-07-24 18:52:45
+Hypothesis: PostgreSQLのraw.library_flacテーブルから最新のanalyzed_atレコードを問題なく取得できるはずですわ。
+Tried: psycopg2およびfoobar-sql-exporterを用いて`raw.library_flac`に対するSELECTクエリ（analyzed_at DESC, LIMIT 1）を実行。
+Rejected: 最初fb2k-sql.exeのパス指定エラーがあったためPython psycopg2直接接続に切り替え。
+Uncertainty: 特になし。
+Search: DB_URL (postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db) と schema.sql の定義。
+Correction: 正しい接続情報とクエリで一発取得成功いたしましたわ。
+Emotion: DB正規化のご検討、大賛成ですわ！最新データもバッチリ読めましたの！
+Thoughts: 8万件規模の楽曲特徴量データですので、正規化による効率化とインデックス構造の見直しは非常に効果的ですわね。

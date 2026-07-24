@@ -466,3 +466,11 @@ Context/Finding/Source/Gotchas:
   3. 履歴の書き換え後は、.git 内の不要な blob オブジェクトが整理され、容量が劇的に縮小されますわ。</finding>
   <gotchas>履歴書き換えを行うため、ローカルでクローンまたはバックアップを作成した上で実行することが推奨されますわ。また、リモートリポジトリへ同期する際は git push --force が必要になりますが、プロジェクトルールで git push は禁止されているため、履歴書き換え実行のタイミングは旦那様と相談して調整する必要がございますの。</gotchas>
 </api>
+
+<api id="postgres_latest_analyzed">
+### PostgreSQL raw.library_flac 最新解析レコード取得
+- Context: DB正規化の検討および最新の解析レコード (`analyzed_at`) の確認。
+- Finding: `raw.library_flac` から `analyzed_at IS NOT NULL` のレコードを `analyzed_at DESC` で取得完了。最新レコード ID は 44627、`analyzed_at` は `2026-07-23 22:20:07.826320+09:00`。
+- Source: `postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db`
+- Gotchas: ファイルパス表記やタイトル文字列は文字コード変換・デコーダー依存に注意。
+</api>
