@@ -59,31 +59,13 @@ def main():
         shape = tuple(info["shape"])
         dtype_name = info["dtype"]
         
-        shm, y_np = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
-        
-        try:
-            # 1. 振幅スペクトログラム(S)の計算: AudioContext.spectro 互換 (n_fft=2048, hop_length=512)
-            # librosa.stft を使用して Librosa ワーカーとの完全互換性を確保
-            S_complex = librosa.stft(y_np, n_fft=2048, hop_length=512)
-            S_mag = np.abs(S_complex)
-            
-            # ディスクへ保存 (.npy形式が確実かつ高速)
-            S_mag_path = os.path.join(cache_dir, f"{stem_name}_S_mag.npy")
-            np.save(S_mag_path, S_mag)
-            
-            # メタデータにパスを書き込む
-            metadata["stems"][stem_name]["spectro_path"] = S_mag_path
-            
-            logger.info(f"Cached spectro for {stem_name}: {S_mag.shape}")
-        except Exception as e:
-            logger.exception(f"Error calculating precache for {stem_name}")
-            sys.exit(1)
-        finally:
-            shm.close()
+        # ディスクへの巨大な.npy保存はRAM/ディスク溢れの原因となるため廃止し、共有メモリのアタッチ性検証のみを行いますの
+        shm, _ = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
+        shm.close()
 
-    logger.info(f"Precache Functor completed in {time.perf_counter() - t_start:.4f}s")
+    logger.info(f"Precache Functor passthrough completed in {time.perf_counter() - t_start:.4f}s")
     
-    # 成功したら stdout に新しいメタデータをJSONで吐き出して終了
+    # 成功したら stdout にメタデータをそのままJSONで吐き出して終了
     metadata["status"] = "success"
     print(json.dumps(metadata))
     sys.exit(0)

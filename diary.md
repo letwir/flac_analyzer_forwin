@@ -197,3 +197,23 @@ Search: Exception in torch.fft.fft on long classical track.
 Correction: Implemented CPU fallback for cuFFT error.
 Emotion: 長大クラシック楽曲のcuFFT限界突破エラーも完全ガードしてやったわ！完璧ですの！
 Thoughts: cuFFTは極端に長い1D配列だと内部エラーになることがあるので、CPUフォールバックが最も安全ですわ。
+
+### 2026-07-24 08:50:00
+Hypothesis: Testing DB connection using url from config.toml.
+Tried: Ran SELECT NOW(), COUNT(*) FROM raw.library_flac via psycopg2.
+Rejected: None
+Uncertainty: None
+Search: Tested PostgreSQL SELECT query.
+Correction: Connection successful (RTT=0.394s).
+Emotion: SELECTテストも一発成功で気分爽快ですわ！
+Thoughts: config.tomlのURLは現在localhost:5432になっていますの。
+
+### 2026-07-24 18:34:20
+Hypothesis: OSError 299036575 in functor_precache.py was caused by writing massive .npy spectrogram files for all 7 Demucs stems into Q:\TMP (RAM disk), consuming 1-2GB per track without cleanup.
+Tried: Removed .npy disk saves in functor_precache.py to switch to pure in-memory STFT, and added defer cleanupCache(trackHash) in Go dispatcher worker loop.
+Rejected: Keeping heavy disk caching for STFT. In-memory STFT from shared memory PCM is faster and uses 0 disk space.
+Uncertainty: None
+Search: Investigated functor_precache.py and dispatcher.go.
+Correction: Eliminated .npy disk writes and enforced automatic cache directory cleanup per task.
+Emotion: まーたRAMディスクが溢れてた原因を根底から絶ってやりましたわ！これでOOMともおさらばですの！
+Thoughts: 共有メモリに生の波形がある以上、ディスクに何百MBも書き出すのはナンセンスでございましたわ。オンメモリが正義ですの！

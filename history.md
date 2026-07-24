@@ -415,6 +415,16 @@ Files: run_batch.ps1, orchestrator/main.go
 
 ### 2026-07-24 00:26:00
 - Category: BugFix
+
+0
+### 2026-07-23 22:56:00
+- Category: BugFix
+- Summary: Fix AttributeError caused by non-existent ort.set_default_logger_severity
+- Decisions: Replaced invalid attribute with os.environ[\ ORT_LOGGING_LEVEL\] =  \n- Blockers: None
+- Files: models.py
+
+### 2026-07-24 00:26:00
+- Category: BugFix
 - Summary: Prevent Ingester failure and DLQ fallback by truncating long metadata string fields to 255 characters
 - Decisions: Added [:255] string truncation in ingester.py and retry_ingest.py for album, title, artist, and album_artist fields. Created models/.gitkeep
 - Blockers: None
@@ -426,3 +436,12 @@ Files: run_batch.ps1, orchestrator/main.go
 - Decisions: Wrapped torch.fft.fft and torch.fft.rfft in hilbert_envelope_phase and fft_bandpass_envelope with try-except to fallback to CPU when cuFFT fails
 - Blockers: None
 - Files: worker_tensor.py
+
+### 2026-07-24 18:34:25
+- Category: BugFix / Optimization
+- Summary: Eliminate RAM/disk overflow (OSError 299036575) by removing heavy .npy spectrogram disk dumps and adding automatic cache directory cleanup in Go orchestrator.
+- Decisions:
+  - Removed `librosa.stft` calculations and `np.save` calls in `functor_precache.py` to prevent 1-2GB per-track temporary file writes to `Q:\TMP`.
+  - Added `defer cleanupCache(trackHash)` in `orchestrator/dispatcher/dispatcher.go` to guarantee automatic removal of `flac_analyzer_cache` on task completion or failure.
+- Blockers: None
+- Files: functor_precache.py, orchestrator/dispatcher/dispatcher.go
