@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--check-hash", action="store_true", help="Check if track_hash exists in PostgreSQL")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s - %(levelname)s - %(message)s')
 
     if args.check_hash:
         try:

@@ -288,12 +288,13 @@ func (d *Dispatcher) worker(id int) {
 					return
 				}
 				
+				cleanHashOut := strings.TrimSpace(hashOut)
 				var hashMeta struct {
 					Status    string `json:"status"`
 					AudioHash string `json:"audio_hash"`
 				}
-				if err := json.Unmarshal([]byte(hashOut), &hashMeta); err != nil || hashMeta.AudioHash == "" {
-					d.failTask(task, "Failed to parse calculated hash")
+				if err := json.Unmarshal([]byte(cleanHashOut), &hashMeta); err != nil || hashMeta.AudioHash == "" {
+					d.failTask(task, fmt.Sprintf("Failed to parse calculated hash (output: %s): %v", cleanHashOut, err))
 					return
 				}
 				trackHash = hashMeta.AudioHash
@@ -307,10 +308,13 @@ func (d *Dispatcher) worker(id int) {
 				}, id, "DBCheck", ColorGreen, true)
 				
 				if err == nil {
+					cleanCheckOut := strings.TrimSpace(checkOut)
 					var checkMeta struct {
 						Exists bool `json:"exists"`
 					}
-					if err := json.Unmarshal([]byte(checkOut), &checkMeta); err == nil && checkMeta.Exists {
+					if parseErr := json.Unmarshal([]byte(cleanCheckOut), &checkMeta); parseErr != nil {
+						d.LogWarn("[W-%d] DB check JSON parse failed for hash %s: %v (raw output: %s)", id, trackHash, parseErr, cleanCheckOut)
+					} else if checkMeta.Exists {
 						d.LogInfo("[W-%d] [IO Monad] Skip processing: Hash %s already exists in PostgreSQL", id, trackHash)
 						d.db.UpdateStatus(task.FlacPath, state.StatusCompleted, "")
 						metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()

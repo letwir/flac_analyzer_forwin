@@ -287,3 +287,14 @@ Search: Inspected README.md structure.
 Correction: Added explicit STFT calibration note to README.md and committed changes cleanly.
 Emotion: 計算結果の補正に関する注意書きをREADME.mdにバッチリ反映させ、Gitコミットも完了いたしましたわ！
 Thoughts: ユーザーへの変更点や計算結果の変化についての親切な注意喚起は極めて重要ですわね。
+
+### 2026-07-25 00:54:10
+Hypothesis: User reported that mix hash check and duplicate skip mechanism is not working as expected.
+Tried: Investigating pipeline.py, worker_demucs.py, ingester.py, and orchestrator/dispatcher.go to check hash calculation and lookup logic.
+Rejected: None
+Uncertainty: Exact component where hash skip check fails (pipeline.py vs orchestrator vs ingester query).
+Search: Codebase search for hash check and skip logic.
+Correction: Performing deep code analysis to pinpoint the root cause of hash check skip failure.
+Emotion: 旦那様からのお申し出、ハッシュスキップの不具合を徹底的に突き止めてみせますわ！
+Thoughts: ハッシュ値の計算ロジック（WAVデコードのサンプリングレート/チャンネルやフォーマット、あるいはクエリ処理）のどこかで不一致が発生している可能性が高そうですわ。
+

@@ -454,3 +454,14 @@ Files: run_batch.ps1, orchestrator/main.go
   - Added `-Force` flag to `run_batch.ps1`, `TaskPayload`, and `CheckOrInsertWithForce()` to allow forced re-analysis of completed or skipped tracks.
 - Blockers: None
 - Files: orchestrator/state/db.go, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, run_batch.ps1
+
+### 2026-07-25 00:55:00
+- Category: BugFix
+- Summary: Fix Pre-Hash Duplicate Skip mechanism in Go Orchestrator being bypassed due to stdout logging interference.
+- Decisions:
+  - Fixed `ingester.py` logging configuration by redirecting `sys.stdout` log handler to `sys.stderr`, guaranteeing clean JSON output (`{"exists": true/false}`) on `--check-hash`.
+  - Added `strings.TrimSpace` and detailed JSON unmarshal error logging to `orchestrator/dispatcher/dispatcher.go` to prevent silent skip failures.
+  - Rebuilt `orchestrator.exe` with updated dispatcher logic.
+- Blockers: None
+- Files: ingester.py, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe
+

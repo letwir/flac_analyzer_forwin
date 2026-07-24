@@ -474,3 +474,11 @@ Context/Finding/Source/Gotchas:
 - Source: `postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db`
 - Gotchas: ファイルパス表記やタイトル文字列は文字コード変換・デコーダー依存に注意。
 </api>
+
+<api id="ORCHESTRATOR_PRE_HASH_SKIP_FIX">
+### Go Orchestrator Pre-Hash Duplicate Skip 不具合の修正
+- Context: Go Orchestrator が `worker_demucs.py --check-hash-only` で算出した `audio_hash` (mix波形MD5) を `ingester.py --check-hash` 経由で PostgreSQL に照会し、登録済みトラックの Demucs 分離・Librosa 解析をスキップする機能が機能せず、常に重い Demucs 解析が全件実行されていた。
+- Finding: `ingester.py` の `logging.basicConfig` が `stream=sys.stdout` に設定されていたため、`{"exists": true}` などの JSON レスポンスとともに標準出力へログ文字列が混入し、Go 側の `json.Unmarshal` で JSON パースエラーが発生して判定処理をスルーしていたことが原因。`stream=sys.stderr` へ修正し、Go 側で `strings.TrimSpace` および明確なパースエラーログを追加したことで完全復旧。
+- Source: `ingester.py`, `orchestrator/dispatcher/dispatcher.go`
+- Gotchas: Go から外部 Python ワーカーの標準出力をキャプチャして JSON で連携するスクリプト群は、絶対に logging の出力先を `sys.stdout` ではなく `sys.stderr` に制限しなければならない。
+</api>
