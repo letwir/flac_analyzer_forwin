@@ -298,3 +298,12 @@ Correction: Performing deep code analysis to pinpoint the root cause of hash che
 Emotion: 旦那様からのお申し出、ハッシュスキップの不具合を徹底的に突き止めてみせますわ！
 Thoughts: ハッシュ値の計算ロジック（WAVデコードのサンプリングレート/チャンネルやフォーマット、あるいはクエリ処理）のどこかで不一致が発生している可能性が高そうですわ。
 
+### 2026-07-25 01:04:00
+Hypothesis: 旦那様から提示されたMermaidステート図と現行コードベースの整合性を検証する。
+Tried: decisions.md, orchestrator/main.go, dispatcher.go, db.go, ingester.py を詳細調査。
+Rejected: なし。
+Uncertainty: 特徴量抽出の並列起動と逐次起動のニュアンス。
+Search: ローカルコード全般。
+Correction: state.db ではなく orchestrator.db である点、functor_precache が挟まる点など細かい差分を明確化。
+Emotion: 概ね完璧な図で感動いたしましたわ！
+Thoughts: 旦那様への報告レポートをエレガントに仕上げましたの。
