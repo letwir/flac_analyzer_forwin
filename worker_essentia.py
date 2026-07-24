@@ -45,8 +45,8 @@ def main():
         sys.exit(1)
 
     import os
-    models_dir = os.path.join(os.path.dirname(__file__), "models")
-    logger.info("Initializing Essentia models...")
+    models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "models"))
+    logger.info(f"Initializing Essentia models from {models_dir}...")
     essentia_models = models.init_worker_onnx(models_dir)
 
     logger.info("Starting Essentia extraction from shared memory (mix)...")

@@ -307,3 +307,53 @@ Search: ローカルコード全般。
 Correction: state.db ではなく orchestrator.db である点、functor_precache が挟まる点など細かい差分を明確化。
 Emotion: 概ね完璧な図で感動いたしましたわ！
 Thoughts: 旦那様への報告レポートをエレガントに仕上げましたの。
+
+### 2026-07-25 01:05:30
+Hypothesis: README.md 内の日本語版および英語版の Mermaid ステート図を現行コードの厳密な実装に合わせて更新する。
+Tried: README.md の該当箇所を multi_replace_file_content で更新し、changeLOG を同期し、git commit を実行。
+Rejected: なし。
+Uncertainty: なし。
+Search: README.md 内の mermaid ブロック。
+Correction: orchestrator.db, 202 Accepted, functor_precache, SHM 解放などの詳細ステップを日本語・英語両セクションに反映。
+Emotion: 旦那様のご要望通り、ドキュメントのステート図を完璧に最新化いたしましたわ！
+Thoughts: コードとドキュメントの一致は保守性と美しさの要ですわね。
+
+### 2026-07-25 01:08:00
+Hypothesis: Goから worker_demucs.py --check-hash-only の呼び出しが行われているか、および解析済み楽曲がDemucs分離に進む原因を突き止める。
+Tried: orchestrator/dispatcher/dispatcher.go, worker_demucs.py, ingester.py, config.toml を調査。
+Rejected: なし。
+Uncertainty: PostgreSQL接続一時失敗やスライス範囲MD5ハッシュ不致の発生状況。
+Search: Codebase search for check_hash logic across Python and Go.
+Correction: Goからは確実に指示が出ている。DB照会エラー時のproceed anywayフォールバックやMD5ミスマッチが原因。
+Emotion: 旦那様のご疑問に対し、完璧な調査結果を提示いたしますわ！
+Thoughts: フォールバック挙動のログ出力やMD5安定性の担保が重要ですわね。
+
+### 2026-07-25 01:14:00
+Hypothesis: 旦那様から提供された実ログを解析し、HashCheckとDBCheckが正しく動いているかとDemucsに進む真の原因を特定する。
+Tried: ログから [W-1] [HashCheck] の成功を確認。しかし ingester.py --check-hash が {"exists": false} を返し、DB未存在と判定されてDemucsに進んでいる事実を抽出。
+Rejected: Goから指示が出ていないという仮説（ログにより HashCheck 起動が実証されたため棄却）。
+Uncertainty: PostgreSQL内の既存 audio_hash と新しく計算された MD5 ハッシュがなぜ不一致を起こしているか。
+Search: 実ログデータ分析。
+Correction: 原因は「Goから指示が出ているものの、DB問い合わせで exists: false が返ってきたため正常にDemucsへ進行した」こと。ハッシュ不一致の理由の特定が次の鍵。
+Emotion: 実ログから真実が判明いたしましたわ！原因特定に王手ですの！
+Thoughts: audio_hash の生成ロジックの差分（タグ変更、CUEスライス、パス、デコード範囲）をチェックする必要がありますわね。
+
+### 2026-07-25 01:15:30
+Hypothesis: CUEパースおよびETLプロセスにおいて、predictionsやalbum等のメタデータが欠損する構造的原因を究明する。
+Tried: run_batch.ps1, flac_decode.py, orchestrator/dispatcher/dispatcher.go, ingester.py, worker_essentia.py を徹底調査。
+Rejected: なし。
+Uncertainty: なし。
+Search: run_batch.ps1 のタスク投下パラメータおよび flac_decode.py の CUE スライス抽出処理。
+Correction: 根本原因判明。① run_batch.ps1 が CUE スライス情報（各トラックのstart/endSample, title, album）を解析せず単一FLACパスのみPOSTしている点、② ingester.py のCUE対応フォールバック不足、③ worker_essentia.py のモデルパス参照不一致。
+Emotion: CUEパースとETLパイプラインのボトルネックを見事解き明かしましたわ！
+Thoughts: run_batch.ps1 側で CUE パースを事前に行ってスライス単位でPOSTするか、Python側で全スライスを展開してタスク登録する仕組みが必要不可欠ですわね。
+
+### 2026-07-25 01:16:50
+Hypothesis: Goオーケストレーター側でFLAC受け取り時に自動CUEパースを行い、トラック単位にタスクを自動展開するアーキテクチャへの刷新プランを作成する。
+Tried: implementation_plan.md を作成し、worker_cue.py 新設、orchestrator/main.go および db.go のトラック単位複合キー対応、dispatcher.go のメタデータ伝達堅牢化の変更点を定義。
+Rejected: なし。
+Uncertainty: なし。
+Search: リポジトリ全般。
+Correction: 旦那様の本来構想通り、Go側でCUE自動パース＆トラック分割展開を一元化する決定を下す。
+Emotion: これぞまさに洗練された極上のオーケストレーター設計ですわ！
+Thoughts: 旦那様にプランをご提示し、ご承認後に実装へ進みますの。

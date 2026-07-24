@@ -232,8 +232,8 @@ func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID 
 }
 
 func (d *Dispatcher) failTask(task TaskPayload, errMsg string) {
-	d.LogError("[Dispatcher] Task Failed: %s -> %s", task.FlacPath, errMsg)
-	d.db.UpdateStatus(task.FlacPath, state.StatusFailed, errMsg)
+	d.LogError("[Dispatcher] Task Failed: %s (Track %d) -> %s", task.FlacPath, task.TrackNumber, errMsg)
+	d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailed, errMsg)
 	metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
 	metrics.AnalyzerActiveWorkers.Dec()
 }
@@ -258,8 +258,8 @@ func (d *Dispatcher) worker(id int) {
 			metrics.AnalyzerQueueLength.Dec()
 			metrics.AnalyzerActiveWorkers.Inc()
 			
-			d.LogInfo("[W-%d] [IO Monad] Starting processing: %s", id, task.FlacPath)
-			d.db.UpdateStatus(task.FlacPath, state.StatusRunning, "")
+			d.LogInfo("[W-%d] [IO Monad] Starting processing: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
+			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusRunning, "")
 			
 			var trackHash string
 			var endSampleParam int64
@@ -316,7 +316,7 @@ func (d *Dispatcher) worker(id int) {
 						d.LogWarn("[W-%d] DB check JSON parse failed for hash %s: %v (raw output: %s)", id, trackHash, parseErr, cleanCheckOut)
 					} else if checkMeta.Exists {
 						d.LogInfo("[W-%d] [IO Monad] Skip processing: Hash %s already exists in PostgreSQL", id, trackHash)
-						d.db.UpdateStatus(task.FlacPath, state.StatusCompleted, "")
+						d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
 						metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 						metrics.AnalyzerActiveWorkers.Dec()
 						return
@@ -527,10 +527,40 @@ func (d *Dispatcher) worker(id int) {
 				return
 			}
 			
-			d.LogInfo("[W-%d] Successfully processed entire pipeline: %s", id, task.FlacPath)
-			d.db.UpdateStatus(task.FlacPath, state.StatusCompleted, "")
+			d.LogInfo("[W-%d] Successfully processed entire pipeline: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
+			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
 			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 			metrics.AnalyzerActiveWorkers.Dec()
 		}(task)
 	}
+}
+
+type CueInspectTrack struct {
+	TrackNumber int    `json:"track_number"`
+	StartSample int64  `json:"start_sample"`
+	EndSample   int64  `json:"end_sample"`
+	Title       string `json:"title"`
+	Artist      string `json:"artist"`
+}
+
+type CueInspectResult struct {
+	Status      string            `json:"status"`
+	Filepath    string            `json:"filepath"`
+	Album       string            `json:"album"`
+	AlbumArtist string            `json:"album_artist"`
+	Tracks      []CueInspectTrack `json:"tracks"`
+}
+
+func (d *Dispatcher) InspectCue(flacPath string) (*CueInspectResult, error) {
+	out, err := d.runPythonScript("worker_cue.py", []string{
+		"--flac-path", flacPath,
+	}, 0, "CueInspect", ColorCyan, true)
+	if err != nil {
+		return nil, err
+	}
+	var res CueInspectResult
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &res); err != nil {
+		return nil, fmt.Errorf("failed to parse CueInspect JSON: %w (raw: %s)", err, out)
+	}
+	return &res, nil
 }

@@ -48,10 +48,12 @@ func InitDB(dbPath string) (*DB, error) {
 func (db *DB) createTables() error {
 	query := `
 	CREATE TABLE IF NOT EXISTS task_state (
-		file_path TEXT PRIMARY KEY,
+		file_path TEXT NOT NULL,
+		track_number INTEGER NOT NULL DEFAULT 0,
 		status TEXT NOT NULL,
 		error_message TEXT,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (file_path, track_number)
 	);
 	`
 	_, err := db.conn.Exec(query)
@@ -76,11 +78,11 @@ func (db *DB) ResetStaleTasks() (int64, error) {
 
 // CheckOrInsert checks if a task is already processed or processing.
 func (db *DB) CheckOrInsert(filePath string) (bool, error) {
-	return db.CheckOrInsertWithForce(filePath, false)
+	return db.CheckOrInsertWithForce(filePath, 0, false)
 }
 
-// CheckOrInsertWithForce checks if a task should be executed, supporting a force override flag.
-func (db *DB) CheckOrInsertWithForce(filePath string, force bool) (bool, error) {
+// CheckOrInsertWithForce checks if a task should be executed, supporting track_number and a force override flag.
+func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force bool) (bool, error) {
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return false, err
@@ -88,7 +90,7 @@ func (db *DB) CheckOrInsertWithForce(filePath string, force bool) (bool, error) 
 	defer tx.Rollback()
 
 	var status string
-	err = tx.QueryRow(`SELECT status FROM task_state WHERE file_path = ?`, filePath).Scan(&status)
+	err = tx.QueryRow(`SELECT status FROM task_state WHERE file_path = ? AND track_number = ?`, filePath, trackNumber).Scan(&status)
 	if err != nil && err != sql.ErrNoRows {
 		return false, err
 	}
@@ -96,7 +98,7 @@ func (db *DB) CheckOrInsertWithForce(filePath string, force bool) (bool, error) 
 	if err == nil {
 		// Found existing record
 		if force || status == string(StatusFailed) {
-			_, err = tx.Exec(`UPDATE task_state SET status = ?, error_message = NULL, updated_at = CURRENT_TIMESTAMP WHERE file_path = ?`, StatusPending, filePath)
+			_, err = tx.Exec(`UPDATE task_state SET status = ?, error_message = NULL, updated_at = CURRENT_TIMESTAMP WHERE file_path = ? AND track_number = ?`, StatusPending, filePath, trackNumber)
 			if err != nil {
 				return false, err
 			}
@@ -108,7 +110,7 @@ func (db *DB) CheckOrInsertWithForce(filePath string, force bool) (bool, error) 
 	}
 
 	// Not found, insert new
-	_, err = tx.Exec(`INSERT INTO task_state (file_path, status) VALUES (?, ?)`, filePath, StatusPending)
+	_, err = tx.Exec(`INSERT INTO task_state (file_path, track_number, status) VALUES (?, ?, ?)`, filePath, trackNumber, StatusPending)
 	if err != nil {
 		return false, err
 	}
@@ -117,12 +119,12 @@ func (db *DB) CheckOrInsertWithForce(filePath string, force bool) (bool, error) 
 }
 
 // UpdateStatus updates the status of a task.
-func (db *DB) UpdateStatus(filePath string, status TaskStatus, errMsg string) error {
+func (db *DB) UpdateStatus(filePath string, trackNumber int, status TaskStatus, errMsg string) error {
 	_, err := db.conn.Exec(`
 		UPDATE task_state 
 		SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP 
-		WHERE file_path = ?
-	`, status, errMsg, filePath)
+		WHERE file_path = ? AND track_number = ?
+	`, status, errMsg, filePath, trackNumber)
 	return err
 }
 

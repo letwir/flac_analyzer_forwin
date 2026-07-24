@@ -143,25 +143,64 @@ func main() {
 			return
 		}
 
-		// State check (Skip logic inside Go with force override support!)
-		shouldRun, err := stateDB.CheckOrInsertWithForce(payload.FlacPath, payload.Force)
-		if err != nil {
-			log.Printf("DB error for %s: %v", payload.FlacPath, err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		// 1. Inspect CUE / FLAC tags automatically
+		cueRes, err := disp.InspectCue(payload.FlacPath)
+		if err != nil || cueRes == nil || len(cueRes.Tracks) == 0 {
+			log.Printf("CUE inspect warning for %s (fallback to single track): %v", payload.FlacPath, err)
+			shouldRun, dbErr := stateDB.CheckOrInsertWithForce(payload.FlacPath, payload.TrackNumber, payload.Force)
+			if dbErr != nil {
+				log.Printf("DB error for %s: %v", payload.FlacPath, dbErr)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			if !shouldRun {
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprintln(w, "Skipped: Already processed or in progress")
+				return
+			}
+			disp.Enqueue(payload)
+			w.WriteHeader(http.StatusAccepted)
+			fmt.Fprintln(w, "Task accepted (1 track)")
 			return
 		}
 
-		if !shouldRun {
-			// Already processed or currently processing
+		// 2. Expand into track-level tasks
+		enqueuedCount := 0
+		skippedCount := 0
+
+		for _, tr := range cueRes.Tracks {
+			taskItem := payload
+			taskItem.TrackNumber = tr.TrackNumber
+			taskItem.StartSample = tr.StartSample
+			taskItem.EndSample = tr.EndSample
+			taskItem.Title = tr.Title
+			taskItem.Artist = tr.Artist
+			taskItem.Album = cueRes.Album
+			taskItem.AlbumArtist = cueRes.AlbumArtist
+
+			shouldRun, dbErr := stateDB.CheckOrInsertWithForce(taskItem.FlacPath, taskItem.TrackNumber, taskItem.Force)
+			if dbErr != nil {
+				log.Printf("DB error for %s track %d: %v", taskItem.FlacPath, taskItem.TrackNumber, dbErr)
+				continue
+			}
+
+			if !shouldRun {
+				skippedCount++
+				continue
+			}
+
+			disp.Enqueue(taskItem)
+			enqueuedCount++
+		}
+
+		if enqueuedCount == 0 && skippedCount > 0 {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintln(w, "Skipped: Already processed or in progress")
+			fmt.Fprintf(w, "Skipped: All %d tracks already processed or in progress\n", skippedCount)
 			return
 		}
 
-		// Enqueue task
-		disp.Enqueue(payload)
 		w.WriteHeader(http.StatusAccepted)
-		fmt.Fprintln(w, "Task accepted")
+		fmt.Fprintf(w, "Task accepted (%d tracks enqueued, %d skipped)\n", enqueuedCount, skippedCount)
 	})
 
 	srv := &http.Server{
