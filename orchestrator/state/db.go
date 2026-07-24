@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
@@ -19,23 +20,15 @@ const (
 
 type DB struct {
 	conn *sql.DB
+	mu   sync.Mutex
 }
 
 // InitDB initializes the SQLite database for state management.
 func InitDB(dbPath string) (*DB, error) {
-	conn, err := sql.Open("sqlite", dbPath)
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", dbPath)
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
-	}
-
-	// Enable WAL mode for high concurrency
-	_, err = conn.Exec(`PRAGMA journal_mode=WAL;`)
-	if err != nil {
-		log.Printf("Warning: failed to set WAL mode: %v", err)
-	}
-	_, err = conn.Exec(`PRAGMA synchronous=NORMAL;`)
-	if err != nil {
-		log.Printf("Warning: failed to set synchronous mode: %v", err)
 	}
 
 	db := &DB{conn: conn}
@@ -112,6 +105,9 @@ func (db *DB) migrateTables() error {
 
 // ResetStaleTasks resets any RUNNING or PENDING tasks to FAILED upon orchestrator startup.
 func (db *DB) ResetStaleTasks() (int64, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
 	res, err := db.conn.Exec(`
 		UPDATE task_state 
 		SET status = ?, error_message = 'Interrupted by orchestrator restart', updated_at = CURRENT_TIMESTAMP 
@@ -130,6 +126,9 @@ func (db *DB) CheckOrInsert(filePath string) (bool, error) {
 
 // CheckOrInsertWithForce checks if a task should be executed, supporting track_number and a force override flag.
 func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force bool) (bool, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return false, err
@@ -167,6 +166,9 @@ func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force boo
 
 // UpdateStatus updates the status of a task.
 func (db *DB) UpdateStatus(filePath string, trackNumber int, status TaskStatus, errMsg string) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
 	_, err := db.conn.Exec(`
 		UPDATE task_state 
 		SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP 

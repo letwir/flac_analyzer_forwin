@@ -1,15 +1,15 @@
-# Walkthrough - Automatic SQLite Schema Migration for Track Number
+# Walkthrough - Thread-Safe SQLite Operations & Busy Timeout
 
-Fixed `SQL logic error: no such column: track_number` caused by pre-existing `orchestrator.db` SQLite files.
+Resolved `SQLITE_BUSY (database is locked)` errors when multiple track tasks are enqueued simultaneously from CUE files.
 
 ## Changes Made
 
 ### Go Orchestrator
 
 - **[orchestrator/state/db.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/state/db.go)**:
-  - Added `migrateTables()` that detects missing `track_number` columns in pre-existing SQLite databases.
-  - Automatically migrates existing tables to `PRIMARY KEY (file_path, track_number)`.
-- **[orchestrator/orchestrator.exe](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/orchestrator.exe)**: Rebuilt Go executable.
+  - Added DSN parameters for `busy_timeout` (10 seconds), `journal_mode=WAL`, and `synchronous=NORMAL`.
+  - Wrapped write transactions (`CheckOrInsertWithForce`, `UpdateStatus`, `ResetStaleTasks`) with `sync.Mutex` locks.
+- **[orchestrator/orchestrator.exe](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/orchestrator.exe)**: Rebuilt Go binary.
 
 ## Validation Results
 
