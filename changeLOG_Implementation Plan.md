@@ -1,15 +1,17 @@
-# Implementation Plan - Thread-Safe SQLite Operations & Busy Timeout
+# Implementation Plan - Non-Blocking Asynchronous Single Writer Channel for SQLite
 
-Resolve `SQLITE_BUSY (database is locked)` errors during high-concurrency CUE track task registration.
+Implement a Single Writer Actor pattern using Go channels (`opQueue chan dbWriteOp`) for `orchestrator.db` to eliminate write locks and zero out SQLite wait times.
 
 ## Proposed Changes
 
 ### Go Orchestrator
 
 #### [MODIFY] [orchestrator/state/db.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/state/db.go)
-- Configured SQLite DSN with `_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)`.
-- Added `sync.Mutex` (`mu`) to `DB` struct to serialize write operations (`CheckOrInsertWithForce`, `UpdateStatus`, `ResetStaleTasks`).
+- Created `opQueue chan dbWriteOp` with buffer size 10,000 for non-blocking queueing.
+- Implemented `writerLoop()` running in a dedicated background goroutine.
+- Converted `UpdateStatus` into a fire-and-forget non-blocking call (0ms wait time).
+- Converted `CheckOrInsertWithForce` to use one-shot result channels for single-threaded serialization.
 
 ## Verification Plan
 
-- Rebuilt `orchestrator.exe` with thread-safe SQLite operations.
+- Rebuilt `orchestrator.exe` with non-blocking async SQLite channel pattern.

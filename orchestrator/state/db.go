@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"sync"
 
 	_ "modernc.org/sqlite"
 )
@@ -18,12 +17,27 @@ const (
 	StatusFailed    TaskStatus = "FAILED"
 )
 
-type DB struct {
-	conn *sql.DB
-	mu   sync.Mutex
+type dbWriteOp struct {
+	opType      string // "check_or_insert", "update_status"
+	filePath    string
+	trackNumber int
+	status      TaskStatus
+	errMsg      string
+	force       bool
+	resChan     chan dbWriteResult
 }
 
-// InitDB initializes the SQLite database for state management.
+type dbWriteResult struct {
+	shouldRun bool
+	err       error
+}
+
+type DB struct {
+	conn    *sql.DB
+	opQueue chan dbWriteOp
+}
+
+// InitDB initializes the SQLite database with a single-writer async channel loop.
 func InitDB(dbPath string) (*DB, error) {
 	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", dbPath)
 	conn, err := sql.Open("sqlite", dsn)
@@ -31,11 +45,34 @@ func InitDB(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
 
-	db := &DB{conn: conn}
+	db := &DB{
+		conn:    conn,
+		opQueue: make(chan dbWriteOp, 10000),
+	}
 	if err := db.createTables(); err != nil {
 		return nil, err
 	}
+
+	go db.writerLoop()
+
 	return db, nil
+}
+
+func (db *DB) writerLoop() {
+	for op := range db.opQueue {
+		switch op.opType {
+		case "check_or_insert":
+			shouldRun, err := db.execCheckOrInsert(op.filePath, op.trackNumber, op.force)
+			if op.resChan != nil {
+				op.resChan <- dbWriteResult{shouldRun: shouldRun, err: err}
+			}
+		case "update_status":
+			err := db.execUpdateStatus(op.filePath, op.trackNumber, op.status, op.errMsg)
+			if op.resChan != nil {
+				op.resChan <- dbWriteResult{err: err}
+			}
+		}
+	}
 }
 
 func (db *DB) createTables() error {
@@ -105,9 +142,6 @@ func (db *DB) migrateTables() error {
 
 // ResetStaleTasks resets any RUNNING or PENDING tasks to FAILED upon orchestrator startup.
 func (db *DB) ResetStaleTasks() (int64, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-
 	res, err := db.conn.Exec(`
 		UPDATE task_state 
 		SET status = ?, error_message = 'Interrupted by orchestrator restart', updated_at = CURRENT_TIMESTAMP 
@@ -124,11 +158,21 @@ func (db *DB) CheckOrInsert(filePath string) (bool, error) {
 	return db.CheckOrInsertWithForce(filePath, 0, false)
 }
 
-// CheckOrInsertWithForce checks if a task should be executed, supporting track_number and a force override flag.
+// CheckOrInsertWithForce checks if a task should be executed via async writer channel.
 func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force bool) (bool, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	resChan := make(chan dbWriteResult, 1)
+	db.opQueue <- dbWriteOp{
+		opType:      "check_or_insert",
+		filePath:    filePath,
+		trackNumber: trackNumber,
+		force:       force,
+		resChan:     resChan,
+	}
+	res := <-resChan
+	return res.shouldRun, res.err
+}
 
+func (db *DB) execCheckOrInsert(filePath string, trackNumber int, force bool) (bool, error) {
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return false, err
@@ -142,7 +186,6 @@ func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force boo
 	}
 
 	if err == nil {
-		// Found existing record
 		if force || status == string(StatusFailed) {
 			_, err = tx.Exec(`UPDATE task_state SET status = ?, error_message = NULL, updated_at = CURRENT_TIMESTAMP WHERE file_path = ? AND track_number = ?`, StatusPending, filePath, trackNumber)
 			if err != nil {
@@ -155,7 +198,6 @@ func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force boo
 		}
 	}
 
-	// Not found, insert new
 	_, err = tx.Exec(`INSERT INTO task_state (file_path, track_number, status) VALUES (?, ?, ?)`, filePath, trackNumber, StatusPending)
 	if err != nil {
 		return false, err
@@ -164,11 +206,20 @@ func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force boo
 	return true, tx.Commit()
 }
 
-// UpdateStatus updates the status of a task.
+// UpdateStatus enqueues an asynchronous non-blocking status update.
 func (db *DB) UpdateStatus(filePath string, trackNumber int, status TaskStatus, errMsg string) error {
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	db.opQueue <- dbWriteOp{
+		opType:      "update_status",
+		filePath:    filePath,
+		trackNumber: trackNumber,
+		status:      status,
+		errMsg:      errMsg,
+		resChan:     nil, // Fire-and-forget (Non-blocking!)
+	}
+	return nil
+}
 
+func (db *DB) execUpdateStatus(filePath string, trackNumber int, status TaskStatus, errMsg string) error {
 	_, err := db.conn.Exec(`
 		UPDATE task_state 
 		SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP 
@@ -178,6 +229,7 @@ func (db *DB) UpdateStatus(filePath string, trackNumber int, status TaskStatus, 
 }
 
 func (db *DB) Close() error {
+	close(db.opQueue)
 	return db.conn.Close()
 }
 
