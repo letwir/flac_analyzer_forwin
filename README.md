@@ -126,7 +126,9 @@ Go オーケストレーターと Python ワーカープロセス群によるタ
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle
+    [*] --> StartupReset: オーケストレーター起動
+    StartupReset --> Idle: orchestrator.db の RUNNING/PENDING タスクを FAILED へリセット
+    
     Idle --> TaskReceived: /task APIへファイルパスがPOSTされる
     TaskReceived --> CueInspect: worker_cue.py 起動<br/>（CUE/タグ解析・トラック自動抽出）
     CueInspect --> CheckState: orchestrator.db (SQLite) で各トラックの(file_path, track_number)確認
@@ -139,27 +141,30 @@ stateDiagram-v2
     ResponseAccepted --> Dispatcher_Loop
     
     state Dispatcher_Loop {
-        CheckHash: worker_demucs.py --check-hash-only<br/>(トラック波形MD5による事前重複判定)
-        CheckHash --> SkippedByHash: PostgreSQLに同ハッシュが既に存在
-        CheckHash --> ResourceWait: 未登録楽曲
+        CalcHash: worker_demucs.py --check-hash-only<br/>(トラック波形MD5算出)
+        CalcHash --> CheckHashDB: ingester.py --check-hash<br/>(PostgreSQL重複照合)
+        CheckHashDB --> SkippedByHash: PostgreSQLに同ハッシュが既に存在
+        CheckHashDB --> ResourceWait: 未登録楽曲
         
         ResourceWait --> AllocatingSHM: メモリ空き容量・並列上限セマフォ監視
         AllocatingSHM --> DemucsProcessing: worker_demucs.py 起動<br/>（波形スライスデコード・分離・SHM書き込み）
         DemucsProcessing --> FreezingSHM: Go側で共有メモリを PAGE_READONLY 化
-        FreezingSHM --> Precache: functor_precache.py 起動<br/>（中間波形キャッシュ化）
+        FreezingSHM --> Precache: functor_precache.py 起動<br/>（中間波形検証・SHMアタッチ確認）
         Precache --> FeatureExtracting: 特徴量抽出プロセス起動<br/>（Librosa → Tensor → Essentia）
         FeatureExtracting --> ReleaseSHM: Go側で共有メモリ (SHM) 解放
-        ReleaseSHM --> Ingesting: ingester.py 起動（JSON集約）
+        ReleaseSHM --> WriteJSONFiles: 中間JSONファイル書き込み<br/>(queue/ ディレクトリへ一時出力)
+        WriteJSONFiles --> Ingesting: ingester.py 起動（JSON集約・DB照合）
     }
     
     SkippedByHash --> TaskCompleted: スキップ完了 (status: COMPLETED)
     Ingesting --> PostgreSQL_Upsert: DB正常時 (PostgreSQLへUPSERT)
-    Ingesting --> DLQ_Fallback: DB接続不可時 (send_failed.dbへ保存)
+    Ingesting --> DLQ_Fallback: DB接続不可時 (send_failed.dbへ退避)
     
-    PostgreSQL_Upsert --> FileCleanup: 一時JSON・キャッシュ削除
-    DLQ_Fallback --> FileCleanup
+    PostgreSQL_Upsert --> TagWriteback: FLACタグ書き戻し &<br/>Windows タイムスタンプ保護 (SetFileTime)
+    TagWriteback --> IngesterCleanup: ingester.py による中間JSON・キャッシュ削除
+    DLQ_Fallback --> IngesterCleanup: 退避後に中間JSON・キャッシュ削除
     
-    FileCleanup --> TaskCompleted: orchestrator.db の status を COMPLETED に更新
+    IngesterCleanup --> TaskCompleted: Go defer クリーンアップ実行後<br/>orchestrator.db の status を COMPLETED に更新
     TaskCompleted --> [*]
 ```
 
@@ -442,7 +447,9 @@ Process flow diagram detailing the interaction between the Go orchestrator and P
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle
+    [*] --> StartupReset: Orchestrator Startup
+    StartupReset --> Idle: Reset stale RUNNING/PENDING tasks in orchestrator.db to FAILED
+    
     Idle --> TaskReceived: File path POSTed to /task API
     TaskReceived --> CueInspect: Execute worker_cue.py<br/>(Parse CUE/tags & extract tracks)
     CueInspect --> CheckState: Check orchestrator.db (SQLite) for each (file_path, track_number)
@@ -455,27 +462,30 @@ stateDiagram-v2
     ResponseAccepted --> Dispatcher_Loop
     
     state Dispatcher_Loop {
-        CheckHash: worker_demucs.py --check-hash-only<br/>(Track waveform MD5 pre-check)
-        CheckHash --> SkippedByHash: Hash already in PostgreSQL
-        CheckHash --> ResourceWait: New track
+        CalcHash: worker_demucs.py --check-hash-only<br/>(Calculate track waveform MD5)
+        CalcHash --> CheckHashDB: ingester.py --check-hash<br/>(Check duplication in PostgreSQL)
+        CheckHashDB --> SkippedByHash: Hash already exists in PostgreSQL
+        CheckHashDB --> ResourceWait: New track
         
-        ResourceWait --> AllocatingSHM: Monitor RAM & concurrency limits
+        ResourceWait --> AllocatingSHM: Monitor RAM & concurrency limit semaphore
         AllocatingSHM --> DemucsProcessing: Execute worker_demucs.py<br/>(Slice decode/Separate/SHM Write)
         DemucsProcessing --> FreezingSHM: Go freezes SHM to PAGE_READONLY
-        FreezingSHM --> Precache: Execute functor_precache.py<br/>(Cache intermediate arrays)
+        FreezingSHM --> Precache: Execute functor_precache.py<br/>(Validate intermediate array & SHM attach)
         Precache --> FeatureExtracting: Execute extraction workers<br/>(Librosa → Tensor → Essentia)
         FeatureExtracting --> ReleaseSHM: Go closes & unmaps SHM handles
-        ReleaseSHM --> Ingesting: Execute ingester.py (Aggregate JSON)
+        ReleaseSHM --> WriteJSONFiles: Write intermediate JSON files<br/>(Save temporarily to queue/ directory)
+        WriteJSONFiles --> Ingesting: Execute ingester.py (Aggregate JSON & DB sync)
     }
     
     SkippedByHash --> TaskCompleted: Mark completed (status: COMPLETED)
     Ingesting --> PostgreSQL_Upsert: DB available (PostgreSQL UPSERT)
     Ingesting --> DLQ_Fallback: DB unreachable (Save to send_failed.db)
     
-    PostgreSQL_Upsert --> FileCleanup: Purge temp JSON & cache files
-    DLQ_Fallback --> FileCleanup
+    PostgreSQL_Upsert --> TagWriteback: Writeback FLAC tags &<br/>Protect Windows timestamp (SetFileTime)
+    TagWriteback --> IngesterCleanup: ingester.py purges temp JSON & cache files
+    DLQ_Fallback --> IngesterCleanup: Purge temp files after DLQ fallback
     
-    FileCleanup --> TaskCompleted: Update orchestrator.db status to COMPLETED
+    IngesterCleanup --> TaskCompleted: Go defer cleanup & update status to COMPLETED in orchestrator.db
     TaskCompleted --> [*]
 ```
 

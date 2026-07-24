@@ -1,5 +1,13 @@
 # History Log
 
+### 2026-07-25 08:57:32
+
+- Category: Documentation / Roadmap Conversation 3
+- Summary: README.md (日本語版・英語版) の Mermaid 状態遷移図改訂および issues.md の更新
+- Decisions: 5つの建築的要素 (#3 WriteJSONFiles, #4 worker_demucs/ingester2段階ハッシュ照合, #6 起動時ゾンビタスクリセット, #7 Go defer+Python ingester分散クリーンアップ, #10 FLACタグ書き戻し+SetFileTimeタイムスタンプ保護) を正確に反映
+- Files: README.md, issues.md
+
+
 ### 2026-07-17 08:14:00
 
 - [x] DONE: config.toml を無効なDBポートに一時変更し、ingester.py を実行した際に正しく DB 接続エラーが発生して DLQ (SQLite: send_failed.db) にペイロードが退避されることを確認。
@@ -465,3 +473,31 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: None
 - Files: ingester.py, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe
 
+### 2026-07-25 08:52:30
+- Category: Planning / Documentation
+- Summary: Establish 4-conversation roadmap and update issues.md for 10 state diagram & code discrepancies.
+- Decisions:
+  - Registered items #1-#10 in `issues.md` covering DLQ retry timer, CUE error handling, and README.md state diagram/text updates.
+  - Formulated 4-conversation implementation plan (`implementation_plan.md`).
+- Blockers: None
+- Files: issues.md, implementation_plan.md
+
+### 2026-07-25 08:53:25
+- Category: Implementation / Refactoring
+- Summary: Implement #1 (10m DLQ retry and final FAILED state) and #5 (Immediate FAILED on CUE inspect error) in Go orchestrator.
+- Decisions:
+  - Updated `orchestrator/main.go` to mark tasks `FAILED` and return HTTP 400 when CUE inspection fails or returns 0 tracks.
+  - Updated `orchestrator/dispatcher/dispatcher.go` to catch `ingester.py` exit code 2 (DLQ fallback), schedule a 10-minute delayed `retry_ingest.py` execution, and set status to `FAILED` if the retry fails.
+  - Created `instructions_for_next_conversations.md` containing copy-pasteable prompts for conversations #2, #3, and #4.
+- Blockers: None
+- Files: orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, instructions_for_next_conversations.md
+
+
+
+
+### 2026-07-25 08:55:00
+- Category: Verification / Build & Test
+- Summary: Verified Go Orchestrator modifications (#1: DLQ fallback 10-min auto retry & FAILED status update, #5: CUE inspect failure immediate FAILED status). Passed go test ./... and go build. Marked #1 and #5 as DONE in issues.md.
+- Decisions: Confirmed Go orchestrator test suite and build output (orchestrator.exe) are functional without errors.
+- Blockers: None
+- Files: issues.md, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go
