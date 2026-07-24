@@ -128,22 +128,23 @@ Go オーケストレーターと Python ワーカープロセス群によるタ
 stateDiagram-v2
     [*] --> Idle
     Idle --> TaskReceived: /task APIへファイルパスがPOSTされる
-    TaskReceived --> CheckState: orchestrator.db (SQLite) でタスク状態確認
+    TaskReceived --> CueInspect: worker_cue.py 起動<br/>（CUE/タグ解析・トラック自動抽出）
+    CueInspect --> CheckState: orchestrator.db (SQLite) で各トラックの(file_path, track_number)確認
     
-    CheckState --> Skipped: すでに COMPLETED / RUNNING / PENDING
-    CheckState --> Queued: 未処理 (PENDINGとして登録)
+    CheckState --> Skipped: 全トラックが COMPLETED / RUNNING / PENDING
+    CheckState --> Queued: 未処理トラックを PENDING として登録
     
     Skipped --> [*]: レスポンス 200 OK (処理スキップ)
-    Queued --> ResponseAccepted: レスポンス 202 Accepted
+    Queued --> ResponseAccepted: レスポンス 202 Accepted (展開トラック数返却)
     ResponseAccepted --> Dispatcher_Loop
     
     state Dispatcher_Loop {
-        CheckHash: worker_demucs.py --check-hash-only<br/>デコード波形MD5による事前重複判定
+        CheckHash: worker_demucs.py --check-hash-only<br/>(トラック波形MD5による事前重複判定)
         CheckHash --> SkippedByHash: PostgreSQLに同ハッシュが既に存在
         CheckHash --> ResourceWait: 未登録楽曲
         
         ResourceWait --> AllocatingSHM: メモリ空き容量・並列上限セマフォ監視
-        AllocatingSHM --> DemucsProcessing: worker_demucs.py 起動<br/>（波形デコード・分離・SHM書き込み）
+        AllocatingSHM --> DemucsProcessing: worker_demucs.py 起動<br/>（波形スライスデコード・分離・SHM書き込み）
         DemucsProcessing --> FreezingSHM: Go側で共有メモリを PAGE_READONLY 化
         FreezingSHM --> Precache: functor_precache.py 起動<br/>（中間波形キャッシュ化）
         Precache --> FeatureExtracting: 特徴量抽出プロセス起動<br/>（Librosa → Tensor → Essentia）
@@ -443,22 +444,23 @@ Process flow diagram detailing the interaction between the Go orchestrator and P
 stateDiagram-v2
     [*] --> Idle
     Idle --> TaskReceived: File path POSTed to /task API
-    TaskReceived --> CheckState: Check orchestrator.db (SQLite) status
+    TaskReceived --> CueInspect: Execute worker_cue.py<br/>(Parse CUE/tags & extract tracks)
+    CueInspect --> CheckState: Check orchestrator.db (SQLite) for each (file_path, track_number)
     
-    CheckState --> Skipped: Already COMPLETED / RUNNING / PENDING
-    CheckState --> Queued: Unprocessed (Registered as PENDING)
+    CheckState --> Skipped: All tracks already COMPLETED / RUNNING / PENDING
+    CheckState --> Queued: Unprocessed tracks registered as PENDING
     
     Skipped --> [*]: 200 OK (Skipped)
-    Queued --> ResponseAccepted: 202 Accepted
+    Queued --> ResponseAccepted: 202 Accepted (Enqueued tracks count)
     ResponseAccepted --> Dispatcher_Loop
     
     state Dispatcher_Loop {
-        CheckHash: worker_demucs.py --check-hash-only<br/>MD5 Pre-check via audio waveform
+        CheckHash: worker_demucs.py --check-hash-only<br/>(Track waveform MD5 pre-check)
         CheckHash --> SkippedByHash: Hash already in PostgreSQL
         CheckHash --> ResourceWait: New track
         
         ResourceWait --> AllocatingSHM: Monitor RAM & concurrency limits
-        AllocatingSHM --> DemucsProcessing: Execute worker_demucs.py<br/>(Decode/Separate/SHM Write)
+        AllocatingSHM --> DemucsProcessing: Execute worker_demucs.py<br/>(Slice decode/Separate/SHM Write)
         DemucsProcessing --> FreezingSHM: Go freezes SHM to PAGE_READONLY
         FreezingSHM --> Precache: Execute functor_precache.py<br/>(Cache intermediate arrays)
         Precache --> FeatureExtracting: Execute extraction workers<br/>(Librosa → Tensor → Essentia)

@@ -1,31 +1,15 @@
-# Implementation Plan - Automatic CUE Parsing & Track-Level Dispatching
+# Implementation Plan - Update README.md with CUE Inspection Flow
 
-Implement automatic CUE/tag parsing in Go orchestrator and dispatch track-level tasks to prevent metadata loss (`album`, `title`, `artist`, `predictions`).
+Reflect automatic CUE inspection and track-level dispatching in `README.md` state diagrams.
 
 ## Proposed Changes
 
-### Go Orchestrator
+### Documentation
 
-#### [MODIFY] [orchestrator/state/db.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/state/db.go)
-- Updated `task_state` schema to composite primary key `(file_path, track_number)`.
-- Updated `CheckOrInsertWithForce` and `UpdateStatus` to support `trackNumber`.
-
-#### [MODIFY] [orchestrator/dispatcher/dispatcher.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go)
-- Updated worker status updates to pass `task.TrackNumber`.
-- Added `InspectCue` method to invoke `worker_cue.py`.
-
-#### [MODIFY] [orchestrator/main.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go)
-- Updated `/task` endpoint to inspect CUE/FLAC tags via `worker_cue.py` and auto-expand into track-level tasks.
-
-### Python Workers
-
-#### [NEW] [worker_cue.py](file:///a:/Users/letwir/repo/flac_analyzer_forwin/worker_cue.py)
-- Created CUE/FLAC tag inspector worker that outputs track slices JSON.
-
-#### [MODIFY] [worker_essentia.py](file:///a:/Users/letwir/repo/flac_analyzer_forwin/worker_essentia.py)
-- Updated `models_dir` to absolute path to prevent model load failures.
+#### [MODIFY] [README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md)
+- Updated Japanese and English Mermaid state diagrams to include `CueInspect` (`worker_cue.py`) node.
+- Added track-level composite key checking `(file_path, track_number)` and slice-based waveform MD5 check details.
 
 ## Verification Plan
 
-- Rebuilt `orchestrator.exe` with Go 1.x without compilation errors.
-- Verified `worker_cue.py` execution against FLAC files.
+- Verified Markdown rendering and Mermaid diagram flow integrity.

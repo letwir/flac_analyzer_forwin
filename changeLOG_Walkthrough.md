@@ -1,22 +1,15 @@
-# Walkthrough - Automatic CUE Parsing & Track-Level Task Dispatching
+# Walkthrough - Update README.md with CUE Inspection Flow
 
-Implemented automatic CUE/tag inspection in the Go orchestrator upon receiving `/task` requests, expanding FLAC files into track-level tasks with full metadata (`album`, `title`, `artist`, `track_number`, `predictions`).
+Updated `README.md` state diagrams to reflect the latest automatic CUE inspection and track-level dispatching flow.
 
 ## Changes Made
 
-### Go Orchestrator
+### Documentation
 
-- **[orchestrator/state/db.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/state/db.go)**: Updated `task_state` schema to composite primary key `(file_path, track_number)`.
-- **[orchestrator/dispatcher/dispatcher.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go)**: Integrated `InspectCue` method and updated status tracking to include `TrackNumber`.
-- **[orchestrator/main.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go)**: Modified `/task` handler to inspect CUE/FLAC metadata automatically and enqueue track-level payloads.
-- **[orchestrator/orchestrator.exe](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/orchestrator.exe)**: Rebuilt Go binary.
-
-### Python Workers
-
-- **[worker_cue.py](file:///a:/Users/letwir/repo/flac_analyzer_forwin/worker_cue.py)**: Added lightweight CUE/FLAC inspector worker.
-- **[worker_essentia.py](file:///a:/Users/letwir/repo/flac_analyzer_forwin/worker_essentia.py)**: Absolute path resolution for `models_dir` to ensure Essentia model loading.
+- **[README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md)**:
+  - Added `CueInspect` (`worker_cue.py`) node in both Japanese and English Mermaid state diagrams.
+  - Specified track-level composite key state checking and waveform slice MD5 pre-check behavior.
 
 ## Validation Results
 
-- Successfully compiled `orchestrator.exe`.
-- Tested `worker_cue.py` for CUE boundary extraction.
+- Validated Mermaid state diagrams syntax in both Japanese and English sections.
