@@ -55,6 +55,28 @@ func setupEventLog() *eventlog.Log {
 	return elog
 }
 
+func fatalErrorLog(titleJP, descJP, hintJP, titleEN, descEN, hintEN string, err error) {
+	log.Printf("==========================================================================")
+	log.Printf(" ❌ 【エラー発生 / ERROR OCCURRED】 %s", titleJP)
+	log.Printf(" --------------------------------------------------------------------------")
+	log.Printf(" [JP] %s", descJP)
+	if hintJP != "" {
+		log.Printf(" 💡 [ヒント] %s", hintJP)
+	}
+	log.Printf(" --------------------------------------------------------------------------")
+	log.Printf(" [EN] %s", descEN)
+	if hintEN != "" {
+		log.Printf(" 💡 [Hint] %s", hintEN)
+	}
+	if err != nil {
+		log.Printf(" 🔍 [Details/詳細] %v", err)
+	}
+	log.Printf("==========================================================================")
+	log.Printf("※ コンソールが即座に閉じるのを防ぐため、5秒間待機いたしますわ...")
+	time.Sleep(5 * time.Second)
+	log.Fatalf("Orchestrator terminated due to fatal error.")
+}
+
 func main() {
 	var configPath string
 	var logLevelStr string
@@ -79,22 +101,26 @@ func main() {
 	var cfg Config
 	cfgBytes, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Printf("==========================================================")
-		log.Printf(" [ERROR] Config file not found or unreadable!")
-		log.Printf("  Target path: %s", configPath)
-		log.Printf("  Searched candidates: [config.toml, ../config.toml, orchestrator/config.toml]")
-		log.Printf("  Hint: Please copy 'config.toml.example' to 'config.toml'.")
-		log.Printf("==========================================================")
-		time.Sleep(5 * time.Second)
-		log.Fatalf("Failed to read config file (%s): %v", configPath, err)
+		fatalErrorLog(
+			"設定ファイル不在・読み込み不可",
+			fmt.Sprintf("設定ファイル (%s) が見つからないか、読み込むことができませんでしたわ！", configPath),
+			"プロジェクトルートにある 'config.toml.example' をコピーして 'config.toml' を作成してくださいませ。",
+			"Config file missing or unreadable",
+			fmt.Sprintf("Config file (%s) was not found or is unreadable.", configPath),
+			"Please copy 'config.toml.example' to 'config.toml' in the project root.",
+			err,
+		)
 	}
 	if err := toml.Unmarshal(cfgBytes, &cfg); err != nil {
-		log.Printf("==========================================================")
-		log.Printf(" [ERROR] Failed to parse config.toml syntax!")
-		log.Printf("  Target path: %s", configPath)
-		log.Printf("==========================================================")
-		time.Sleep(5 * time.Second)
-		log.Fatalf("Failed to parse config file (%s): %v", configPath, err)
+		fatalErrorLog(
+			"設定ファイル文法エラー",
+			fmt.Sprintf("設定ファイル (%s) の TOML 構文解析に失敗いたしましたわ！", configPath),
+			"記述形式や文字コード（UTF-8）に誤りがないかご確認くださいませ。",
+			"Config syntax error",
+			fmt.Sprintf("Failed to parse TOML syntax in config file (%s).", configPath),
+			"Please check the TOML syntax and ensure UTF-8 encoding.",
+			err,
+		)
 	}
 
 	// Set defaults for dynamic scaling
@@ -194,7 +220,15 @@ func main() {
 
 	stateDB, err := state.InitDB(dbPath)
 	if err != nil {
-		log.Fatalf("Failed to initialize state DB (%s): %v", dbPath, err)
+		fatalErrorLog(
+			"状態DB (SQLite) 初期化失敗",
+			fmt.Sprintf("タスク状態データベース (%s) の初期化に失敗いたしましたわ！", dbPath),
+			"データベースファイルへの書き込み権限や、他プロセスによるロック（二重起動等）をご確認くださいませ。",
+			"State DB (SQLite) initialization failed",
+			fmt.Sprintf("Failed to initialize state database (%s).", dbPath),
+			"Please check file write permissions and ensure another process is not locking the DB.",
+			err,
+		)
 	}
 	defer stateDB.Close()
 
@@ -209,7 +243,15 @@ func main() {
 	go func() {
 		log.Println("Starting Prometheus metrics server on :2112/metrics")
 		if err := metrics.InitMetricsServer(":2112"); err != nil {
-			log.Fatalf("Metrics server failed: %v", err)
+			fatalErrorLog(
+				"メトリクスサーバー起動失敗",
+				"Prometheus メトリクスサーバー (:2112) の起動に失敗いたしましたわ！",
+				"ポート 2112 が他プロセスや Orchestrator の二重起動で使用されていないかご確認くださいませ。",
+				"Metrics server failed",
+				"Prometheus metrics server (:2112) failed to start.",
+				"Please check if port 2112 is already bound by another process or an existing Orchestrator instance.",
+				err,
+			)
 		}
 	}()
 
@@ -330,7 +372,15 @@ func main() {
 	go func() {
 		log.Println("Listening for tasks on :8080/task")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			fatalErrorLog(
+				"タスク受付 HTTP サーバー起動失敗",
+				"タスク受付 HTTP サーバー (:8080) の起動に失敗いたしましたわ！",
+				"ポート 8080 が他アプリケーションや既存の Orchestrator プロセスで使用されていないかご確認くださいませ。",
+				"Task receiver HTTP server failed to start",
+				"HTTP task receiver server (:8080) failed to start.",
+				"Please check if port 8080 is already in use by another application or Orchestrator instance.",
+				err,
+			)
 		}
 	}()
 

@@ -683,3 +683,12 @@ Files: run_batch.ps1, orchestrator/main.go
   1. orchestrator/main.go: 設定ファイルが見つからない、あるいは文法エラーの際、明確なエラーメッセージ・探索候補・解決ヒントを表示し、コンソール閉鎖を防止する 5秒待機タイマーを追加。
 - Blockers: なし。
 - Files: orchestrator/main.go, orchestrator.exe
+
+
+### 2026-07-25 23:39:15
+- Category: Error Logging & Internationalization (Bilingual JP/EN)
+- Summary: 致命的エラー時のログ出力をお嬢様言葉日本語＋英語のバイリンガル併記形式へ刷新
+- Decisions:
+  1. orchestrator/main.go: fatalErrorLog ヘルパーを新設。設定ファイル不在・文法エラー・DBロック・ポート衝突等の全致命的エラーパスにおいて、視覚的なアスキーボックスで「日本語（お嬢様言葉）＋英語」をダブル表示するよう統一改修。
+- Blockers: なし。
+- Files: orchestrator/main.go, orchestrator.exe
