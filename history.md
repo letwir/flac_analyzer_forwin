@@ -654,3 +654,13 @@ Files: run_batch.ps1, orchestrator/main.go
 - Decisions: .git 履歴の完全クリーンアップを実施。サイズを 57.4 MB から 0.29 MB (298 KB) に削減。
 - Blockers: なし
 - Files: .gitignore, .git
+
+
+### 2026-07-25 23:33:40
+- Category: Build & Orchestrator Fix
+- Summary: Orchestrator起動エラーの解消およびビルドバッチ init.bat の新設
+- Decisions:
+  1. orchestrator/main.go: -config 未指定時に config.toml, ../config.toml, orchestrator/config.toml の順で自動探索するフォールバック処理を実装。
+  2. ルートディレクトリに init.bat を配置。Goコンパイラの環境チェック、orchestrator ディレクトリでの go build、およびビルド成果物のルート直下への自動同期コピーを一括自動化。
+- Blockers: Cmd.exe における if ブロック内の記号・特殊パースエラーをラベルと goto 制御で解消。
+- Files: orchestrator/main.go, init.bat, orchestrator.exe

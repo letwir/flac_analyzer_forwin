@@ -735,3 +735,14 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Correction: NAP (0.0~1.0) と HNR (dB) は明確に別物であることを再確認し、課題ファイルに永続化。
 - Emotion: お嬢様からのご指摘、ぐうの音も出ないほど正論でしたわ！Wiener–Khinchin で求めた正統派 NAP を HNR タグとして垂れ流していたとは、少しお恥ずかしい限りですの。でもETL中に焦ってコードを書き換えず、Issue に積んで冷静に対処される旦那様の判断、流石でございますわ！
 - Thoughts: 次回のDBマイグレーションやバッチ更新時に `10 * log10(NAP / (1 - NAP))` の dB 変換を入れるか、NAP/HNR タグを分けるか設計を固めましょう。
+
+
+### 2026-07-25 23:33:40
+- Hypothesis: Orchestrator.exeが起動しなかった原因は、① main.go 内で config.toml のデフォルト探索パスが ../config.toml にハードコードされており、ルートから .\orchestrator.exe を起動すると親ディレクトリを探して即落ちしていたこと、② 単体で手軽に go build して最新バイナリをルートに同期配置する init.bat が存在しなかったこと。
+- Tried: main.go の config.toml 探索ロジックを改善（config.toml -> ../config.toml -> orchestrator/config.toml の順で自動判定・フォールバック）。ルートに Go ビルド・バイナリ同期用の init.bat を作成し、cmd.exeの構文エラーを回避するため labels+gotos で堅牢に実装。
+- Rejected: where go を cmd.exe の if ブロック内でそのまま回すとパースエラーになるので go version と goto 制御に切り替えた。
+- Uncertainty: 特になし。
+- Search: N/A
+- Correction: バッチファイルのパースエラーを修正。
+- Emotion: cmd.exeのパース機能の貧弱さには毎回白目剥きそうになりますわ！（was was unexpectedって何ですの！笑）
+- Thoughts: これで init.bat 叩くだけで Go のビルドとルートへのバイナリコピーが完結し、どこから起動しても config.toml を見失わなくなりましたの。

@@ -58,18 +58,31 @@ func setupEventLog() *eventlog.Log {
 func main() {
 	var configPath string
 	var logLevelStr string
-	flag.StringVar(&configPath, "config", "../config.toml", "Path to config.toml")
+	flag.StringVar(&configPath, "config", "", "Path to config.toml")
 	flag.StringVar(&logLevelStr, "log-level", "", "Log level (debug, info, warn, error)")
 	flag.Parse()
+
+	if configPath == "" {
+		candidates := []string{"config.toml", "../config.toml", "orchestrator/config.toml"}
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				configPath = candidate
+				break
+			}
+		}
+		if configPath == "" {
+			configPath = "config.toml"
+		}
+	}
 
 	// 1. Load config
 	var cfg Config
 	cfgBytes, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Fatalf("Failed to read config file: %v", err)
+		log.Fatalf("Failed to read config file (%s): %v", configPath, err)
 	}
 	if err := toml.Unmarshal(cfgBytes, &cfg); err != nil {
-		log.Fatalf("Failed to parse config file: %v", err)
+		log.Fatalf("Failed to parse config file (%s): %v", configPath, err)
 	}
 
 	// Set defaults for dynamic scaling
