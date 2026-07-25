@@ -553,3 +553,13 @@ Thoughts: 次回以降の会話指示書も用意できたので、スムーズ�
 - Correction: implementation_plan.md を更新し、旦那様に最終承認を仰ぐ。
 - Emotion: 旦那様と共に最高にエレガントで理論的に美しいスケジューラを構築できる喜びでいっぱいですわ！
 - Thoughts: 旦那様に更新済みの implementation_plan.md を提示し、Proceed をお待ちいたしますの。
+
+### 2026-07-25 21:59:45
+- Hypothesis: CUE解析エラーおよびCUE無しFLACファイル処理の中断は、VorbisCommentタグ等の複数値(配列)が worker_cue.py からそのまま出力され Go 側の string 型 unmarshal で衝突したこと、および main.go での InspectCue エラー即時タスク失敗ハンドリングが原因である。
+- Tried: worker_cue.py に ensure_str ヘルパーを追加して配列タグも単一文字列化。dispatcher.go に FlexibleString 型を導入して Go 側での JSON アンマーシャルを超堅牢化。main.go で CUE 不存在/解析失敗時にエラー中断せず曲全体(Track 1)のシングルタスクへフォールバックして処理を安全に続行する修正を実施。orchestrator.exe を再ビルド。
+- Rejected: CUEが見つからない場合にタスク全体を Failed で打ち切る旧来のエラーハンドリング。
+- Uncertainty: 特になし。
+- Search: worker_cue.py, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go
+- Correction: CUEなしファイルでも何ら問題なくタグ読み・ハッシュ照会・Demucs分離・Librosa特徴抽出へ安全にフォールバック移行できるように改修。
+- Emotion: 旦那様の疑問（もしや以前のガードレール？）を解き明かし、配列タグのアンマーシャルエラーとCUEなしフォールバックの両方を完璧に解決できましたわ！
+- Thoughts: 旦那様へ動作原理の解説と修正結果をご報告いたしますの。

@@ -228,17 +228,25 @@ func main() {
 		// 1. Inspect CUE / FLAC tags automatically
 		cueRes, err := disp.InspectCue(payload.FlacPath)
 		if err != nil || cueRes == nil || len(cueRes.Tracks) == 0 {
-			errMsg := fmt.Sprintf("CUE inspect failed: %v", err)
-			if cueRes != nil && len(cueRes.Tracks) == 0 {
-				errMsg = "CUE inspect returned 0 tracks"
+			warnMsg := "CUE not present or failed to parse"
+			if err != nil {
+				warnMsg = fmt.Sprintf("CUE inspect warning: %v", err)
 			}
-			log.Printf("CUE inspect error for %s: %s", payload.FlacPath, errMsg)
-			stateDB.UpdateStatus(payload.FlacPath, payload.TrackNumber, state.StatusFailed, errMsg)
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "Task failed: %s\n", errMsg)
-			return
+			log.Printf("Fallback to single track processing for %s: %s", payload.FlacPath, warnMsg)
+			cueRes = &dispatcher.CueInspectResult{
+				Status:   "fallback",
+				Filepath: payload.FlacPath,
+				Tracks: []dispatcher.CueInspectTrack{
+					{
+						TrackNumber: 1,
+						StartSample: 0,
+						EndSample:   0,
+						Title:       dispatcher.FlexibleString(payload.Title),
+						Artist:      dispatcher.FlexibleString(payload.Artist),
+					},
+				},
+			}
 		}
-
 
 		// 2. Expand into track-level tasks
 		enqueuedCount := 0
@@ -249,10 +257,10 @@ func main() {
 			taskItem.TrackNumber = tr.TrackNumber
 			taskItem.StartSample = tr.StartSample
 			taskItem.EndSample = tr.EndSample
-			taskItem.Title = tr.Title
-			taskItem.Artist = tr.Artist
-			taskItem.Album = cueRes.Album
-			taskItem.AlbumArtist = cueRes.AlbumArtist
+			taskItem.Title = tr.Title.String()
+			taskItem.Artist = tr.Artist.String()
+			taskItem.Album = cueRes.Album.String()
+			taskItem.AlbumArtist = cueRes.AlbumArtist.String()
 
 			shouldRun, dbErr := stateDB.CheckOrInsertWithForce(taskItem.FlacPath, taskItem.TrackNumber, taskItem.Force)
 			if dbErr != nil {

@@ -537,3 +537,13 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: None
 - Files: orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe, implementation_plan.md, ct_verification_report.md
 
+### 2026-07-25 21:59:45
+- Category: BugFix / Robustness
+- Summary: Fix JSON unmarshal error caused by array tags in CueInspect and enable graceful single-track fallback when CUE is missing or failed to parse.
+- Decisions:
+  - Added `ensure_str` helper in `worker_cue.py` to join array-type tags into ` / ` separated strings before outputting CueInspect JSON.
+  - Introduced `FlexibleString` custom type with custom JSON unmarshaler in `orchestrator/dispatcher/dispatcher.go` to safely decode both string and string array fields from Python workers into Go structs.
+  - Updated `orchestrator/main.go` so that if CueInspect encounters an error or returns zero tracks, it logs a warning and falls back to single-track processing (Track 1, full range) instead of failing the task outright.
+- Blockers: None
+- Files: worker_cue.py, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go, history.md, diary.md
+

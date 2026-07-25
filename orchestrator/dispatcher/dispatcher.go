@@ -611,19 +611,40 @@ func (d *Dispatcher) worker(id int) {
 	}
 }
 
+type FlexibleString string
+
+func (fs *FlexibleString) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*fs = FlexibleString(s)
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*fs = FlexibleString(strings.Join(arr, " / "))
+		return nil
+	}
+	*fs = FlexibleString(string(data))
+	return nil
+}
+
+func (fs FlexibleString) String() string {
+	return string(fs)
+}
+
 type CueInspectTrack struct {
-	TrackNumber int    `json:"track_number"`
-	StartSample int64  `json:"start_sample"`
-	EndSample   int64  `json:"end_sample"`
-	Title       string `json:"title"`
-	Artist      string `json:"artist"`
+	TrackNumber int            `json:"track_number"`
+	StartSample int64          `json:"start_sample"`
+	EndSample   int64          `json:"end_sample"`
+	Title       FlexibleString `json:"title"`
+	Artist      FlexibleString `json:"artist"`
 }
 
 type CueInspectResult struct {
 	Status      string            `json:"status"`
 	Filepath    string            `json:"filepath"`
-	Album       string            `json:"album"`
-	AlbumArtist string            `json:"album_artist"`
+	Album       FlexibleString    `json:"album"`
+	AlbumArtist FlexibleString    `json:"album_artist"`
 	Tracks      []CueInspectTrack `json:"tracks"`
 }
 

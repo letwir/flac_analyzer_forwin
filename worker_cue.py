@@ -21,6 +21,11 @@ def setup_logger():
         handlers=[logging.StreamHandler(sys.stderr)]
     )
 
+def ensure_str(val) -> str:
+    if isinstance(val, list):
+        return " / ".join([str(x) for x in val if x])
+    return str(val) if val is not None else ""
+
 def main():
     setup_logger()
     logger = logging.getLogger("CueWorker")
@@ -37,22 +42,18 @@ def main():
     try:
         handle = build_flac_handle(filepath)
         
-        album = handle.tags.get("album", "")
-        if isinstance(album, list):
-            album = album[0] if album else ""
-            
-        album_artist = handle.tags.get("albumartist", handle.tags.get("album artist", ""))
-        if isinstance(album_artist, list):
-            album_artist = album_artist[0] if album_artist else ""
+        album = ensure_str(handle.tags.get("album", ""))
+        album_artist = ensure_str(handle.tags.get("albumartist", handle.tags.get("album artist", "")))
 
         tracks = []
         for slice_item in handle.slices:
+            artist_val = slice_item.artist or handle.tags.get("artist", "")
             tracks.append({
                 "track_number": slice_item.track_number,
                 "start_sample": slice_item.start_sample,
                 "end_sample": slice_item.end_sample,
-                "title": slice_item.title,
-                "artist": slice_item.artist or handle.tags.get("artist", "")
+                "title": ensure_str(slice_item.title),
+                "artist": ensure_str(artist_val)
             })
 
         output = {
