@@ -725,3 +725,13 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Correction: バックアップと不要 pack の属性クリア。
 - Emotion: 旦那様のリポジトリが 57.4 MB から 298 KB へと圧倒的クリーン状態になって最高にすっきりいたしましたわ！
 - Thoughts: Claude君の指摘に感謝しつつ、完璧な仕事ができて満足ですわ。
+
+### 2026-07-25 23:28:30
+- Hypothesis: 旦那様からのHNR計算手法の確認依頼とタグ仕様改修の提案に対し、現行コード（_calc_hnr_nap）の計算論理（Wiener-Khinchin 経由 NAP 算出）を解説し、ETL実行中であることを考慮して issues.md に課題登録して後日改修方針を提示する。
+- Tried: `analyzer.py` の `_calc_hnr_nap` を検索・解読。`issues.md` に【Spec/HNR】の課題エントリーを追記。
+- Rejected: 現在走っているETL中にコードを変更して即時デシベル変換を入れること（DB/タグデータの不連続性・不一致リスク回避のため）。
+- Uncertainty: デシベル変換時の clip 値（0.9999など極小分母ガード）の具体的なパラメーター設定。
+- Search: analyzer.py 内の `_calc_hnr_nap` および `LIBROSA_HNR` タグ書き戻し箇所。
+- Correction: NAP (0.0~1.0) と HNR (dB) は明確に別物であることを再確認し、課題ファイルに永続化。
+- Emotion: お嬢様からのご指摘、ぐうの音も出ないほど正論でしたわ！Wiener–Khinchin で求めた正統派 NAP を HNR タグとして垂れ流していたとは、少しお恥ずかしい限りですの。でもETL中に焦ってコードを書き換えず、Issue に積んで冷静に対処される旦那様の判断、流石でございますわ！
+- Thoughts: 次回のDBマイグレーションやバッチ更新時に `10 * log10(NAP / (1 - NAP))` の dB 変換を入れるか、NAP/HNR タグを分けるか設計を固めましょう。

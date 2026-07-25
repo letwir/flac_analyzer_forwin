@@ -16,3 +16,9 @@
 - [x]DONE #8 【Docs】 README.md: USAGE直下に config.toml 解説 (skip_dup_by_hash / force:true 挙動含む) を追加
 - [x]DONE #9 【Docs】 README.md: 末尾に Windows 共有メモリ (SHM) の詳細仕様・割り当てセクションを追加
 - [x]DONE #10 【Docs】 README.md: Mermaid図に FLAC タグ書き戻し + Windows タイムスタンプ保護のステップを追加
+
+## 課題・仕様検討 (HNR / NAP 評価値の変換と命名)
+- [ ] 【Spec/HNR】 HNR特徴量の評価値（NAP: 0.0〜1.0）から一般的な Harmonics-to-Noise Ratio (dB) へのスケール変換・Vorbisタグ/DB命名の見直し
+  - 現状: `_calc_hnr_nap` は Wiener–Khinchin 経由の正規化自己相関ピーク (NAP, 0.0〜1.0) を算出しており、一般的な音響分析ツール (Praat等) の HNR (dB: $10 \cdot \log_{10}(\text{NAP}/(1-\text{NAP}))$) と数値スケールが異なる。
+  - 方針: ETL実行中のため即時コード変更は避け、次回バッチ/マイグレーション時に① `LIBROSA_HNR` タグを dB 変換値に切り替えるか、② `LIBROSA_NAP` (0.0~1.0) と `LIBROSA_HNR` (dB) の定義を分離整理するかを決定して適用する。
+
