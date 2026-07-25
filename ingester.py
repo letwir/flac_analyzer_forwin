@@ -112,17 +112,31 @@ def main():
 
     try:
         flac = FLAC(args.flac_path)
-        for key, value in flac.tags:
-            meta[key] = value
+        for key, val_list in flac.items():
+            vals = [str(x) for x in val_list]
+            key_lower = key.lower()
+            if len(vals) == 1:
+                meta[key_lower] = vals[0]
+            elif len(vals) > 1:
+                meta[key_lower] = vals
+            else:
+                meta[key_lower] = ""
         
+        def format_tag(vals):
+            if not vals:
+                return ""
+            if isinstance(vals, list):
+                return " / ".join([str(x) for x in vals if x])
+            return str(vals)
+
         if not album_artist:
-            album_artist = flac.get("albumartist", flac.get("album artist", [""]))[0]
+            album_artist = format_tag(flac.get("albumartist", flac.get("album artist", [])))
         if not album:
-            album = flac.get("album", [""])[0]
+            album = format_tag(flac.get("album", []))
         if not artist:
-            artist = flac.get("artist", [""])[0]
+            artist = format_tag(flac.get("artist", []))
         if not title:
-            title = flac.get("title", [""])[0]
+            title = format_tag(flac.get("title", []))
         
         album_artist = (album_artist or "")[:255]
         album = (album or "")[:255]

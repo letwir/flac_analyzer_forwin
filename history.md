@@ -547,3 +547,13 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: None
 - Files: worker_cue.py, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go, history.md, diary.md
 
+### 2026-07-25 22:01:30
+- Category: Enhancement / Data Structure
+- Summary: Preserve multi-value FLAC tags as JSON arrays in PostgreSQL meta JSONB column while providing formatted strings for flat DB search columns.
+- Decisions:
+  - Modified `ingester.py` to parse FLAC tags via `flac.items()`, preserving multi-value tags (length >= 2) as native `list` objects in the `meta` JSONB payload.
+  - Updated `worker_cue.py` with `preserve_tag_value` to allow JSON array outputs for multi-value tags.
+  - Kept Go orchestrator's `FlexibleString` type intact to seamlessly handle both single strings and array structures without type mismatch errors.
+- Blockers: None
+- Files: ingester.py, worker_cue.py, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe
+

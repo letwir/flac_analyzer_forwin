@@ -563,3 +563,13 @@ Thoughts: 次回以降の会話指示書も用意できたので、スムーズ�
 - Correction: CUEなしファイルでも何ら問題なくタグ読み・ハッシュ照会・Demucs分離・Librosa特徴抽出へ安全にフォールバック移行できるように改修。
 - Emotion: 旦那様の疑問（もしや以前のガードレール？）を解き明かし、配列タグのアンマーシャルエラーとCUEなしフォールバックの両方を完璧に解決できましたわ！
 - Thoughts: 旦那様へ動作原理の解説と修正結果をご報告いたしますの。
+
+### 2026-07-25 22:01:30
+- Hypothesis: PostgreSQL の meta (JSONB) カラムへ複数値タグ(ARTIST等)を文字列結合で平坦化せずリスト(JSON配列)構造のまま完全保持して書き込む必要がある。
+- Tried: ingester.py の FLAC メタデータ抽出部で flac.items() を使用し、要素数2以上の複数値タグを list 型のまま meta JSONB に保持。worker_cue.py でも preserve_tag_value により配列タグをそのまま JSON 出力可能に修正。orchestrator.exe を再ビルド。
+- Rejected: 複数値タグの " / " 結合による文字列化の一律適用。
+- Uncertainty: 特になし。
+- Search: ingester.py, worker_cue.py, orchestrator/dispatcher/dispatcher.go
+- Correction: 平坦化検索用 DB カラム(artist VARCHAR(255))には結合文字列を渡しつつ、meta JSONB には配列構造 ["...", "..."] を100%完全保持して格納するハイブリッド構造を実現。
+- Emotion: 旦那様の「リストとしてjsonbに突っ込みたい」というこだわりを完璧なデータ構造で実現でき、大変誇らしい気持ちですの！
+- Thoughts: 旦那様にご報告いたしますの。

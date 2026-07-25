@@ -21,9 +21,14 @@ def setup_logger():
         handlers=[logging.StreamHandler(sys.stderr)]
     )
 
-def ensure_str(val) -> str:
+def preserve_tag_value(val):
     if isinstance(val, list):
-        return " / ".join([str(x) for x in val if x])
+        clean_list = [str(x) for x in val if str(x).strip()]
+        if len(clean_list) == 1:
+            return clean_list[0]
+        elif len(clean_list) > 1:
+            return clean_list
+        return ""
     return str(val) if val is not None else ""
 
 def main():
@@ -42,8 +47,8 @@ def main():
     try:
         handle = build_flac_handle(filepath)
         
-        album = ensure_str(handle.tags.get("album", ""))
-        album_artist = ensure_str(handle.tags.get("albumartist", handle.tags.get("album artist", "")))
+        album = preserve_tag_value(handle.tags.get("album", ""))
+        album_artist = preserve_tag_value(handle.tags.get("albumartist", handle.tags.get("album artist", "")))
 
         tracks = []
         for slice_item in handle.slices:
@@ -52,8 +57,8 @@ def main():
                 "track_number": slice_item.track_number,
                 "start_sample": slice_item.start_sample,
                 "end_sample": slice_item.end_sample,
-                "title": ensure_str(slice_item.title),
-                "artist": ensure_str(artist_val)
+                "title": preserve_tag_value(slice_item.title),
+                "artist": preserve_tag_value(artist_val)
             })
 
         output = {
