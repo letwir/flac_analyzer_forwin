@@ -1,0 +1,39 @@
+MIT License
+
+Copyright (c) 2026 flac_analyzer_forwin authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+### Notice Regarding Pre-trained AI Models & ONNX Weights / モデルおよびONNXのライセンスに関する注意点
+
+This repository contains source code only and does NOT include any pre-trained model weights.
+
+- The source code of this project is licensed under the MIT License.
+- However, third-party pre-trained models and ONNX weights (e.g., Essentia models, Discogs classifiers, Demucs models) fetched or utilized by this tool are subject to their respective original licenses (e.g., AGPLv3 for Essentia models by MTG/UPF, CC BY-NC-SA 4.0, MIT, etc.).
+- Users are solely responsible for complying with the licensing terms of any third-party models or ONNX files downloaded and executed with this software, especially regarding commercial use and redistribution.
+
+---
+
+本リポジトリにはソースコードのみが含まれており、学習済みモデルの重み（ONNXファイル等）は同梱されておりません。
+
+- 本プロジェクトのソースコード自体は **MIT ライセンス** のもとで提供されます。
+- ただし、本ツールでダウンロード・利用する外部の学習済みモデル（Essentia の ONNX モデル、Discogs 分類器、Demucs 等）には、各配布元（MTG / Music Technology Group UPF の AGPLv3 ライセンス、Creative Commons ライセンス等）の個別のライセンスが適用されます。
+- モデルファイルの商用利用、再配布、または利用の際は、各自で各モデルのライセンス条項を必ずご確認の上、コンプライアンスを遵守してご使用ください。

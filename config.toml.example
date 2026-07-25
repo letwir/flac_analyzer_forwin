@@ -1,0 +1,49 @@
+[database]
+# PostgreSQL データベースの接続 URL
+url = "postgres://username:password@localhost:5432/flac_analyzer_db"
+
+[orchestrator]
+# ワーカープロセス数 (0 の場合は CPU/RAM リソースに基づく自動算出)
+num_workers = 0
+
+# メモリ防御・リソース割り当て制御パラメータ
+max_ram_ratio = 0.625            # システム最大使用メモリ割合 (例: 62.5%)
+cpu_worker_ratio = 0.80          # CPUコア数に対する最大ワーカー割り当て割合
+estimated_worker_ram_gb = 1.75   # ワーカー1基あたりの想定メモリ使用量 (GB)
+min_avail_ram_gb = 1.75          # 最低保証空きメモリ容量 (GB)
+
+# Demucs ONNX 推論の同時実行数制限 (GPU/VRAM 保護のため通常 1)
+demucs_concurrent_limit = 1
+# 共有メモリ (SHM) 割り当てインターバル (秒)
+shm_allocation_delay_sec = 2
+
+# 解析中間 JSON の出力キューディレクトリ (相対パスまたは絶対パス)
+queue_dir = "./queue"
+# テスト用 FLAC 格納ディレクトリ
+test_flac_dir = "./testFLAC"
+
+# mix波形MD5ハッシュによる登録済みトラックの事前重複判定・解析バイパス
+skip_dup_by_hash = true
+
+[python_env]
+# Python シングルスレッド化および環境変数設定 (CPU スレッド競合・オーバーヘッドの防止)
+omp_num_threads = "1"
+openblas_num_threads = "1"
+mkl_num_threads = "1"
+numexpr_num_threads = "1"
+veclib_maximum_threads = "1"
+hf_hub_offline = "1"
+pythonutf8 = "1"
+pythonioencoding = "utf-8"
+
+[models]
+# ONNX / ステム分離・特徴量抽出モデル用パラメータ
+intra_op_num_threads = 1
+inter_op_num_threads = 1
+patch_size = 128
+patch_hop = 62
+n_fft = 512
+hop_length = 256
+n_mels = 96
+sr = 44100
+resample_sr = 16000
