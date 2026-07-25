@@ -1,5 +1,17 @@
 # History Log
 
+### 2026-07-25 08:59:00
+
+- Category: Documentation / Roadmap Conversation 4 (Final Project Closure)
+- Summary: README.md の文章ドキュメント追記（functor_precache.pyの実態、config.toml詳細仕様、Windows SHM & WORM アーキテクチャ）、Goオーケストレーターのビルド検証 (`go build`)、および issues.md の全タスク完了化
+- Decisions:
+  - #2: functor_precache.py が.npyディスク保存を行わず、PAGE_READONLY 共有メモリのアタッチ性・メタデータ整合性検証のみを行うパススルー構造であることを README.md に明記。
+  - #8: USAGE セクション直下に config.toml の全パラメータ（database.url, num_workers, demucs_concurrent_limit, shm_allocation_delay_sec, queue_dir, skip_dup_by_hash）の仕様表および -Force (force: true) の強制再解析挙動の解説を追加。
+  - #9: README.md 末尾（日本語・英語双方）に Windows 共有メモリ (SHM) の Win32 API 制御、WORM (Write-Once Read-Many) フリーズ・並行読み取り、および Go defer によるガベージコレクション・リーク防止メカニズムの仕様セクションを新設。
+  - orchestrator の Go ビルド完了および実行バイナリ生成を確認。issues.md の全項目を [x]DONE に整列。
+- Files: README.md, issues.md, orchestrator/orchestrator.exe
+
+
 ### 2026-07-25 08:57:32
 
 - Category: Documentation / Roadmap Conversation 3

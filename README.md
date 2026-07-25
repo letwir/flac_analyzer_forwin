@@ -68,7 +68,7 @@ pip install -r requirements.txt
   ```
 
 ### 2. 設定ファイルの準備
-プロジェクトルートの `config.toml` に PostgreSQL の接続情報や並列実行数を設定します。
+プロジェクトルートの `config.toml` に PostgreSQL の接続情報や並列実行数、各種スキップフラグを設定します。
 
 ```toml
 [database]
@@ -81,6 +81,23 @@ shm_allocation_delay_sec = 2
 queue_dir = "../queue"
 skip_dup_by_hash = true
 ```
+
+#### ⚙️ 設定パラメータ詳細仕様
+
+| パラメータ | 型 | 説明 |
+| :--- | :--- | :--- |
+| `database.url` | String | PostgreSQL の接続 URI (`postgres://user:pass@host:port/dbname`)。 |
+| `orchestrator.num_workers` | Integer | ディスパッチャが同時に並列実行を許可する最大ワーカープロセス数。 |
+| `orchestrator.demucs_concurrent_limit` | Integer | 重い GPU/CPU 負荷を伴う音源分離 (`worker_demucs.py`) の最大同時実行制限セマフォ。 |
+| `orchestrator.shm_allocation_delay_sec` | Integer | 共有メモリ (SHM) の確保・解放タイミングにおけるプロセス間同期用の安全遅延（秒）。 |
+| `orchestrator.queue_dir` | String | 各抽出ワーカーが一時的に成果物 JSON を書き出すキューディレクトリのパス。 |
+| `orchestrator.skip_dup_by_hash` | Boolean | `true` の場合、音源分離の前に波形 MD5 ハッシュを算出（`--check-hash-only`）し、PostgreSQL に同ハッシュの解析成果が既に存在すれば Demucs 音源分離および特徴量抽出処理を **100% スキップ** します。 |
+
+#### 🔄 `force: true` (再解析フラグ `-Force`) の挙動
+`.\run_batch.ps1 -Force` または POST API に `force: true` を指定してリクエストを送信した場合：
+1. `orchestrator.db` 上の既存タスク状態 (`COMPLETED`) および `skip_dup_by_hash` による PostgreSQL 重複チェックが **完全に無効化** されます。
+2. 過去に解析・永続化済みの楽曲であっても、Demucs による波形分離から全特徴量抽出（Librosa, Tensor, Essentia）、および PostgreSQL への `JSONB` UPSERT（履歴テーブル `raw_library_flac_history` への自動退避含む）が強制再実行されます。
+3. アルゴリズムの変更（ Hann 窓適用など）やモデル刷新時に過去データを一括更新する際に使用します。
 
 ### 3. 解析モデルの配置
 `models/` ディレクトリに必要な ONNX 分類器モデルおよびクラスマッピング JSON を配置します（例: `discogs-effnet-bs64-1.onnx` 等）。
@@ -100,7 +117,7 @@ go build -o orchestrator.exe
 別ウィンドウの PowerShell からディレクトリ走査スクリプトを実行します。
 
 ```powershell
-# 通常の一括解析
+# 通常の一括解析 (重複ハッシュスキップ有効)
 .\run_batch.ps1 -Dir "D:\Music\FLAC_Library"
 
 # 失敗/スキップされたファイルを強制再解析する場合 (-Force フラグ)
@@ -133,7 +150,7 @@ stateDiagram-v2
     TaskReceived --> CueInspect: worker_cue.py 起動<br/>（CUE/タグ解析・トラック自動抽出）
     CueInspect --> CheckState: orchestrator.db (SQLite) で各トラックの(file_path, track_number)確認
     
-    CheckState --> Skipped: 全トラックが COMPLETED / RUNNING / PENDING
+    CheckState --> Skipped: 全トラックが COMPLETED / RUNNING / PENDING (force:false 時)
     CheckState --> Queued: 未処理トラックを PENDING として登録
     
     Skipped --> [*]: レスポンス 200 OK (処理スキップ)
@@ -143,13 +160,13 @@ stateDiagram-v2
     state Dispatcher_Loop {
         CalcHash: worker_demucs.py --check-hash-only<br/>(トラック波形MD5算出)
         CalcHash --> CheckHashDB: ingester.py --check-hash<br/>(PostgreSQL重複照合)
-        CheckHashDB --> SkippedByHash: PostgreSQLに同ハッシュが既に存在
+        CheckHashDB --> SkippedByHash: PostgreSQLに同ハッシュが既に存在 (skip_dup_by_hash=true 時)
         CheckHashDB --> ResourceWait: 未登録楽曲
         
         ResourceWait --> AllocatingSHM: メモリ空き容量・並列上限セマフォ監視
         AllocatingSHM --> DemucsProcessing: worker_demucs.py 起動<br/>（波形スライスデコード・分離・SHM書き込み）
         DemucsProcessing --> FreezingSHM: Go側で共有メモリを PAGE_READONLY 化
-        FreezingSHM --> Precache: functor_precache.py 起動<br/>（中間波形検証・SHMアタッチ確認）
+        FreezingSHM --> Precache: functor_precache.py 起動<br/>（SHM read-only アタッチ・メタデータ整合性検証）
         Precache --> FeatureExtracting: 特徴量抽出プロセス起動<br/>（Librosa → Tensor → Essentia）
         FeatureExtracting --> ReleaseSHM: Go側で共有メモリ (SHM) 解放
         ReleaseSHM --> WriteJSONFiles: 中間JSONファイル書き込み<br/>(queue/ ディレクトリへ一時出力)
@@ -306,6 +323,33 @@ erDiagram
 
 ---
 
+## Windows 共有メモリ (SHM) 管理と WORM アーキテクチャ
+
+本システムでは、Windows 環境において大量の音源ファイル（数十GB〜数TB）を一括処理する際のメモリ不足（OOM）や I/O ボトルネックを根絶するため、**Windows 共有メモリ (Shared Memory) による WORM (Write-Once Read-Many) アーキテクチャ** を採用しています。
+
+### 1. WORM (Write-Once Read-Many) アーキテクチャ
+
+1. **書き込みフェーズ (Write Phase)**:
+   - `worker_demucs.py` が FLAC ファイルをスライスデコードし、Demucs による音源分離 (stems: `mix`, `drums`, `bass`, `other`, `vocals`) を実行します。
+   - 分離された float32 多次元配列テンソルは、Windows Win32 API (`CreateFileMappingW`, `MapViewOfFile`) を介して `PAGE_READWRITE` モードでメモリ上に作成された命名共有メモリ領域に直接書き込まれます。
+2. **フリーズフェーズ (Freeze Phase)**:
+   - Go オーケストレーターが Python プロセスからの書き込み完了を検知すると、共有メモリのメモリ保護属性を `PAGE_READWRITE` から **`PAGE_READONLY`** へ変更（フリーズ）します。
+3. **並行読み取りフェーズ (Read-Many Phase)**:
+   - 後続の特徴量抽出ワーカー (`functor_precache.py`, `worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py`) は、`PAGE_READONLY` で保護された共有メモリ領域にアタッチします。
+   - `functor_precache.py` は、ディスクへの中間 `.npy` ファイル保存を完全に排除し、共有メモリのアタッチ性検証とメタデータ整合性の高速チェックのみを行います。
+   - 各抽出ワーカーは、他のワーカーや自身の誤動作によって共有メモリ上の波形データが改変されるリスクから物理的に保護された状態で並行解析を実行します。
+
+### 2. ライフサイクル管理とリーク防止メカニズム
+
+- **Win32 API による精密制御**:
+  - Go 側では `syscall` または Win32 DLL 経由で `CreateFileMappingW`, `MapViewOfFile`, `VirtualProtect`, `UnmapViewOfFile`, `CloseHandle` を直接呼出して管理します。
+- **同期遅延 (`shm_allocation_delay_sec`)**:
+  - 各ワーカーが共有メモリハンドルを閉じる際、OS 側のハンドルフラグクリア待ちによる競合を防ぐため、`shm_allocation_delay_sec` で指定された安全セマフォ遅延が挿入されます。
+- **`defer` ステートメントによるガラガラぽん解放**:
+  - 全ての特徴量抽出タスク完了時、または途中でエラー（例外やワーカー異常終了）が発生した場合でも、Go の `defer` クリーンアップ関数が確実に発動し、`UnmapViewOfFile` および `CloseHandle` を実行して共有メモリ領域を即座にOSへ返還します。
+
+---
+
 ## ライセンス (License)
 
 本プロジェクトのソースコードは [MIT License](file:///a:/Users/letwir/repo/flac_analyzer_forwin/LICENSE) のもとで公開されています。
@@ -389,7 +433,7 @@ To accelerate Demucs stem separation and Essentia ONNX inference via GPU:
   ```
 
 ### 2. Configuration
-Configure PostgreSQL connection details and orchestrator worker limits in `config.toml`:
+Configure PostgreSQL connection details, worker parallelism limits, and skip flags in `config.toml`:
 
 ```toml
 [database]
@@ -402,6 +446,23 @@ shm_allocation_delay_sec = 2
 queue_dir = "../queue"
 skip_dup_by_hash = true
 ```
+
+#### ⚙️ Configuration Parameter Specifications
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `database.url` | String | PostgreSQL connection URI (`postgres://user:pass@host:port/dbname`). |
+| `orchestrator.num_workers` | Integer | Maximum parallel worker processes permitted simultaneously by the dispatcher. |
+| `orchestrator.demucs_concurrent_limit` | Integer | Semaphore limit for high-load audio separation tasks (`worker_demucs.py`). |
+| `orchestrator.shm_allocation_delay_sec` | Integer | Safety synchronization delay (seconds) when creating/closing shared memory (SHM) regions. |
+| `orchestrator.queue_dir` | String | Path to the queue directory where workers write intermediate JSON output payloads. |
+| `orchestrator.skip_dup_by_hash` | Boolean | When set to `true`, computes audio MD5 checksums (`--check-hash-only`) before stem separation and **100% bypasses** Demucs and extraction tasks if identical waveform analysis already exists in PostgreSQL. |
+
+#### 🔄 `force: true` (`-Force` Flag) Behavior
+When submitting requests via `.\run_batch.ps1 -Force` or passing `"force": true` in the HTTP API body:
+1. Existing task status records (`COMPLETED`) in `orchestrator.db` and PostgreSQL hash duplication checks via `skip_dup_by_hash` are **completely bypassed**.
+2. Demucs stem separation, feature extraction (Librosa, Tensor, Essentia), and PostgreSQL `JSONB` UPSERT (including auto-archiving to `raw_library_flac_history`) are forcibly re-executed for all targeted files.
+3. Useful when recalculating features after windowing/STFT algorithm updates (e.g., Hann window calibration) or AI model upgrades.
 
 ### 3. Model Files
 Place required ONNX models and label mapping JSON files inside the `models/` directory (e.g., `discogs-effnet-bs64-1.onnx`).
@@ -421,7 +482,7 @@ go build -o orchestrator.exe
 In a separate terminal, execute the PowerShell batch scanner script:
 
 ```powershell
-# Standard batch scan
+# Standard batch scan (Duplicate hash skip enabled)
 .\run_batch.ps1 -Dir "D:\Music\FLAC_Library"
 
 # Force re-analysis of failed or skipped tracks (-Force flag)
@@ -454,7 +515,7 @@ stateDiagram-v2
     TaskReceived --> CueInspect: Execute worker_cue.py<br/>(Parse CUE/tags & extract tracks)
     CueInspect --> CheckState: Check orchestrator.db (SQLite) for each (file_path, track_number)
     
-    CheckState --> Skipped: All tracks already COMPLETED / RUNNING / PENDING
+    CheckState --> Skipped: All tracks already COMPLETED / RUNNING / PENDING (when force:false)
     CheckState --> Queued: Unprocessed tracks registered as PENDING
     
     Skipped --> [*]: 200 OK (Skipped)
@@ -464,13 +525,13 @@ stateDiagram-v2
     state Dispatcher_Loop {
         CalcHash: worker_demucs.py --check-hash-only<br/>(Calculate track waveform MD5)
         CalcHash --> CheckHashDB: ingester.py --check-hash<br/>(Check duplication in PostgreSQL)
-        CheckHashDB --> SkippedByHash: Hash already exists in PostgreSQL
+        CheckHashDB --> SkippedByHash: Hash already exists in PostgreSQL (when skip_dup_by_hash=true)
         CheckHashDB --> ResourceWait: New track
         
         ResourceWait --> AllocatingSHM: Monitor RAM & concurrency limit semaphore
         AllocatingSHM --> DemucsProcessing: Execute worker_demucs.py<br/>(Slice decode/Separate/SHM Write)
         DemucsProcessing --> FreezingSHM: Go freezes SHM to PAGE_READONLY
-        FreezingSHM --> Precache: Execute functor_precache.py<br/>(Validate intermediate array & SHM attach)
+        FreezingSHM --> Precache: Execute functor_precache.py<br/>(Validate SHM read-only attach & metadata)
         Precache --> FeatureExtracting: Execute extraction workers<br/>(Librosa → Tensor → Essentia)
         FeatureExtracting --> ReleaseSHM: Go closes & unmaps SHM handles
         ReleaseSHM --> WriteJSONFiles: Write intermediate JSON files<br/>(Save temporarily to queue/ directory)
@@ -624,6 +685,33 @@ Sample structures for `JSONB` columns in `raw.library_flac`:
   }
 }
 ```
+
+---
+
+## Windows Shared Memory (SHM) Management & WORM Architecture
+
+To process massive audio collections (tens of GBs to multi-TBs) without Out-Of-Memory (OOM) crashes or disk I/O bottlenecks on Windows, this system implements a **WORM (Write-Once Read-Many) architecture using Windows Shared Memory (SHM)**.
+
+### 1. WORM (Write-Once Read-Many) Architecture
+
+1. **Write Phase**:
+   - `worker_demucs.py` slice-decodes FLAC audio and separates stems (`mix`, `drums`, `bass`, `other`, `vocals`) via Demucs.
+   - Separated float32 multi-dimensional array tensors are written directly into named Windows shared memory regions initialized in `PAGE_READWRITE` mode using Win32 APIs (`CreateFileMappingW`, `MapViewOfFile`).
+2. **Freeze Phase**:
+   - Upon completion of Demucs writing, the Go orchestrator updates the memory protection state of the shared memory mapping from `PAGE_READWRITE` to **`PAGE_READONLY`** (Freeze).
+3. **Read-Many Phase**:
+   - Downstream extraction workers (`functor_precache.py`, `worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py`) attach to the `PAGE_READONLY` memory region.
+   - `functor_precache.py` eliminates all temporary `.npy` disk file writes, performing high-speed read-only attachment validation and metadata verification instead.
+   - Extraction workers run feature extraction concurrently while physically protected against memory corruption or accidental array mutation.
+
+### 2. Lifecycle Management & Memory Leak Prevention
+
+- **Win32 API Control**:
+  - Direct kernel handle orchestration via Go `syscall` / Win32 DLL calls (`CreateFileMappingW`, `MapViewOfFile`, `VirtualProtect`, `UnmapViewOfFile`, `CloseHandle`).
+- **Synchronized Allocation Delay (`shm_allocation_delay_sec`)**:
+  - Prevents race conditions during Win32 handle unmapping across multiple subprocesses by applying a configurable delay buffer.
+- **Guaranteed Cleanup via Go `defer`**:
+  - Whether a task completes successfully or aborts on failure, Go's `defer` cleanup pipeline guarantees that `UnmapViewOfFile` and `CloseHandle` are called, instantly releasing Windows SHM pages back to the system OS pool.
 
 ---
 

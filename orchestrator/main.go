@@ -146,23 +146,17 @@ func main() {
 		// 1. Inspect CUE / FLAC tags automatically
 		cueRes, err := disp.InspectCue(payload.FlacPath)
 		if err != nil || cueRes == nil || len(cueRes.Tracks) == 0 {
-			log.Printf("CUE inspect warning for %s (fallback to single track): %v", payload.FlacPath, err)
-			shouldRun, dbErr := stateDB.CheckOrInsertWithForce(payload.FlacPath, payload.TrackNumber, payload.Force)
-			if dbErr != nil {
-				log.Printf("DB error for %s: %v", payload.FlacPath, dbErr)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
+			errMsg := fmt.Sprintf("CUE inspect failed: %v", err)
+			if cueRes != nil && len(cueRes.Tracks) == 0 {
+				errMsg = "CUE inspect returned 0 tracks"
 			}
-			if !shouldRun {
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprintln(w, "Skipped: Already processed or in progress")
-				return
-			}
-			disp.Enqueue(payload)
-			w.WriteHeader(http.StatusAccepted)
-			fmt.Fprintln(w, "Task accepted (1 track)")
+			log.Printf("CUE inspect error for %s: %s", payload.FlacPath, errMsg)
+			stateDB.UpdateStatus(payload.FlacPath, payload.TrackNumber, state.StatusFailed, errMsg)
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Task failed: %s\n", errMsg)
 			return
 		}
+
 
 		// 2. Expand into track-level tasks
 		enqueuedCount := 0
