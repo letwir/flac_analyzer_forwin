@@ -17,6 +17,7 @@ import (
 
 	"flac_analyzer/orchestrator/metrics"
 	"flac_analyzer/orchestrator/state"
+	"flac_analyzer/orchestrator/sysinfo"
 )
 
 type LogLevel int
@@ -65,6 +66,9 @@ type TaskPayload struct {
 
 type Config struct {
 	NumWorkers            int
+	MaxRamRatio           float64
+	EstimatedWorkerRamGB  float64
+	MinAvailRamGB         float64
 	DemucsConcurrentLimit int
 	ShmAllocationDelaySec int
 	QueueDir              string
@@ -255,6 +259,29 @@ func (d *Dispatcher) worker(id int) {
 	stems := []string{"mix", "bass", "drums", "vocals", "other", "guitar", "piano"}
 
 	for task := range d.taskQueue {
+		// Real-time Memory Guard (Backpressure before executing task)
+		for {
+			memInfo, err := sysinfo.GetMemoryInfo()
+			if err == nil && memInfo != nil {
+				usedBytes := memInfo.TotalPhys - memInfo.AvailPhys
+				var maxUsableBytes uint64
+				if d.config.MaxRamRatio > 0 {
+					maxUsableBytes = uint64(float64(memInfo.TotalPhys) * d.config.MaxRamRatio)
+				} else {
+					maxUsableBytes = uint64(float64(memInfo.TotalPhys) * 0.95)
+				}
+				minAvailBytes := uint64(d.config.MinAvailRamGB * 1024 * 1024 * 1024)
+
+				if (maxUsableBytes > 0 && usedBytes >= maxUsableBytes) || memInfo.MemoryLoad >= 95 || memInfo.AvailPhys < minAvailBytes {
+					d.LogWarn("[W-%d] Memory pressure detected (Used: %d MB / MaxAllowed: %d MB, Load: %d%%). Throttling dispatch...",
+						id, usedBytes/1024/1024, maxUsableBytes/1024/1024, memInfo.MemoryLoad)
+					time.Sleep(2 * time.Second)
+					continue
+				}
+			}
+			break
+		}
+
 		func(task TaskPayload) {
 			metrics.AnalyzerQueueLength.Dec()
 			metrics.AnalyzerActiveWorkers.Inc()
@@ -439,39 +466,64 @@ func (d *Dispatcher) worker(id int) {
 				return
 			}
 			
-			// 5. Librosa
-			libOut, err := d.runPythonScript("worker_librosa.py", []string{
-				"--shm-metadata", precacheOut,
-				"--track-hash", trackHash,
-			}, id, "Librosa", ColorBlue, true)
-			
-			if err != nil {
-				for _, shm := range shmMap { shm.Close() }
-				d.failTask(task, err.Error())
-				return
+			// 5. Parallel Feature Extraction (Librosa, Tensor, Essentia)
+			var wg sync.WaitGroup
+			var workerErr error
+			var errOnce sync.Once
+
+			setWorkerErr := func(e error) {
+				errOnce.Do(func() {
+					workerErr = e
+				})
 			}
-			
-			// 5.3 Tensor
-			tensorOut, err := d.runPythonScript("worker_tensor.py", []string{
-				"--shm-metadata", precacheOut,
-				"--track-hash", trackHash,
-			}, id, "Tensor", ColorPurple, true)
-			
-			if err != nil {
+
+			var libOut, tensorOut, essOut string
+
+			wg.Add(3)
+			go func() {
+				defer wg.Done()
+				out, err := d.runPythonScript("worker_librosa.py", []string{
+					"--shm-metadata", precacheOut,
+					"--track-hash", trackHash,
+				}, id, "Librosa", ColorBlue, true)
+				if err != nil {
+					setWorkerErr(fmt.Errorf("Librosa failed: %w", err))
+					return
+				}
+				libOut = out
+			}()
+
+			go func() {
+				defer wg.Done()
+				out, err := d.runPythonScript("worker_tensor.py", []string{
+					"--shm-metadata", precacheOut,
+					"--track-hash", trackHash,
+				}, id, "Tensor", ColorPurple, true)
+				if err != nil {
+					setWorkerErr(fmt.Errorf("Tensor failed: %w", err))
+					return
+				}
+				tensorOut = out
+			}()
+
+			go func() {
+				defer wg.Done()
+				out, err := d.runPythonScript("worker_essentia.py", []string{
+					"--shm-metadata", precacheOut,
+					"--track-hash", trackHash,
+				}, id, "Essentia", ColorBlue, true)
+				if err != nil {
+					setWorkerErr(fmt.Errorf("Essentia failed: %w", err))
+					return
+				}
+				essOut = out
+			}()
+
+			wg.Wait()
+
+			if workerErr != nil {
 				for _, shm := range shmMap { shm.Close() }
-				d.failTask(task, err.Error())
-				return
-			}
-			
-			// 5.5 Essentia
-			essOut, err := d.runPythonScript("worker_essentia.py", []string{
-				"--shm-metadata", precacheOut,
-				"--track-hash", trackHash,
-			}, id, "Essentia", ColorBlue, true)
-			
-			if err != nil {
-				for _, shm := range shmMap { shm.Close() }
-				d.failTask(task, err.Error())
+				d.failTask(task, workerErr.Error())
 				return
 			}
 			

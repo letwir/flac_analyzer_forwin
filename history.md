@@ -513,3 +513,27 @@ Files: run_batch.ps1, orchestrator/main.go
 - Decisions: Confirmed Go orchestrator test suite and build output (orchestrator.exe) are functional without errors.
 - Blockers: None
 - Files: issues.md, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go
+
+### 2026-07-25 21:32:00
+- Category: Feature / Optimization
+- Summary: Implement RAM-priority dynamic worker scaling and real-time memory dispatch guard (95% safety ceiling & backpressure) in Go orchestrator.
+- Decisions:
+  - Created `orchestrator/sysinfo/sysinfo.go` using Windows API (`GlobalMemoryStatusEx`) to retrieve system RAM capacity and real-time memory load.
+  - Extended `config.toml` with `max_ram_ratio`, `cpu_worker_ratio`, `estimated_worker_ram_gb`, `min_avail_ram_gb`, and `num_workers = 0` (auto mode).
+  - Updated `orchestrator/main.go` to dynamically compute worker count based on target RAM ratio, while enforcing a 95% total RAM hard safety ceiling on all worker allocations.
+  - Added real-time memory guard loop in `orchestrator/dispatcher/dispatcher.go` before task execution to throttle dispatch if available RAM drops below `min_avail_ram_gb` or memory load reaches 95%.
+- Blockers: None
+- Files: config.toml, orchestrator/sysinfo/sysinfo.go, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe
+
+### 2026-07-25 21:45:00
+- Category: Implementation / Parallel Optimization
+- Summary: Implemented Category-Theory sound CPU parallel feature extraction (WaitGroup/errgroup equivalent parallel execution for Librosa, Tensor, Essentia workers) and MaxRamRatio real-time backpressure memory guard in Go Orchestrator.
+- Decisions:
+  - Preserved `demucs_concurrent_limit = 1` and `OMP_NUM_THREADS = 1` to strictly prevent ONNX Runtime SegFaults and OS thread oversubscription (CT Axiom A5 compliance).
+  - Parallelized post-Demucs workers (`worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py`) in `orchestrator/dispatcher/dispatcher.go` using `sync.WaitGroup` to utilize 3 CPU cores simultaneously per task (CT Axiom A1 Morphism Composition).
+  - Enforced `MaxRamRatio`-based real-time memory guard (`UsedRAM >= TotalRAM * MaxRamRatio`) in `dispatcher.go` to throttle task dispatch at 40GB limit (CT Axiom A6 Boundary Specification).
+  - Added pure function `resolvePythonEnv` in `orchestrator/main.go` for deterministic dynamic environment resolution when `"0"` is configured (CT Axiom A4 Effectful/Pure Separation).
+  - Verified with `go test ./...` and `go build`, generating clean `orchestrator.exe` binary.
+- Blockers: None
+- Files: orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe, implementation_plan.md, ct_verification_report.md
+

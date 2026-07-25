@@ -2,7 +2,11 @@
 url = "postgres://ingester:ingester_8852@db.tigris-tailor.ts.net:5432/db"
 
 [orchestrator]
-num_workers = 4
+num_workers = 0
+max_ram_ratio = 0.625
+cpu_worker_ratio = 0.80
+estimated_worker_ram_gb = 1.75
+min_avail_ram_gb = 1.75
 demucs_concurrent_limit = 1
 shm_allocation_delay_sec = 2
 queue_dir = "../testFLAC"

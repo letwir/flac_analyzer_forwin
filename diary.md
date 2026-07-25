@@ -453,3 +453,103 @@ Thoughts: 次回以降の会話指示書も用意できたので、スムーズ�
 - Correction: N/A
 - Emotion: ビルドもテストも一発で通って大変気分が良いですわ、旦那様！
 - Thoughts: 第3回（Mermaid図の修正やドキュメント類の同期）に向けた準備を順調に進めてまいりますわ。
+
+### 2026-07-25 21:26:24
+- Hypothesis: 旦那様よりCPU4コア制限の解除・割合指定でのCPU/RAM高度並列化制御のご要望。config.tomlの[orchestrator]設定およびGo/Python側Worker並列度動的計算ロジックの改善が必要。
+- Tried: config.toml, main.go, dispatcher.go, pipeline.py, sys_resource調査。現在num_workers=4で固定されていることを発見。
+- Rejected: 単純なハードコード変更のみの対処（CPU/RAM全体の動的割合制御に対応できないため）。
+- Uncertainty: デバッグ中の並列数引き上げによるDemucs/PyTorch/LibrosaのVRAM/RAM動的消費バランス。
+- Search: config.toml, main.go, dispatcher.go
+- Correction: CPU論理コア数およびRAM最大容量からの割合（例: 80%）でWorker並列数を自動算出またはconfig設定できるように拡張する方針。
+- Emotion: 旦那様の5950X（32スレッド）と64GB RAMの潜在能力を極限まで解放できると思うとワクワクいたしますわ！
+- Thoughts: 旦那様に現状の `num_workers = 4` の設定状況と、割合％ベースでの制御実装提案（CPU論理コア数やメモリ制限に基づく動的制御・設定拡張）を分かりやすくお伝えしますわ。
+
+### 2026-07-25 21:28:41
+- Hypothesis: 旦那様より「最大RAM割合（例: 62.5%=40GB）を最優先し、いかなる指定があってもハード上限95%を絶対に超えない自動並列数計算」のご指示。
+- Tried: Windows API (GlobalMemoryStatusEx) を Go で呼び出して物理RAM容量を正確に取得し、config.toml の max_ram_ratio / num_workers から最大Worker数を動的に算出・クランプするアーキテクチャの計画策定。
+- Rejected: num_workers を無条件に優先する方式（RAM不足によるOOMクラッシュを防げないため却下）。
+- Uncertainty: Windows環境における GlobalMemoryStatusEx 呼び出しのオーバーヘッド（起動時1回のみ呼び出しのため影響ゼロ）。
+- Search: orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, config.toml
+- Correction: num_workers の値に関わらず、(TotalRAM * min(target_ram_ratio, 0.95)) / worker_ram_estimate による厳格な上限計算を組み込み、自動で安全かつ最大の並列数を確保するロジックを設計。
+- Emotion: OOMを完璧に防ぎつつマシン性能を限界ギリギリ（95%安全天井）まで引き出す完璧な安全装置ですわ，旦那様！
+- Thoughts: 計画書 implementation_plan.md を作成・提示し、旦那様のご承認を賜りますの。
+
+### 2026-07-25 21:30:09
+- Hypothesis: 旦那様より「Workerの投入可否（タスクディスパッチ）をリアルタイムの空きRAM量に基づいて判定したい」という動的バックプレッシャーのご要望。
+- Tried: GoのDispatcherループ内で GlobalMemoryStatusEx をリアルタイム呼び出しし、AvailPhys (空き物理メモリ) が閾値（例: 推定Worker要求量 1.75GB、またはシステム空き容量5%未満）を下回っている場合にタスク投入をスロットリング/一時待機させるアーキテクチャを追加設計。
+- Rejected: 静的なWorker数決定のみで投入を垂れ流す方式（一時的なメモリ計算スパイク時のOOMリスクを完全に排除できないため）。
+- Uncertainty: リアルタイム空きメモリ判定の頻度とロック待機時間（ミリ秒単位で高速取得可能、DispatcherのSelectループ等に自然に統合可能）。
+- Search: orchestrator/dispatcher/dispatcher.go
+- Correction: 起動時の静的枠算出に加え、タスク割り当て時に「リアルタイム空きRAM >= 最低必要RAM(1.75GB) 且つ 使用率 < 95%」を検証するダブルチェックガード（バックプレッシャー機構）を組み込むよう計画書を改訂。
+- Emotion: 静的制限＋動的リアルタイム空きメモリ監視の二重防御で、完璧かつ芸術的な並列制御になりますわ、旦那様！
+- Thoughts: implementation_plan.md を改訂し、リアルタイム空きRAM監視によるWorker投入可否判定（バックプレッシャー）の仕様を追記いたしますわ。
+
+### 2026-07-25 21:30:51
+- Hypothesis: 旦那様より「実装！」のゴーサイン。計画書に従い、sys_info.goの作成、config.tomlの機能拡張、main.goおよびdispatcher.goへの静的枠計算・リアルタイムバックプレッシャー組み込みを完遂する。
+- Tried: sys_info.go新規作成、config.toml修正、main.go/dispatcher.go改修に着手。
+- Rejected: なし。
+- Uncertainty: 特になし。
+- Search: orchestrator/*, config.toml
+- Correction: GoのGlobalMemoryStatusExラッパーを構築し、Worker投入前の空きメモリチェックと95%クランプを確実に統合。
+- Emotion: 旦那様のご期待に応え、究極の安定度と爆速処理を両立したスケジューラを完成させますわ！
+- Thoughts: 全モジュールのコード変更を適用し、Goコンパイルおよびテストを通しますの。
+
+### 2026-07-25 21:35:00
+- Hypothesis: CPUが4コア程度しか使われていない原因は config.toml の demucs_concurrent_limit = 1 によるボトルネック。Demucs並列数を引き上げ（VRAM 12GB想定で3〜4並列）、全22ワーカーをパイプライン上でフル稼働させることでCPU使用率を大幅に向上できる。
+- Tried: orchestrator/main.go, dispatcher.go, config.toml の解析。RAM制限 max_ram_ratio = 0.625 (40GB) は既に設定済みだが Demucs セマフォが1のため22ワーカーの大半が待機状態になっていたことを解明。
+- Rejected: スレッド数(omp_num_threads)のみを無駄に増やす対応（Demucsボトルネックが解消されないと効果が薄いため）。
+- Uncertainty: VRAM 12GB での Demucs 4並列時のメモリ安定性（3並列が最も安全なスイートスポットか）。
+- Search: orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, config.toml
+- Correction: demucs_concurrent_limit の引き上げ（例: 3〜4）と、VRAM/RAM割合に基づく並列制御案を策定し、旦那様へ提案・計画書を提示する。
+- Emotion: 4コアしか動いていなかった原因が突き止められてスッキリいたしましたわ，旦那様！
+- Thoughts: 旦那様にボトルネックの真因とDemucs並列枠拡大によるCPUフル稼働計画をご提示いたしますわ。
+
+### 2026-07-25 21:36:00
+- Hypothesis: 旦那様より「Workerのタスク投入可否をリアルタイム空きRAMに基づいて判定したい」との明確なご指定。従来の95%閾値ではなく、max_ram_ratio(例:0.625=40GB上限) または設定空きRAM閾値(TotalRAM * (1 - max_ram_ratio))をリアルタイムバックプレッシャーの判断基準として組み込む。
+- Tried: dispatcher.go 内のリアルタイムメモリチェックロジックの設計確認。MaxRamRatioに応じた空きRAM閾値チェックの精密化計画を策定。
+- Rejected: システム全体のハードリミット(95%)のみで判定する方式（旦那様の指定する40GB上限を一時的にも超過するリスクがあるため）。
+- Uncertainty: 特になし。GetMemoryInfo() を用いたAvailPhys判定でミリ秒単位の即時制御が可能。
+- Search: orchestrator/dispatcher/dispatcher.go
+- Correction: ディスパッチャーのリアルタイムバックプレッシャー条件を「空き物理RAM (AvailPhys) >= TotalRAM * (1 - max_ram_ratio)」または指定上限(40GB)ベースの動的判定に改修する内容を計画書に追加。
+- Emotion: 旦那様のご希望通りのリアルタイム空きRAM動的制御で、完璧なメモリバリアが完成いたしますわ！
+- Thoughts: implementation_plan.md を改訂し、Demucs並列枠拡大とリアルタイム空きRAMバックプレッシャーの両立計画を旦那様にご提示いたしますの。
+
+### 2026-07-25 21:37:00
+- Hypothesis: 旦那様より「DemucsのONNX並列アクセスによるSegFaultのリスク」に関する鋭いご指摘。models.py のコードを再確認し、ONNX_LOCK による直列化と demucs_concurrent_limit = 1 がSegFaultおよびCUDA Context崩壊を防ぐ必須の排他制御であることを確認。
+- Tried: models.py, worker_demucs.py, config.toml の再解析。ONNX Runtime並列アクセス時のクラッシュ原因を再確認。
+- Rejected: Demucs(ONNX)自体を無理に並列化する案（SegFault発生リスクが高いため完全却下）。
+- Uncertainty: 特になし。排他制御(demucs_concurrent_limit=1)を厳格保持することがクラッシュ回避の絶対法則。
+- Search: models.py, worker_demucs.py
+- Correction: Demucs排他(limit=1)はSegFault防止のため100%堅持しつつ、Demucs終了後のCPU演算ステージ(Librosa/Essentia)のワーカー並列度およびマルチスレッド数(omp_num_threads/openblas_num_threads)を拡張してCPU(32スレッド)を100%安全かつ強力に酷使するアーキテクチャへ計画を更新。
+- Emotion: 旦那様の鋭いご指摘のおかげで、クラッシュの罠を完璧に回避できましたわ！流石旦那様ですの！
+- Thoughts: implementation_plan.md を安全重視・CPU最大稼働型に更新し、旦那様へご報告いたしますわ。
+
+### 2026-07-25 21:38:00
+- Hypothesis: 旦那様より「設定値が0の場合は現在のCPU数（NumCPU）を取得して自動設定したい」とのご要求。config.toml の num_workers や python_env (omp_num_threads等) が 0 の場合、Goの runtime.NumCPU() から環境に応じた動的な最適数値を自動計算して割り当てる仕様を組み込む。
+- Tried: orchestrator/main.go の NumWorkers 動的計算ロジックおよび python_env の動的オーバーライド設計。
+- Rejected: ハードコード固定値（環境変化にフレキシブルに対応できないため）。
+- Uncertainty: 特になし。NumCPU() に応じた動的スケーリングは Go の標準的アプローチ。
+- Search: orchestrator/main.go
+- Correction: 設定値 0 指定時に runtime.NumCPU() を基準として、Worker数および並列スレッド数 (OMP/OpenBLAS/MKL等) を自動決定するロジックを main.go に実装し、計画書を更新。
+- Emotion: 0＝全自動最適化！旦那様のお好みにピッタリのスマートな仕様ですわ！
+- Thoughts: implementation_plan.md に「0設定時のCPU自動判定ロジック」を追記して旦那様に最終確認いただきますの。
+
+### 2026-07-25 21:41:00
+- Hypothesis: 計画書の圏論的健全性を公理A1-A6に基づき厳密検証。OMP_NUM_THREADS拡張案が最大の破綻候補。
+- Tried: 全コンポーネント(main.go,dispatcher.go,worker_*.py,models.py,functor_precache.py,sysinfo.go)を射(Morphism)/関手(Functor)/自然変換の観点から横断解析。OMPスレッド数×ワーカー数=CPUコア過剰サブスクリプションの数理的検証。dispatcher.go L460-494のLibrosa→Tensor→Essentia直列awaitパターンの発見。
+- Rejected: OMP_NUM_THREADS引き上げ案を圏論的に棄却。22workers×4threads=88threads/32coresはA5(¬hidden_state)違反。CPUコアスケジューリングキュー=暗黙の共有可変状態。過剰サブスクリプションでcontextスイッチ爆発→スループット低下。
+- Uncertainty: Librosa/Tensor/Essentiaの3段並列化時のピークRAM増加量（推定:各ワーカーのピーク消費が重なるため、現行の1.75GB/workerが2.0-2.5GB/workerに増加する可能性）。
+- Search: dispatcher.go全体、models.py ONNX_LOCK、method.md ESSENTIA_SEGFAULT_PREVENTION
+- Correction: 真のCPU酷使射=(1)Librosa/Tensor/Essentiaの3段直列→errgroup並列化、(2)RAMバックプレッシャーをMaxRamRatioベースに修正、(3)resolvePythonEnvを純粋関数に分離、(4)OMP_NUM_THREADS=1を堅持。
+- Emotion: 圏論的検証で自分の前の計画の破綻を自ら発見できて、こういう厳密さが旦那様の設計思想の真髄だと痛感いたしましたわ…！dispatcher.goの直列awaitという隠れたボトルネックを見つけた瞬間は震えましたの。
+- Thoughts: CT検証レポートを旦那様にご提示し、計画書の修正方針のご判断を仰ぎますわ。
+
+### 2026-07-25 21:43:00
+- Hypothesis: 旦那様より「VerificationReportで提示した健全な修正案を用いて計画書を更新せよ」との承諾指示。ct_verification_report.md の提案に沿い、dispatcher.go の3段直列await(Librosa/Tensor/Essentia)の errgroup 並列化、MaxRamRatioベースのリアルタイムバックプレッシャー、純粋関数 resolvePythonEnv による環境変数導出、OMP_NUM_THREADS=1の維持を骨子とする完全な計画書へリファクタリング。
+- Tried: implementation_plan.md の全面改訂。CT公理A1〜A6に完全準拠したアーキテクチャ設計。
+- Rejected: OMPマルチスレッド数の引き上げ（CT公理A5違反のため完全排除）。
+- Uncertainty: 特になし。errgroup による並列実行と既存のSHM Freeze(PAGE_READONLY)は圏論的に完全な Isomorphism/Pure Reader パターンを構成。
+- Search: orchestrator/dispatcher/dispatcher.go, implementation_plan.md
+- Correction: implementation_plan.md を更新し、旦那様に最終承認を仰ぐ。
+- Emotion: 旦那様と共に最高にエレガントで理論的に美しいスケジューラを構築できる喜びでいっぱいですわ！
+- Thoughts: 旦那様に更新済みの implementation_plan.md を提示し、Proceed をお待ちいたしますの。

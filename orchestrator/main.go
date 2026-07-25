@@ -9,24 +9,34 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
+
+	"math"
+	"runtime"
 
 	"flac_analyzer/orchestrator/dispatcher"
 	"flac_analyzer/orchestrator/metrics"
 	"flac_analyzer/orchestrator/state"
+	"flac_analyzer/orchestrator/sysinfo"
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/sys/windows/svc/eventlog"
 )
 
+
 type Config struct {
 	Orchestrator struct {
-		NumWorkers            int    `toml:"num_workers"`
-		DemucsConcurrentLimit int    `toml:"demucs_concurrent_limit"`
-		ShmAllocationDelaySec int    `toml:"shm_allocation_delay_sec"`
-		QueueDir              string `toml:"queue_dir"`
-		LogLevel              string `toml:"log_level"`
-		SkipDupByHash         *bool  `toml:"skip_dup_by_hash"`
+		NumWorkers            int     `toml:"num_workers"`
+		MaxRamRatio           float64 `toml:"max_ram_ratio"`
+		CpuWorkerRatio        float64 `toml:"cpu_worker_ratio"`
+		EstimatedWorkerRamGB  float64 `toml:"estimated_worker_ram_gb"`
+		MinAvailRamGB         float64 `toml:"min_avail_ram_gb"`
+		DemucsConcurrentLimit int     `toml:"demucs_concurrent_limit"`
+		ShmAllocationDelaySec int     `toml:"shm_allocation_delay_sec"`
+		QueueDir              string  `toml:"queue_dir"`
+		LogLevel              string  `toml:"log_level"`
+		SkipDupByHash         *bool   `toml:"skip_dup_by_hash"`
 	} `toml:"orchestrator"`
 	PythonEnv map[string]string `toml:"python_env"`
 }
@@ -62,12 +72,78 @@ func main() {
 		log.Fatalf("Failed to parse config file: %v", err)
 	}
 
-	// Set defaults
-	if cfg.Orchestrator.NumWorkers <= 0 {
-		cfg.Orchestrator.NumWorkers = 4
+	// Set defaults for dynamic scaling
+	if cfg.Orchestrator.MaxRamRatio <= 0 {
+		cfg.Orchestrator.MaxRamRatio = 0.625
+	}
+	if cfg.Orchestrator.CpuWorkerRatio <= 0 {
+		cfg.Orchestrator.CpuWorkerRatio = 0.80
+	}
+	if cfg.Orchestrator.EstimatedWorkerRamGB <= 0 {
+		cfg.Orchestrator.EstimatedWorkerRamGB = 1.75
+	}
+	if cfg.Orchestrator.MinAvailRamGB <= 0 {
+		cfg.Orchestrator.MinAvailRamGB = 1.75
 	}
 	if cfg.Orchestrator.DemucsConcurrentLimit <= 0 {
 		cfg.Orchestrator.DemucsConcurrentLimit = 1
+	}
+
+	// Query system RAM & CPU for dynamic worker calculation
+	memInfo, memErr := sysinfo.GetMemoryInfo()
+	numCPU := runtime.NumCPU()
+
+	var totalRamGB float64
+	if memErr == nil && memInfo.TotalPhys > 0 {
+		totalRamGB = float64(memInfo.TotalPhys) / (1024 * 1024 * 1024)
+	} else {
+		log.Printf("Warning: Failed to query system RAM (%v). Fallback to 32GB.", memErr)
+		totalRamGB = 32.0
+	}
+
+	// Compute Target RAM Workers (Clamped to 95% maximum safety ceiling)
+	effectiveRamRatio := cfg.Orchestrator.MaxRamRatio
+	if effectiveRamRatio > 0.95 {
+		log.Printf("Warning: Requested max_ram_ratio (%.1f%%) exceeds 95%% safety limit. Clamping to 95.0%%.", effectiveRamRatio*100)
+		effectiveRamRatio = 0.95
+	}
+	targetRamGB := totalRamGB * effectiveRamRatio
+	ramBasedWorkers := int(math.Floor(targetRamGB / cfg.Orchestrator.EstimatedWorkerRamGB))
+	if ramBasedWorkers < 1 {
+		ramBasedWorkers = 1
+	}
+
+	// 95% Hard Ceiling Limit
+	hardCeilingRamGB := totalRamGB * 0.95
+	hardCeilingWorkers := int(math.Floor(hardCeilingRamGB / cfg.Orchestrator.EstimatedWorkerRamGB))
+
+	// Compute CPU-based worker limit
+	cpuBasedWorkers := int(math.Floor(float64(numCPU) * cfg.Orchestrator.CpuWorkerRatio))
+	if cpuBasedWorkers < 1 {
+		cpuBasedWorkers = 1
+	}
+
+	// Resolve final NumWorkers
+	if cfg.Orchestrator.NumWorkers <= 0 {
+		// Auto calculation mode: min(RAM_Target_Workers, CPU_Target_Workers)
+		cfg.Orchestrator.NumWorkers = ramBasedWorkers
+		if cpuBasedWorkers < cfg.Orchestrator.NumWorkers {
+			cfg.Orchestrator.NumWorkers = cpuBasedWorkers
+		}
+		log.Printf("Auto-calculated NumWorkers = %d (RAM Target: %.1fGB -> %d workers, CPU Limit: %d workers, Total RAM: %.1fGB, NumCPU: %d)",
+			cfg.Orchestrator.NumWorkers, targetRamGB, ramBasedWorkers, cpuBasedWorkers, totalRamGB, numCPU)
+	} else {
+		// Manual NumWorkers specified - RAM Priority clamping
+		if cfg.Orchestrator.NumWorkers > ramBasedWorkers {
+			log.Printf("Warning: Specified num_workers (%d) exceeds RAM target limit (%d workers for %.1fGB). Clamping to %d based on RAM priority.",
+				cfg.Orchestrator.NumWorkers, ramBasedWorkers, targetRamGB, ramBasedWorkers)
+			cfg.Orchestrator.NumWorkers = ramBasedWorkers
+		}
+		if cfg.Orchestrator.NumWorkers > hardCeilingWorkers {
+			log.Printf("Warning: Specified num_workers (%d) exceeds 95%% RAM Hard Ceiling (%d workers). Clamping to %d.",
+				cfg.Orchestrator.NumWorkers, hardCeilingWorkers, hardCeilingWorkers)
+			cfg.Orchestrator.NumWorkers = hardCeilingWorkers
+		}
 	}
 
 	// Determine Log Level
@@ -114,20 +190,26 @@ func main() {
 		skipDup = *cfg.Orchestrator.SkipDupByHash
 	}
 
+	resolvedPythonEnv := resolvePythonEnv(cfg.PythonEnv, numCPU, cfg.Orchestrator.NumWorkers)
+
 	// 4. Initialize Dispatcher
 	dispConfig := dispatcher.Config{
 		NumWorkers:            cfg.Orchestrator.NumWorkers,
+		MaxRamRatio:           effectiveRamRatio,
+		EstimatedWorkerRamGB:  cfg.Orchestrator.EstimatedWorkerRamGB,
+		MinAvailRamGB:         cfg.Orchestrator.MinAvailRamGB,
 		DemucsConcurrentLimit: cfg.Orchestrator.DemucsConcurrentLimit,
 		ShmAllocationDelaySec: cfg.Orchestrator.ShmAllocationDelaySec,
 		QueueDir:              cfg.Orchestrator.QueueDir,
-		PythonEnv:             cfg.PythonEnv,
+		PythonEnv:             resolvedPythonEnv,
 		LogLevel:              logLevel,
 		EventLog:              elog,
 		SkipDupByHash:         skipDup,
 	}
 	disp := dispatcher.NewDispatcher(dispConfig, stateDB)
 	disp.Start()
-	log.Printf("Dispatcher started with %d workers (Demucs Limit: %d, LogLevel: %s)\n", dispConfig.NumWorkers, dispConfig.DemucsConcurrentLimit, targetLogLevelStr)
+	log.Printf("Dispatcher started with %d workers (Demucs Limit: %d, MaxRamRatio: %.1f%%, LogLevel: %s)\n", dispConfig.NumWorkers, dispConfig.DemucsConcurrentLimit, effectiveRamRatio*100, targetLogLevelStr)
+
 
 	// 5. Setup Task Receiver Endpoint
 	mux := http.NewServeMux()
@@ -225,3 +307,24 @@ func main() {
 	disp.Stop()
 	log.Println("Shutdown complete.")
 }
+
+// resolvePythonEnv derives environment variable mappings deterministically without mutating input
+func resolvePythonEnv(raw map[string]string, numCPU, numWorkers int) map[string]string {
+	resolved := make(map[string]string)
+	for k, v := range raw {
+		if v == "0" {
+			threads := 1
+			if numWorkers > 0 {
+				threads = numCPU / numWorkers
+				if threads < 1 {
+					threads = 1
+				}
+			}
+			resolved[k] = strconv.Itoa(threads)
+		} else {
+			resolved[k] = v
+		}
+	}
+	return resolved
+}
+
