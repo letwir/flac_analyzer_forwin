@@ -823,3 +823,14 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Correction: 一部の素っ気ない標準語エラー文や英語ログをお嬢様言葉へ統一。
 - Emotion: エラー文がお嬢様言葉じゃないだなんて、わたくしの優雅な美意識が許しませんわ！圏論的ジャンル分けと虹色スペクトラムで、世界一エレガントなFLACアナライザーに仕立て上げて差し上げますわ！
 - Thoughts: 計画を Implementation Plan として明記し、旦那様のご承認をいただき次第、全コードのお嬢様言葉化と圏論Mermaidの美化を完遂いたしますわ！
+
+### 2026-07-25 23:55:30
+- Hypothesis: CueInspect が worker_cue.py を見つけられず errno 2 で失敗している原因は、orchestrator/dispatcher/dispatcher.go 内での exePath の親の親Dirの取得 (filepath.Dir(filepath.Dir(exePath))) がプロジェクトルートではなく親ディレクトリ (C:\Users\letwir\repo) を指してしまっていたことである。
+- Tried: dispatcher.go に config.toml / worker_cue.py の存在チェックで動的にプロジェクトルートを特定する findProjectRoot 関数を追加し、runPythonScript 内でスクリプト絶対パス (filepath.Join(parentDir, scriptName)) を使用するよう修正。orchestrator.exe を再ビルド。
+- Rejected: モジュールルートやカレントディレクトリの固定依存。
+- Uncertainty: 特になし。
+- Search: orchestrator/dispatcher/dispatcher.go, worker_cue.py
+- Correction: orchestrator.exe がどこに配置・実行されても worker_cue.py を確実に捕捉できるよう堅牢化。
+- Emotion: 旦那様が直面された CueInspect failed [Errno 2] の原因を瞬時に突き止め、二度とパス迷子にならないようスマートに修正できましたわ！
+- Thoughts: ディレクトリ階層探索ロジックを共通化し、安全に Python ワーカーが起動するようになりましたの。
+

@@ -184,12 +184,45 @@ func (d *Dispatcher) streamColoredLog(pipe io.ReadCloser, workerID int, role str
 	}
 }
 
-func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID int, role, color string, captureStdout bool) (string, error) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("failed to get executable path: %w", err)
+func findProjectRoot() string {
+	if exePath, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exePath)
+		for i := 0; i < 4; i++ {
+			if _, err := os.Stat(filepath.Join(dir, "config.toml")); err == nil {
+				return dir
+			}
+			if _, err := os.Stat(filepath.Join(dir, "worker_cue.py")); err == nil {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
 	}
-	parentDir := filepath.Dir(filepath.Dir(exePath))
+	if wd, err := os.Getwd(); err == nil {
+		dir := wd
+		for i := 0; i < 4; i++ {
+			if _, err := os.Stat(filepath.Join(dir, "config.toml")); err == nil {
+				return dir
+			}
+			if _, err := os.Stat(filepath.Join(dir, "worker_cue.py")); err == nil {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+		return wd
+	}
+	return "."
+}
+
+func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID int, role, color string, captureStdout bool) (string, error) {
+	parentDir := findProjectRoot()
 
 	pythonPath := "python.exe"
 	venvPython := filepath.Join(parentDir, ".venv", "Scripts", "python.exe")
@@ -202,7 +235,8 @@ func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID 
 		}
 	}
 
-	cmdArgs := append([]string{scriptName}, args...)
+	scriptPath := filepath.Join(parentDir, scriptName)
+	cmdArgs := append([]string{scriptPath}, args...)
 	cmd := exec.Command(pythonPath, cmdArgs...)
 	cmd.Dir = parentDir
 
@@ -535,11 +569,7 @@ func (d *Dispatcher) worker(id int) {
 			outNameEss := fmt.Sprintf("%s_%s_essentia.json", trackHash, baseName)
 			outNameTensor := fmt.Sprintf("%s_%s_tensor.json", trackHash, baseName)
 			
-			exePath, err := os.Executable()
-			var parentDir string
-			if err == nil {
-				parentDir = filepath.Dir(filepath.Dir(exePath))
-			}
+			parentDir := findProjectRoot()
 
 			queueDir := d.config.QueueDir
 			if queueDir == "" {

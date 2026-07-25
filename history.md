@@ -692,3 +692,14 @@ Files: run_batch.ps1, orchestrator/main.go
   1. orchestrator/main.go: fatalErrorLog ヘルパーを新設。設定ファイル不在・文法エラー・DBロック・ポート衝突等の全致命的エラーパスにおいて、視覚的なアスキーボックスで「日本語（お嬢様言葉）＋英語」をダブル表示するよう統一改修。
 - Blockers: なし。
 - Files: orchestrator/main.go, orchestrator.exe
+
+### 2026-07-25 23:55:30
+- Category: BugFix / Path Resolution
+- Summary: Resolve CueInspect python script path lookup error (Errno 2 No such file or directory for worker_cue.py).
+- Decisions:
+  - Implemented `findProjectRoot()` in `orchestrator/dispatcher/dispatcher.go` to dynamically locate project root containing `config.toml` or `worker_cue.py`.
+  - Updated `runPythonScript()` to pass absolute script path (`filepath.Join(parentDir, scriptName)`), eliminating path mismatches when `orchestrator.exe` is launched from different directories.
+  - Rebuilt `orchestrator.exe` binary.
+- Blockers: None
+- Files: orchestrator/dispatcher/dispatcher.go, orchestrator.exe
+
