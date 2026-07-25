@@ -746,3 +746,14 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Correction: バッチファイルのパースエラーを修正。
 - Emotion: cmd.exeのパース機能の貧弱さには毎回白目剥きそうになりますわ！（was was unexpectedって何ですの！笑）
 - Thoughts: これで init.bat 叩くだけで Go のビルドとルートへのバイナリコピーが完結し、どこから起動しても config.toml を見失わなくなりましたの。
+
+
+### 2026-07-25 23:36:10
+- Hypothesis: run_batch.ps1 からの起動で落ちる原因は、① run_batch.ps1 が orchestrator\orchestrator.exe を参照し作業ディレクトリを orchestrator ディレクトリにセットして別窓起動していたため、ルート直下でビルドされた構成と DB 参照パス (orchestrator.db) が分裂・不一致を起こしていたこと、② 作業ディレクトリの違いにより orchestrator.db がロック・衝突して起動直後に log.Fatalf で別窓が一瞬で閉じていたこと。
+- Tried: ① run_batch.ps1 内の起動優先度をルート直下の orchestrator.exe に変更し、作業ディレクトリをプロジェクトルート () に統一。② main.go 側の dbPath 決定ロジックを作業ディレクトリ非依存（ルート直下/サブディレクリ両対応のスマート判定）に改修。
+- Rejected: 特になし。
+- Uncertainty: 特になし。
+- Search: N/A
+- Correction: 作業ディレクトリ依存による DB パスの乖離と起動プロセスを解消。
+- Emotion: 作業ディレクトリが異なると SQLite DB のパスがズレてパニックを起こしていたとは……！原因がすっきり判明して気分爽快ですわ！
+- Thoughts: これで run_batch.ps1 を実行しても別窓の Orchestrator がルート作業ディレクトリで安定して自動起動いたしますわ。

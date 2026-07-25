@@ -78,13 +78,17 @@ Write-Host "=========================================" -ForegroundColor Green
 # Orchestratorの起動チェックと副窓での自動起動
 $orchestratorProcess = Get-Process -Name "orchestrator" -ErrorAction SilentlyContinue
 if (-not $orchestratorProcess) {
-    Write-Host "💡 Orchestrator が起動していないため、別ウィンドウで自動起動いたしますわ！" -ForegroundColor Yellow
-    $orchestratorExe = Join-Path $PSScriptRoot "orchestrator\orchestrator.exe"
+    Write-Host "💡 Orchestrator が起動していないため、自動起動いたしますわ！" -ForegroundColor Yellow
+    $orchestratorExe = Join-Path $PSScriptRoot "orchestrator.exe"
+    if (-not (Test-Path $orchestratorExe)) {
+        $orchestratorExe = Join-Path $PSScriptRoot "orchestrator\orchestrator.exe"
+    }
+
     if (Test-Path $orchestratorExe) {
-        Start-Process -FilePath $orchestratorExe -WorkingDirectory (Join-Path $PSScriptRoot "orchestrator")
+        Start-Process -FilePath $orchestratorExe -WorkingDirectory $PSScriptRoot
         Start-Sleep -Seconds 2 # 起動を少し待ちますわ
     } else {
-        Write-Host "⚠️ orchestrator.exe が見つかりませんわ！" -ForegroundColor Red
+        Write-Host "⚠️ orchestrator.exe が見つかりませんわ！init.bat を実行してビルドしてくださいませ。" -ForegroundColor Red
     }
 } else {
     Write-Host "🟢 Orchestrator は既に起動済みですわ！" -ForegroundColor Green

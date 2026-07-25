@@ -169,10 +169,20 @@ func main() {
 	logLevel := dispatcher.ParseLogLevel(targetLogLevelStr)
 
 	// 2. Initialize State DB
-	dbPath := "orchestrator.db"
+	dbPath := "orchestrator/orchestrator.db"
+	if _, err := os.Stat("orchestrator/orchestrator.db"); os.IsNotExist(err) {
+		if _, err := os.Stat("orchestrator.db"); err == nil {
+			dbPath = "orchestrator.db"
+		} else if _, err := os.Stat("orchestrator"); err == nil {
+			dbPath = "orchestrator/orchestrator.db"
+		} else {
+			dbPath = "orchestrator.db"
+		}
+	}
+
 	stateDB, err := state.InitDB(dbPath)
 	if err != nil {
-		log.Fatalf("Failed to initialize state DB: %v", err)
+		log.Fatalf("Failed to initialize state DB (%s): %v", dbPath, err)
 	}
 	defer stateDB.Close()
 

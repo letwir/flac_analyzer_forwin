@@ -664,3 +664,13 @@ Files: run_batch.ps1, orchestrator/main.go
   2. ルートディレクトリに init.bat を配置。Goコンパイラの環境チェック、orchestrator ディレクトリでの go build、およびビルド成果物のルート直下への自動同期コピーを一括自動化。
 - Blockers: Cmd.exe における if ブロック内の記号・特殊パースエラーをラベルと goto 制御で解消。
 - Files: orchestrator/main.go, init.bat, orchestrator.exe
+
+
+### 2026-07-25 23:36:10
+- Category: Batch & DB Path Consistency Fix
+- Summary: run_batch.ps1 からの Orchestrator 自動起動時におけるプロセス落ち・DBパス分裂エラーの解消
+- Decisions:
+  1. run_batch.ps1: Orchestrator の起動パス優先度をルート直下の orchestrator.exe に変更し、-WorkingDirectory をプロジェクトルート  に統一。
+  2. orchestrator/main.go: orchestrator.db の探索ロジックをリファクタリング。orchestrator/orchestrator.db または orchestrator.db の存在を動的判定し、単体起動・バッチ起動いずれでも同一 SQLite DB を参照するよう修正。
+- Blockers: なし。
+- Files: run_batch.ps1, orchestrator/main.go
