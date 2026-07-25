@@ -674,3 +674,12 @@ Files: run_batch.ps1, orchestrator/main.go
   2. orchestrator/main.go: orchestrator.db の探索ロジックをリファクタリング。orchestrator/orchestrator.db または orchestrator.db の存在を動的判定し、単体起動・バッチ起動いずれでも同一 SQLite DB を参照するよう修正。
 - Blockers: なし。
 - Files: run_batch.ps1, orchestrator/main.go
+
+
+### 2026-07-25 23:37:15
+- Category: Error Diagnostics & UX Improvement
+- Summary: config.toml 不在時にコンソールが即座に閉じてしまいエラー理由を視認できない仕様の改善
+- Decisions:
+  1. orchestrator/main.go: 設定ファイルが見つからない、あるいは文法エラーの際、明確なエラーメッセージ・探索候補・解決ヒントを表示し、コンソール閉鎖を防止する 5秒待機タイマーを追加。
+- Blockers: なし。
+- Files: orchestrator/main.go, orchestrator.exe

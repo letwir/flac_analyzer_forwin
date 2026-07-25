@@ -79,9 +79,21 @@ func main() {
 	var cfg Config
 	cfgBytes, err := os.ReadFile(configPath)
 	if err != nil {
+		log.Printf("==========================================================")
+		log.Printf(" [ERROR] Config file not found or unreadable!")
+		log.Printf("  Target path: %s", configPath)
+		log.Printf("  Searched candidates: [config.toml, ../config.toml, orchestrator/config.toml]")
+		log.Printf("  Hint: Please copy 'config.toml.example' to 'config.toml'.")
+		log.Printf("==========================================================")
+		time.Sleep(5 * time.Second)
 		log.Fatalf("Failed to read config file (%s): %v", configPath, err)
 	}
 	if err := toml.Unmarshal(cfgBytes, &cfg); err != nil {
+		log.Printf("==========================================================")
+		log.Printf(" [ERROR] Failed to parse config.toml syntax!")
+		log.Printf("  Target path: %s", configPath)
+		log.Printf("==========================================================")
+		time.Sleep(5 * time.Second)
 		log.Fatalf("Failed to parse config file (%s): %v", configPath, err)
 	}
 
