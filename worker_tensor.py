@@ -129,14 +129,14 @@ def main():
 
     # CPU/GPU 判定
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Using device: {device}")
+    logger.info(f"使用する演算デバイスを決定いたしましたわ: {device}")
 
     try:
         metadata = json.loads(args.shm_metadata)
         sr = metadata["sr"]
         stems_info = metadata["stems"]
     except Exception as e:
-        logger.exception("Failed to parse metadata")
+        logger.exception("メタデータのパースに失敗いたしましたわ！")
         sys.exit(1)
 
     t_start = time.perf_counter()
@@ -148,7 +148,7 @@ def main():
         dtype_name = info["dtype"]
         spectro_path = info.get("spectro_path")
         
-        logger.info(f"Processing SHM '{tag_name}' for stem: {stem_name}")
+        logger.info(f"ステム [{stem_name}] の共有メモリ [{tag_name}] を処理しておりますわ")
         shm, y_np = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
         
         try:
@@ -163,12 +163,12 @@ def main():
             extracted_features[stem_name] = stem_feats
             
         except Exception as e:
-            logger.exception(f"Error processing {stem_name}")
+            logger.exception(f"ステム [{stem_name}] の処理中にエラーが発生いたしましたわ！")
             sys.exit(1)
         finally:
             shm.close()
 
-    logger.info(f"All extractions completed in {time.perf_counter() - t_start:.4f}s")
+    logger.info(f"全ステムの PyTorch (Tensor) 特徴量抽出が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
     
     final_features = {"demucs": {}}
     for k, v in extracted_features.items():

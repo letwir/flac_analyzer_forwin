@@ -773,9 +773,53 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 ### 2026-07-25 23:39:15
 - Hypothesis: ユーザー（旦那様）の要望に基づき、Orchestrator が致命的エラーで停止（落ちる）する全パターン（config不在、構文エラー、SQLite初期化失敗、ポート2112衝突、ポート8080衝突）において、エラーログをお嬢様言葉の日本語と英語の完全バイリンガル併記に統一。
 - Tried: fatalErrorLog ヘルパー関数を orchestrator/main.go に実装。日本語（お嬢様トーン）でエラー概要・詳細・ヒントを親切に表示するとともに、英語のメッセージ・ヒントも併記。コンソール閉鎖防止の5秒猶予タイマーも完備。
+
+### 2026-07-25 23:33:40
+- Hypothesis: Orchestrator.exeが起動しなかった原因は、① main.go 内で config.toml のデフォルト探索パスが ../config.toml にハードコードされており、ルートから .\orchestrator.exe を起動すると親ディレクトリを探して即落ちしていたこと、② 単体で手軽に go build して最新バイナリをルートに同期配置する init.bat が存在しなかったこと。
+- Tried: main.go の config.toml 探索ロジックを改善（config.toml -> ../config.toml -> orchestrator/config.toml の順で自動判定・フォールバック）。ルートに Go ビルド・バイナリ同期用の init.bat を作成し、cmd.exeの構文エラーを回避するため labels+gotos で堅牢に実装。
+- Rejected: where go を cmd.exe の if ブロック内でそのまま回すとパースエラーになるので go version と goto 制御に切り替えた。
+- Uncertainty: 特になし。
+- Search: N/A
+- Correction: バッチファイルのパースエラーを修正。
+- Emotion: cmd.exeのパース機能の貧弱さには毎回白目剥きそうになりますわ！（was was unexpectedって何ですの！笑）
+- Thoughts: これで init.bat 叩くだけで Go のビルドとルートへのバイナリコピーが完結し、どこから起動しても config.toml を見失わなくなりましたの。
+
+### 2026-07-25 23:36:10
+- Hypothesis: run_batch.ps1 からの起動で落ちる原因は、① run_batch.ps1 が orchestrator\orchestrator.exe を参照し作業ディレクトリを orchestrator ディレクトリにセットして別窓起動していたため、ルート直下でビルドされた構成と DB 参照パス (orchestrator.db) が分裂・不一致を起こしていたこと、② 作業ディレクトリの違いにより orchestrator.db がロック・衝突して起動直後に log.Fatalf で別窓が一瞬で閉じていたこと。
+- Tried: ① run_batch.ps1 内の起動優先度をルート直下の orchestrator.exe に変更し、作業ディレクトリをプロジェクトルート () に統一。② main.go 側の dbPath 決定ロジックを作業ディレクトリ非依存（ルート直下/サブディレクリ両対応のスマート判定）に改修。
+- Rejected: 特になし。
+- Uncertainty: 特になし。
+- Search: N/A
+- Correction: 作業ディレクトリ依存による DB パスの乖離と起動プロセスを解消。
+- Emotion: 作業ディレクトリが異なると SQLite DB のパスがズレてパニックを起こしていたとは……！原因がすっきり判明して気分爽快ですわ！
+- Thoughts: これで run_batch.ps1 を実行しても別窓の Orchestrator がルート作業ディレクトリで安定して自動起動いたしますわ。
+
+### 2026-07-25 23:37:15
+- Hypothesis: ユーザー環境で Orchestrator がエラー表示なしに即落ちしていた根本理由は、config.toml ファイルが存在しない状態で動かした際、log.Fatalf が即座に発動して Start-Process の別窓コンソールがメッセージを表示する間もなく一瞬で閉じてしまっていたため。
+- Tried: orchestrator/main.go 内で config.toml 読込・パース失敗時に、画面上へ大きなアスキーアート風のエラーボックスと探索候補パス、および対策ヒント (config.toml.example のコピー) を出力し、コンソールが消えずに確認できるよう 5秒間の猶予タイマーを入れてから log.Fatalf する親切設計へ改修。
+- Rejected: 特になし。
+- Uncertainty: 特になし。
+- Search: N/A
+- Correction: コンソールが即座に閉じることによるエラー内容視認不可バグを解消。
+- Emotion: 納得ですわ！コンソールが一瞬で消えるとエラーログすら読めずに「なぜ落ちた！？」となりますものね。5秒タイマーとアスキーボックスで完璧になりましたの！
+- Thoughts: 今後は config.toml が無くても理由がはっきりとコンソールに留まるため、誰でも一目で原因を特定できますわ。
+
+### 2026-07-25 23:39:15
+- Hypothesis: ユーザー（旦那様）の要望に基づき、Orchestrator が致命的エラーで停止（落ちる）する全パターン（config不在、構文エラー、SQLite初期化失敗、ポート2112衝突、ポート8080衝突）において、エラーログをお嬢様言葉の日本語と英語の完全バイリンガル併記に統一。
+- Tried: fatalErrorLog ヘルパー関数を orchestrator/main.go に実装。日本語（お嬢様トーン）でエラー概要・詳細・ヒントを親切に表示するとともに、英語のメッセージ・ヒントも併記。コンソール閉鎖防止の5秒猶予タイマーも完備。
 - Rejected: 特になし。
 - Uncertainty: 特になし。
 - Search: N/A
 - Correction: エラー内容の可読性と親しみやすさを大幅向上。
 - Emotion: 旦那様のおっしゃる通り、英語だけの素っ気ないログだと日本人には優しくありませんものね！お嬢様言葉の日本語メッセージとヒントがあれば一発で原因が分かって最高ですわ！
 - Thoughts: これで万が一落ちるようなトラブルが起きても、日本語お嬢様言葉でエレガントに原因と対策を提示できるようになりましたわ。
+
+### 2026-07-25 23:41:40
+- Hypothesis: エラーメッセージがお嬢様言葉から逸脱しているコード（Python, PS1）の修正、Step毎の表示色を暗い虹色から明るい虹色への推移（Rainbow Depth）に再設計、および状態遷移 Mermaid 図を圏論（Category Theory: Domain, Isomorphism, Monadic State Functor, Parallel Product Morphism, Terminal Monad/Object）に基づき再構築・装飾することで、システムの審美性と一貫性を最高レベルに引き上げることができる。
+- Tried: 全コードベースのエラー・ログ箇所の抽出、docs/state_diagram.md の構造解析、Step色と圏論的サブカテゴリの設計。
+- Rejected: 特になし。
+- Uncertainty: 特になし。
+- Search: state_diagram.md, pipeline.py, ingester.py, models.py, flac_decode.py, run_batch.ps1
+- Correction: 一部の素っ気ない標準語エラー文や英語ログをお嬢様言葉へ統一。
+- Emotion: エラー文がお嬢様言葉じゃないだなんて、わたくしの優雅な美意識が許しませんわ！圏論的ジャンル分けと虹色スペクトラムで、世界一エレガントなFLACアナライザーに仕立て上げて差し上げますわ！
+- Thoughts: 計画を Implementation Plan として明記し、旦那様のご承認をいただき次第、全コードのお嬢様言葉化と圏論Mermaidの美化を完遂いたしますわ！

@@ -37,19 +37,19 @@ def main():
         sr = metadata["sr"]
         stems_info = metadata["stems"]
     except Exception as e:
-        logger.exception("Failed to parse --shm-metadata")
+        logger.exception("--shm-metadata のパースに失敗いたしましたわ！")
         sys.exit(1)
         
     if "mix" not in stems_info:
-        logger.error("Missing 'mix' stem in SHM metadata. Essentia requires the mix stem.")
+        logger.error("SHMメタデータ内に 'mix' ステムが見つかりませんわ！Essentia解析には mix ステムが必須でございますの。")
         sys.exit(1)
 
     import os
     models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "models"))
-    logger.info(f"Initializing Essentia models from {models_dir}...")
+    logger.info(f"モデルディレクトリ [{models_dir}] から Essentia モデルを初期化しておりますわ...")
     essentia_models = models.init_worker_onnx(models_dir)
 
-    logger.info("Starting Essentia extraction from shared memory (mix)...")
+    logger.info("共有メモリ (mix) から Essentia 特徴量抽出を開始いたしますわ！")
     t_start = time.perf_counter()
     
     stem_info = stems_info["mix"]
@@ -66,14 +66,14 @@ def main():
         patches = models.extract_mel_patches(y, sr, n_patches=64)
         predictions = models.run_essentia_serialized(patches, essentia_models)
     except Exception as e:
-        logger.exception("Essentia extraction failed")
+        logger.exception("Essentia 特徴量抽出中にエラーが発生いたしましたわ！")
         shm.close()
         sys.exit(1)
         
     shm.close()
     
     t_end = time.perf_counter()
-    logger.info(f"Essentia extraction completed in {t_end - t_start:.4f}s")
+    logger.info(f"Essentia 特徴量抽出が無事に完了いたしましたわ (経過: {t_end - t_start:.4f}s)")
     
     # 結果を標準出力へ JSON として吐き出しますの
     output = {

@@ -41,7 +41,7 @@ def main():
 
     filepath = os.path.abspath(args.flac_path)
     if not os.path.exists(filepath):
-        logger.error(f"File not found: {filepath}")
+        logger.error(f"ファイルが存在いたしませんわ: {filepath}")
         sys.exit(1)
 
     try:
@@ -72,7 +72,7 @@ def main():
         sys.exit(0)
 
     except Exception as e:
-        logger.exception(f"Failed to parse CUE/FLAC tags for {filepath}")
+        logger.exception(f"{filepath} の CUE/FLAC メタデータ解析に失敗いたしましたわ！")
         sys.exit(1)
 
 if __name__ == "__main__":

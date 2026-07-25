@@ -44,7 +44,7 @@ def main():
         sr = metadata["sr"]
         stems_info = metadata["stems"]
     except Exception as e:
-        logger.exception("Failed to parse metadata")
+        logger.exception("メタデータのパースに失敗いたしましたわ！")
         sys.exit(1)
 
     t_start = time.perf_counter()
@@ -52,7 +52,7 @@ def main():
     cache_dir = os.path.join(tempfile.gettempdir(), "flac_analyzer_cache", args.track_hash)
     os.makedirs(cache_dir, exist_ok=True)
 
-    logger.info(f"Generating frequency-domain cache to: {cache_dir}")
+    logger.info(f"周波数領域キャッシュディレクトリを確認いたしましたわ: {cache_dir}")
 
     for stem_name, info in stems_info.items():
         tag_name = info["shm_tag"]
@@ -63,7 +63,7 @@ def main():
         shm, _ = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
         shm.close()
 
-    logger.info(f"Precache Functor passthrough completed in {time.perf_counter() - t_start:.4f}s")
+    logger.info(f"Precache Functor 検証処理が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
     
     # 成功したら stdout にメタデータをそのままJSONで吐き出して終了
     metadata["status"] = "success"

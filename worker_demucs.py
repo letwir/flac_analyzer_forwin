@@ -44,10 +44,10 @@ def main():
     try:
         shm_tags = json.loads(args.shm_tags)
     except Exception as e:
-        logger.exception("Failed to parse --shm-tags")
+        logger.exception("--shm-tags のパースに失敗いたしましたわ！")
         sys.exit(1)
 
-    logger.info(f"Loading FLAC: {args.flac_path}")
+    logger.info(f"FLACファイルをロードしておりますわ: {args.flac_path}")
     try:
         from flac_decode import build_flac_handle, process_slice_with_seq_safety
         handle = build_flac_handle(args.flac_path)
@@ -72,16 +72,16 @@ def main():
         y = y.T # demucs_worker expects (channels, samples)
         sr = 44100
     except Exception as e:
-        logger.exception("Failed to load audio")
+        logger.exception("音声データのロードに失敗いたしましたわ！")
         sys.exit(1)
 
-    logger.info("Initializing Demucs model...")
+    logger.info("Demucs モデルを初期化しておりますわ...")
     models.init_global_demucs(use_dml=args.use_dml)
 
-    logger.info("Starting separation...")
+    logger.info("波形分離処理を開始いたしますわ！")
     t_start = time.perf_counter()
     stem_context = models.GLOBAL_DEMUCS.separate(y, sr)
-    logger.info(f"Separation completed in {time.perf_counter() - t_start:.4f}s")
+    logger.info(f"波形分離処理が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
 
     # 書き込んだ共有メモリのmmapオブジェクトを保持するリスト（終了するまでGCさせないため）
     shm_objects = []
@@ -94,15 +94,15 @@ def main():
         "stems": {}
     }
 
-    logger.info("Writing to shared memory...")
+    logger.info("共有メモリ (SHM) への書き込みを開始いたしますわ...")
     try:
         for stem_name, ctx in stem_context.stems.items():
             if stem_name not in shm_tags:
-                logger.warning(f"No SHM tag provided for stem: {stem_name}")
+                logger.warning(f"ステム [{stem_name}] に対する SHM タグが指定されておりませんわ。")
                 continue
             
             tag_name = shm_tags[stem_name]
-            logger.info(f"Writing stem '{stem_name}' to {tag_name}")
+            logger.info(f"ステム [{stem_name}] を共有メモリ [{tag_name}] へ書き込んでおりますわ")
             
             # Zero-copy write
             shm = shm_interop.write_to_shm(tag_name, ctx.y)
@@ -115,7 +115,7 @@ def main():
             }
             
     except Exception as e:
-        logger.exception("Failed to write to SHM")
+        logger.exception("共有メモリへの書き込み中にエラーが発生いたしましたわ！")
         sys.exit(1)
 
     # 成功したら stdout にメタデータを吐き出して終了

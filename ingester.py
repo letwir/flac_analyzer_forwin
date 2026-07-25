@@ -32,11 +32,11 @@ def main():
                 config = tomllib.load(f)
             db_url = config.get("database", {}).get("url", "")
         except Exception as e:
-            logging.exception(f"Failed to load DB URL from {config_path}")
+            logging.exception(f"{config_path} からの DB URL 読込に失敗いたしましたわ！")
             sys.exit(1)
 
         if not db_url:
-            logging.error("DB URL is empty.")
+            logging.error("DB URLが空でございますわ！config.tomlの設定をご確認なさってくださいませ。")
             sys.exit(1)
 
         try:
@@ -49,23 +49,23 @@ def main():
             print(json.dumps({"exists": exists}))
             sys.exit(0)
         except Exception as e:
-            logging.exception("Failed to check hash in DB")
+            logging.exception("DB内でのハッシュ照合中にエラーが発生いたしましたわ！")
             sys.exit(1)
 
     if not os.path.exists(args.json_path):
-        logging.error(f"JSON path does not exist: {args.json_path}")
+        logging.error(f"指定されたJSONファイルが存在いたしませんわ: {args.json_path}")
         sys.exit(1)
 
     try:
         with open(args.json_path, "r", encoding="utf-8") as f:
             json_data = json.load(f)
     except Exception as e:
-        logging.exception("Failed to parse JSON")
+        logging.exception("JSONデータのパースに失敗いたしましたわ！")
         sys.exit(1)
 
     features = json_data.get("features", {})
     if not features:
-        logging.warning("No features found in JSON.")
+        logging.warning("JSON内に特徴量データが含まれておりませんわ。")
 
     predictions = {}
     if args.predictions_json_path and os.path.exists(args.predictions_json_path):
@@ -74,7 +74,7 @@ def main():
                 pred_data = json.load(f)
                 predictions = pred_data.get("predictions", {})
         except Exception as e:
-            logging.warning(f"Failed to parse predictions JSON: {e}")
+            logging.warning(f"推論結果JSONのパースに失敗いたしましたわ: {e}")
 
     tensor_features = {}
     if args.tensor_json_path and os.path.exists(args.tensor_json_path):
@@ -83,7 +83,7 @@ def main():
                 tensor_data = json.load(f)
                 tensor_features = tensor_data.get("features", {})
         except Exception as e:
-            logging.warning(f"Failed to parse tensor JSON: {e}")
+            logging.warning(f"テンソル特徴量JSONのパースに失敗いたしましたわ: {e}")
 
     # Merge tensor features into the main features dict
     for stem_name, stem_feats in tensor_features.items():
@@ -98,60 +98,36 @@ def main():
                 if sub_stem not in features["demucs"]:
                     features["demucs"][sub_stem] = {}
                 features["demucs"][sub_stem].update(sub_feats)
-        else:
-            if stem_name not in features:
-                features[stem_name] = {}
-            features[stem_name].update(stem_feats)
 
-    meta = {}
-    album_artist = args.album_artist
-    album = args.album
-    artist = args.artist
+    # Base metadata fallback from args
     title = args.title
+    artist = args.artist
+    album = args.album
+    album_artist = args.album_artist
     track_number = args.track_number
 
-    try:
-        flac = FLAC(args.flac_path)
-        for key, val_list in flac.items():
-            vals = [str(x) for x in val_list]
-            key_lower = key.lower()
-            if len(vals) == 1:
-                meta[key_lower] = vals[0]
-            elif len(vals) > 1:
-                meta[key_lower] = vals
-            else:
-                meta[key_lower] = ""
-        
-        def format_tag(vals):
-            if not vals:
-                return ""
-            if isinstance(vals, list):
-                return " / ".join([str(x) for x in vals if x])
-            return str(vals)
+    meta = json_data.get("meta", {})
 
-        if not album_artist:
-            album_artist = format_tag(flac.get("albumartist", flac.get("album artist", [])))
-        if not album:
-            album = format_tag(flac.get("album", []))
-        if not artist:
-            artist = format_tag(flac.get("artist", []))
+    # Extract tag metadata directly from FLAC file using mutagen
+    try:
+        audio = FLAC(args.flac_path)
         if not title:
-            title = format_tag(flac.get("title", []))
-        
-        album_artist = (album_artist or "")[:255]
-        album = (album or "")[:255]
-        artist = (artist or "")[:255]
-        title = (title or "")[:255]
-        
+            title = audio.get("title", [""])[0]
+        if not artist:
+            artist = audio.get("artist", [""])[0]
+        if not album:
+            album = audio.get("album", [""])[0]
+        if not album_artist:
+            album_artist = audio.get("albumartist", audio.get("album_artist", [""]))[0]
         if track_number == 0:
-            trck = flac.get("tracknumber", ["0"])[0]
+            tn_str = audio.get("tracknumber", ["0"])[0]
             try:
-                track_number = int(trck.split("/")[0])
+                track_number = int(tn_str.split('/')[0])
             except:
                 track_number = 0
             
     except Exception as e:
-        logging.warning(f"Failed to read FLAC tags: {e}")
+        logging.warning(f"FLACメタデータタグの読み込みに失敗いたしましたわ: {e}")
 
     try:
         config_path = os.path.join(os.path.dirname(__file__), "config.toml")
@@ -159,11 +135,11 @@ def main():
             config = tomllib.load(f)
         db_url = config.get("database", {}).get("url", "")
     except Exception as e:
-        logging.exception(f"Failed to load DB URL from {config_path}")
+        logging.exception(f"{config_path} からの DB URL 読込に失敗いたしましたわ！")
         sys.exit(1)
 
     if not db_url:
-        logging.error("DB URL is empty.")
+        logging.error("DB URLが空でございますわ！config.tomlの設定をご確認なさってくださいませ。")
         sys.exit(1)
 
     try:
@@ -210,13 +186,13 @@ def main():
         cur.close()
         conn.close()
         
-        logging.info(f"Successfully UPSERTed {args.track_hash} into PostgreSQL.")
+        logging.info(f"PostgreSQL への UPSERT が無事に完了いたしましたわ！ (ハッシュ: {args.track_hash})")
         
         try:
             os.remove(args.json_path)
             if args.tensor_json_path and os.path.exists(args.tensor_json_path):
                 os.remove(args.tensor_json_path)
-            logging.info(f"Cleaned up JSON files")
+            logging.info("中間JSONファイルのクリーンアップが完了いたしましたわ！")
             
             # Clean up the precache .npy directory
             import shutil
@@ -224,12 +200,12 @@ def main():
             cache_dir = os.path.join(tempfile.gettempdir(), "flac_analyzer_cache", args.track_hash)
             if os.path.exists(cache_dir):
                 shutil.rmtree(cache_dir)
-                logging.info(f"Cleaned up cache directory: {cache_dir}")
+                logging.info(f"キャッシュディレクトリの削除が無事に完了いたしましたわ: {cache_dir}")
         except Exception as e:
-            logging.warning(f"Failed to clean up temporary files: {e}")
+            logging.warning(f"一時ファイルの削除中に問題が発生いたしましたわ: {e}")
             
     except Exception as e:
-        logging.exception("Database UPSERT failed. Falling back to DLQ SQLite...")
+        logging.exception("PostgreSQLへのUPSERT中にエラーが発生いたしましたわ。DLQ (send_failed.db) へ退避いたしますわ！")
         
         # DLQ Fallback
         import sqlite3
@@ -276,7 +252,7 @@ def main():
             dlq_conn.commit()
             dlq_conn.close()
             
-            logging.info(f"Successfully saved {args.track_hash} to DLQ (send_failed.db).")
+            logging.info(f"DLQ (send_failed.db) へのデータ退避が無事に完了いたしましたわ！ (ハッシュ: {args.track_hash})")
             
             # Still clean up local JSON files since they are safe in DLQ
             try:
@@ -289,12 +265,12 @@ def main():
                 if os.path.exists(cache_dir):
                     shutil.rmtree(cache_dir)
             except Exception as cleanup_e:
-                logging.warning(f"Failed to clean up temporary files after DLQ: {cleanup_e}")
+                logging.warning(f"DLQ退避後の一時ファイルクリーンアップにて問題が発生いたしましたわ: {cleanup_e}")
                 
             sys.exit(2) # Return special exit code to orchestrator
             
         except Exception as dlq_e:
-            logging.exception("Failed to write to DLQ SQLite")
+            logging.exception("DLQ SQLite への書き込みにも失敗してしまいましたわ！致命的でございますわ。")
             sys.exit(1)
 
 if __name__ == "__main__":

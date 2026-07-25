@@ -37,10 +37,10 @@ def main():
         sr = metadata["sr"]
         stems_info = metadata["stems"]
     except Exception as e:
-        logger.exception("Failed to parse --shm-metadata")
+        logger.exception("--shm-metadata のパースに失敗いたしましたわ！")
         sys.exit(1)
 
-    logger.info("Starting Librosa extraction from shared memory...")
+    logger.info("共有メモリからの Librosa 特徴量抽出を開始いたしますわ！")
     t_start = time.perf_counter()
     
     extracted_features = {}
@@ -51,7 +51,7 @@ def main():
         dtype_name = info["dtype"]
         spectro_path = info.get("spectro_path")
         
-        logger.info(f"Attaching to SHM '{tag_name}' (Read-Only) for stem: {stem_name}")
+        logger.info(f"ステム [{stem_name}] のため共有メモリ [{tag_name}] (Read-Only) にアタッチいたしますわ")
         shm, y = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
         
         try:
@@ -64,10 +64,10 @@ def main():
                 try:
                     _ = getattr(ctx, prop)
                 except Exception as e:
-                    logger.warning(f"Pre-warming '{prop}' error: {e}")
+                    logger.warning(f"Pre-warming '{prop}' 実行中に問題が発生いたしましたわ: {e}")
             
             # Librosa 抽出実行
-            logger.info(f"Extracting features for {stem_name}...")
+            logger.info(f"ステム [{stem_name}] の特徴量を抽出しておりますわ...")
             raw_features = librosa_extractor.run(ctx)
             
             # 結果を辞書に変換（Postgresへの格納用などにシリアライズ）
@@ -85,12 +85,12 @@ def main():
             ctx.clear()
             
         except Exception as e:
-            logger.exception(f"Error processing stem {stem_name}")
+            logger.exception(f"ステム [{stem_name}] の処理中にエラーが発生いたしましたわ！")
             sys.exit(1)
         finally:
             shm.close()
             
-    logger.info(f"All extractions completed in {time.perf_counter() - t_start:.4f}s")
+    logger.info(f"全ステムの Librosa 特徴量抽出が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
     
     final_features = {"demucs": {}}
     for k, v in extracted_features.items():

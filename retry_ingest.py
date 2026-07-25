@@ -33,7 +33,7 @@ def main():
     dlq_db_path = os.path.join(os.path.dirname(__file__), args.dlq_db)
     
     if not os.path.exists(dlq_db_path):
-        logging.info("No DLQ database found. Nothing to retry.")
+        logging.info("DLQデータベースが見つかりませんわ。リトライするタスクはございませんの。")
         sys.exit(0)
 
     try:
@@ -43,20 +43,20 @@ def main():
         
         dlq_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='failed_payloads'")
         if not dlq_cur.fetchone():
-            logging.info("Table 'failed_payloads' does not exist in DLQ database. Nothing to retry.")
+            logging.info("DLQデータベース内に 'failed_payloads' テーブルが存在いたしませんわ。")
             sys.exit(0)
             
         dlq_cur.execute("SELECT * FROM failed_payloads")
         rows = dlq_cur.fetchall()
         
         if not rows:
-            logging.info("DLQ is empty. Nothing to retry.")
+            logging.info("DLQは空でございますわ。リトライするタスクはございませんの。")
             sys.exit(0)
             
-        logging.info(f"Found {len(rows)} records in DLQ. Attempting retry...")
+        logging.info(f"DLQ内に {len(rows)} 件の未処理レコードを発見いたしましたわ！再送信を開始いたしますわ...")
         
     except Exception as e:
-        logging.error(f"Failed to read from DLQ database: {e}")
+        logging.error(f"DLQデータベースからの読み込みに失敗いたしましたわ: {e}")
         sys.exit(1)
 
     db_url = get_db_url()
@@ -65,7 +65,7 @@ def main():
         pg_conn = psycopg2.connect(db_url)
         pg_cur = pg_conn.cursor()
     except Exception as e:
-        logging.error(f"Failed to connect to PostgreSQL: {e}")
+        logging.error(f"PostgreSQL への接続に失敗いたしましたわ: {e}")
         sys.exit(1)
 
     success_count = 0
@@ -112,12 +112,12 @@ def main():
             dlq_cur.execute("DELETE FROM failed_payloads WHERE audio_hash = ?", (audio_hash,))
             dlq_conn.commit()
             
-            logging.info(f"Successfully retried and inserted {audio_hash}.")
+            logging.info(f"リトライに成功し、PostgreSQL への登録が完了いたしましたわ: {audio_hash}")
             success_count += 1
             
         except Exception as e:
             pg_conn.rollback()
-            logging.error(f"Retry failed for {audio_hash}: {e}")
+            logging.error(f"{audio_hash} のリトライに失敗いたしましたわ: {e}")
             fail_count += 1
 
     pg_cur.close()
@@ -125,7 +125,7 @@ def main():
     dlq_cur.close()
     dlq_conn.close()
 
-    logging.info(f"Retry complete. Success: {success_count}, Failed: {fail_count}")
+    logging.info(f"リトライ処理が無事に完了いたしましたわ！ 成功: {success_count}件, 失敗: {fail_count}件")
 
 if __name__ == "__main__":
     main()

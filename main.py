@@ -218,12 +218,12 @@ def main():
         setup_logging(log_file_path)
 
     print("=" * 60)
-    print("  FLAC Analyzer - Demucs Full-Throttle (Single File Mode)")
-    print(f"  Target: {args.filepath}")
+    print("  🌹 FLAC Analyzer - Demucs フルアクセル（単一ファイル直接解析モード）")
+    print(f"  ターゲット: {args.filepath}")
     print("=" * 60)
 
     if not os.path.exists(args.filepath):
-        logging.error(f"指定されたファイルが見つかりませんわ: {args.filepath}")
+        logging.error(f"指定されたファイルが存在いたしませんわ: {args.filepath}")
         sys.exit(1)
 
     import models

@@ -31,7 +31,7 @@ try:
     with open(config_path, "rb") as f:
         CONFIG = tomllib.load(f)
 except Exception as e:
-    logging.warning(f"Failed to load config.toml in models.py: {e}")
+    logging.warning(f"models.py にて config.toml のロードに失敗いたしましたわ: {e}")
 
 # ─────────────────────────────────────────────
 # demucs-onnx のセッション作成フック (モンキーパッチ)
@@ -72,7 +72,8 @@ def _load_json_classes(models_dir: str) -> dict[str, list[str]]:
                 key = _onnx_fname_to_key(fname.replace(".json", ""))
                 result[key] = data["classes"]
         except Exception as e:
-            logging.warning(f"JSONパース失敗: {fname} → {e}")
+            logging.warning(f"JSONパースに失敗いたしましたわ: {fname} → {e}")
+            continue
     return result
 
 

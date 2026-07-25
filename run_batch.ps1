@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     FLAC Analyzer 用の PowerShell 7 順次実行バッチスクリプトですわ！
-    すべての FLAC ファイルを Go オーケストレーターに POST します。スキップ判定は Go 側の SQLite DB で一元管理されます。
+    すべての FLAC ファイルを Go オーケストレーターに POST しますわ。スキップ判定は Go 側の SQLite DB で一元管理されますの。
 
 .PARAMETER MusicRoot
     音楽ライブラリのルートパス（デフォルト: M:\Music\album）
@@ -29,9 +29,9 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-# テストモードのセットアップ
+# テストモードのセットアップ (Phase 1: Gray)
 if ($Test) {
-    Write-Host "[Test Mode] 一時ディレクトリにダミー構成を作成してテストを行いますわ！" -ForegroundColor Yellow
+    Write-Host "[Phase 1: Init] テストモード: 一時ディレクトリにダミー構成を作成して動作確認を行いますわ！" -ForegroundColor DarkGray
     $tempRoot = Join-Path $env:TEMP "flac_analyzer_test_root"
     if (Test-Path $tempRoot) {
         Remove-Item -Path $tempRoot -Recurse -Force | Out-Null
@@ -46,7 +46,7 @@ if ($Test) {
     $sub3 = New-Item -ItemType Directory -Path (Join-Path $tempRoot "Anime\Artist-C")
 
     $MusicRoot = $tempRoot
-    Write-Host "[Test Mode] テスト用ルートディレクトリ: $MusicRoot" -ForegroundColor Yellow
+    Write-Host "[Phase 1: Init] テスト用ルートディレクトリを作成いたしましたわ: $MusicRoot" -ForegroundColor DarkGray
 
     # テスト用のダミー Python ターゲット作成
     $dummyPythonScript = Join-Path $PSScriptRoot "dummy_target.py"
@@ -65,20 +65,20 @@ sys.exit(0)
 
 # ディレクトリ存在チェック
 if (-not (Test-Path $MusicRoot)) {
-    Write-Error "音楽ルートディレクトリが見つかりませんわ: $MusicRoot"
+    Write-Host "❌ 致命的エラー: 指定された音楽ルートディレクトリが存在いたしませんわ: $MusicRoot" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "=========================================" -ForegroundColor Green
-Write-Host " FLAC Analyzer Batch Run Starting..."
-Write-Host " ルート: $MusicRoot"
-Write-Host " ターゲット: $targetScript"
-Write-Host "=========================================" -ForegroundColor Green
+Write-Host "=========================================" -ForegroundColor DarkGray
+Write-Host " 🌹 FLAC Analyzer バッチ処理を開始いたしますわ！" -ForegroundColor Magenta
+Write-Host " 📂 ルートパス  : $MusicRoot" -ForegroundColor Gray
+Write-Host " 🎯 ターゲット  : $targetScript" -ForegroundColor Gray
+Write-Host "=========================================" -ForegroundColor DarkGray
 
-# Orchestratorの起動チェックと副窓での自動起動
+# Orchestratorの起動チェックと自動起動 (Phase 1: Init Gray/Yellow Warning)
 $orchestratorProcess = Get-Process -Name "orchestrator" -ErrorAction SilentlyContinue
 if (-not $orchestratorProcess) {
-    Write-Host "💡 Orchestrator が起動していないため、自動起動いたしますわ！" -ForegroundColor Yellow
+    Write-Host "⚠️ Orchestrator が起動していらっしゃらないため、自動起動いたしますわ！" -ForegroundColor DarkYellow
     $orchestratorExe = Join-Path $PSScriptRoot "orchestrator.exe"
     if (-not (Test-Path $orchestratorExe)) {
         $orchestratorExe = Join-Path $PSScriptRoot "orchestrator\orchestrator.exe"
@@ -88,10 +88,10 @@ if (-not $orchestratorProcess) {
         Start-Process -FilePath $orchestratorExe -WorkingDirectory $PSScriptRoot
         Start-Sleep -Seconds 2 # 起動を少し待ちますわ
     } else {
-        Write-Host "⚠️ orchestrator.exe が見つかりませんわ！init.bat を実行してビルドしてくださいませ。" -ForegroundColor Red
+        Write-Host "❌ 致命的エラー: orchestrator.exe が見つかりませんわ！init.bat を実行してビルドなさってくださいませ。" -ForegroundColor Red
     }
 } else {
-    Write-Host "🟢 Orchestrator は既に起動済みですわ！" -ForegroundColor Green
+    Write-Host "🔵 Phase 1: Orchestrator は既に起動済みでございますわ！" -ForegroundColor Blue
 }
 
 # 1層目: GENRE-MAIN を走査
@@ -105,7 +105,7 @@ foreach ($genreMain in $genreMains) {
         # .flac ファイルが配下に再帰的に存在するかチェック
         $flacs = Get-ChildItem -Path $genreSub.FullName -Filter "*.flac" -Recurse -File
         if ($flacs.Count -eq 0) {
-            Write-Host "  [-] スキップ (FLACなし): $($genreSub.FullName)" -ForegroundColor DarkGray
+            Write-Host "  [-] スキップ (FLACファイル不在): $($genreSub.FullName)" -ForegroundColor DarkGray
             continue
         }
 
@@ -113,7 +113,8 @@ foreach ($genreMain in $genreMains) {
             $flacPath = $flac.FullName
             $processedCount++
             
-            Write-Host "[$processedCount] POSTing to Orchestrator: $flacPath" -ForegroundColor Cyan
+            # Phase 2: Blue
+            Write-Host "[$processedCount] 📤 Orchestrator へタスクを投下いたしますわ: $flacPath" -ForegroundColor DarkCyan
 
             if ($DryRun) {
                 Write-Host "[DryRun] 実行予定コマンド: POST http://127.0.0.1:8080/task (Target: $flacPath)" -ForegroundColor Gray
@@ -132,12 +133,12 @@ foreach ($genreMain in $genreMains) {
                 
                 $response = Invoke-RestMethod -Uri "http://127.0.0.1:8080/task" -Method Post -Body $body -ContentType "application/json" -ErrorAction Stop
                 
-                # We can't strictly read the exact status code easily with simple Invoke-RestMethod if it's not an error.
-                # But it won't throw on 200 or 202.
                 if ($response -match "Skipped") {
-                    Write-Host "  [-] スキップ (Go判定済み): $flacPath" -ForegroundColor Yellow
+                    # スキップ判定 (Phase 2: Cyan)
+                    Write-Host "  [-] スキップ (GoオーケストレーターDB判定済みですの): $flacPath" -ForegroundColor Cyan
                 } else {
-                    Write-Host "  [+] キューに投下いたしましたわ: $flacPath" -ForegroundColor Green
+                    # 投下完了 (Phase 5/6: Magenta/Purple)
+                    Write-Host "  [+] キューへの投下が無事に完了いたしましたわ: $flacPath" -ForegroundColor Magenta
                 }
             }
             catch {
@@ -148,12 +149,12 @@ foreach ($genreMain in $genreMains) {
 }
 
 Write-Host ""
-Write-Host "=========================================" -ForegroundColor Green
-Write-Host " バッチ処理(タスク投下)が終了いたしましたわ！"
-Write-Host " 合計投下数: $processedCount 件"
+Write-Host "=========================================" -ForegroundColor Magenta
+Write-Host " 🎉 バッチ処理(タスク投下)が無事に終了いたしましたわ！" -ForegroundColor DarkMagenta
+Write-Host " 📊 合計投下数  : $processedCount 件" -ForegroundColor White
 $stopWatch.Stop()
-Write-Host " 投下所要時間: $($stopWatch.Elapsed.ToString())"
-Write-Host "=========================================" -ForegroundColor Green
+Write-Host " ⏱️ 投下所要時間: $($stopWatch.Elapsed.ToString())" -ForegroundColor White
+Write-Host "=========================================" -ForegroundColor Magenta
 
 # テストモードのクリーンアップ
 if ($Test) {

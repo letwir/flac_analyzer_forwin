@@ -179,7 +179,7 @@ class AudioContext:
                 if math.isnan(bpm_val) or math.isinf(bpm_val):
                     bpm_val = 0.0
             except Exception as e:
-                logging.exception(f"beat_track 計算失敗 (source: {self.source}): {e}")
+                logging.exception(f"beat_track 計算に失敗いたしましたわ (source: {self.source}): {e}")
                 bpm_val = 0.0
                 beats = np.array([], dtype=int)
             self._tempobeat = (bpm_val, beats)
@@ -980,7 +980,7 @@ def _calc_vocal_f0_seq(ctx: AudioContext) -> list[float] | None:
         seq = _resample_to_fixed_frames(f0)
         return seq
     except Exception as e:
-        logging.exception(f"[VocalF0] ピッチ検出エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[VocalF0] ピッチ検出にてエラーが発生いたしましたわ (source: {ctx.source}): {e}")
         return [0.0] * FIXED_SEQ_FRAMES
 
 
@@ -1015,7 +1015,7 @@ def _calc_scipy_stats_features(ctx: AudioContext) -> ScipyStatsFeatures | None:
             kurtosis_seq=kurt_seq,
         )
     except Exception as e:
-        logging.exception(f"[ScipyStats] Skew/Kurt 計算エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[ScipyStats] Skew/Kurt 計算にてエラーが発生いたしましたわ (source: {ctx.source}): {e}")
         return None
 
 
@@ -1052,7 +1052,7 @@ def _calc_hilbert_features(ctx: AudioContext) -> HilbertFeatures | None:
             inst_freq_seq=inst_freq_seq,
         )
     except Exception as e:
-        logging.exception(f"[Hilbert] Hilbert変換計算エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[Hilbert] Hilbert変換計算にてエラーが発生いたしましたわ (source: {ctx.source}): {e}")
         return None
 
 
@@ -1095,7 +1095,7 @@ def _calc_peak_features(ctx: AudioContext) -> PeakFeatures | None:
             temporal_seq=temporal_seq,
         )
     except Exception as e:
-        logging.exception(f"[Peak] ピーク特徴量計算エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[Peak] ピーク特徴量計算にてエラーが発生いたしましたわ (source: {ctx.source}): {e}")
         return None
 
 
@@ -2114,7 +2114,7 @@ def _calc_groove_features(ctx: AudioContext) -> GrooveFeatures:
         )
 
     except Exception as e:
-        logging.exception(f"[Groove] Groove特徴量算出エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[Groove] Groove特徴量算出にてエラーが発生いたしましたわ (source: {ctx.source}): {e}")
         return GrooveFeatures()
 
 
@@ -2282,7 +2282,7 @@ def _calc_key_features(ctx: AudioContext) -> KeyFeatures:
         )
 
     except Exception as e:
-        logging.exception(f"[Key] キー特徴量算出エラー (source: {ctx.source}): {e}")
+        logging.exception(f"[Key] キー特徴量算出にてエラーが発生いたしましたわ (source: {ctx.source}): {e}")
         return KeyFeatures()
 
 

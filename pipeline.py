@@ -175,7 +175,7 @@ def analyze_segment_pipeline(
             try:
                 track_features[res_name] = fut.result()
             except Exception as e:
-                logging.error(f"ソース [{res_name}] のLibrosa解析エラー: {e}", exc_info=True)
+                logging.error(f"ソース [{res_name}] のLibrosa解析にてエラーが発生いたしましたわ: {e}", exc_info=True)
                 
     except Exception as e_pool:
         logging.exception(
@@ -249,7 +249,7 @@ def analyze_segment_pipeline(
                 f"Essentia 分類推論を完了いたしましたわ (経過: {time.perf_counter() - t_start_essentia:.4f}s)"
             )
         except Exception as e:
-            logging.error(f"Essentia解析エラー: {e}", exc_info=True)
+            logging.error(f"Essentia解析にてエラーが発生いたしましたわ: {e}", exc_info=True)
 
     return track_features, essentia_feats, demucs_feats, mix_hash
 
@@ -525,7 +525,7 @@ def process_single_flac_file(file_path: str, essentia_models: dict) -> str:
     basename = os.path.basename(file_path)
 
     try:
-        logging.info(f"解析なう: {basename}")
+        logging.info(f"解析を執り行なっておりますわ: {basename}")
 
         preload_audio, sr = sf.read(
             file_path,
@@ -839,7 +839,7 @@ def process_single_flac_file(file_path: str, essentia_models: dict) -> str:
         return f"OK: {basename}  ({len(final_tags)} タグ)"
 
     except Exception as e:
-        logging.exception(f"NG: {basename}")
+        logging.exception(f"解析失敗（遺憾でございますわ）: {basename}")
         return f"NG: {basename}: {e}"
     finally:
         if "audio" in locals():
@@ -952,13 +952,13 @@ def analyze_stems(
             mix_ctx = stem_context.stems["mix"]
             patches = models.extract_mel_patches(mix_ctx.y, mix_ctx.sr, n_patches=64)
             preds_dict = models.run_essentia_serialized(patches, essentia_models)
-            essentia_feats = EssentiaFeatures(preds_dict)
+                    essentia_feats = EssentiaFeatures(preds_dict)
             logging.info(
                 f"[{proc_name}] [Morphism] [Essentia] [ONNX-Inference] "
                 f"Essentia 分類推論を完了いたしましたわ (経過: {time.perf_counter() - t_start_essentia:.4f}s)"
             )
         except Exception as e:
-            logging.error(f"Essentia 解析エラー: {e}", exc_info=True)
+            logging.error(f"Essentia解析にてエラーが発生いたしましたわ: {e}", exc_info=True)
 
     return track_features, essentia_feats, demucs_feats, mix_hash
 
@@ -999,7 +999,8 @@ def run_producer(
 
     """Producer プロセスエントリポイント。
     flac_decode → Demucs → load_wave.save_stems → Queue にメタデータを送信"""
-    logging.info(f"[Producer] 起動: {len(files)}ファイル  models_dir={models_dir}  use_dml={use_dml}  rough={rough}")
+    files = [f for f in files if os.path.exists(f)]
+    logging.info(f"[Producer] タスクプロデューサーを起動いたしましたわ: {len(files)}ファイル  models_dir={models_dir}  use_dml={use_dml}  rough={rough}")
 
     models.init_global_demucs(use_dml=use_dml)
 
@@ -1077,7 +1078,7 @@ def run_producer(
                 logging.info(f"[Producer] → {basename} (Track: {seg.track_number}, Mode: {transfer_mode})")
 
         except Exception as e:
-            logging.error(f"[Producer] NG: {os.path.basename(fp)}: {e}", exc_info=True)
+            logging.error(f"[Producer] 処理失敗により遺憾ながら中断いたしましたわ ({os.path.basename(fp)}): {e}", exc_info=True)
         finally:
             gc.collect()
 
@@ -1091,7 +1092,7 @@ def run_producer(
             time.sleep(0.5)
 
     load_wave.clear_producer_shm_cache()
-    logging.info("[Producer] 全ファイル処理完了")
+    logging.info("[Producer] 全ファイルの処理を無事に完了いたしましたわ！")
 
 
 
@@ -1178,9 +1179,9 @@ def run_consumer(
 
             if completed is not None:
                 completed.value += 1
-            logging.info(f"[{proc_name}] OK: {basename} (Track: {track_number}, 全処理経過: {time.perf_counter() - t_start_total:.4f}s)")
+            logging.info(f"[{proc_name}] 成功いたしましたわ: {basename} (Track: {track_number}, 全処理経過: {time.perf_counter() - t_start_total:.4f}s)")
         except Exception as e:
-            logging.error(f"[{proc_name}] NG: {basename} (Track: {track_number}): {e}", exc_info=True)
+            logging.error(f"[{proc_name}] 処理エラーが発生いたしましたわ: {basename} (Track: {track_number}): {e}", exc_info=True)
         finally:
             # 4. リソースのクリーンアップ
             t_cleanup = time.perf_counter()

@@ -227,7 +227,7 @@ def parse_cue_text_to_slices(cue_text: str, total_samples: int, sr: int) -> tupl
 def parse_wav_header(wav_bytes: bytes) -> tuple[int, int, int, int, int, int]:
     """WAVバイト列からヘッダ情報をパースしますわ"""
     if len(wav_bytes) < 44 or wav_bytes[0:4] != b'RIFF' or wav_bytes[8:12] != b'WAVE':
-        raise ValueError("Invalid WAV format (no RIFF/WAVE header)")
+        raise ValueError("無効なWAVフォーマットでございますわ（RIFF/WAVEヘッダーが存在いたしませんの）。")
         
     offset = 12
     limit = len(wav_bytes)
@@ -266,7 +266,7 @@ def parse_wav_header(wav_bytes: bytes) -> tuple[int, int, int, int, int, int]:
             offset += 1
             
     if data_offset == 0:
-        raise ValueError("WAV data chunk not found in buffer")
+        raise ValueError("バッファ内にWAVのdataチャンクが見つかりませんわ！")
         
     return wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size
 
@@ -287,7 +287,7 @@ def decode_flac_range(filepath: str, start_sample: int, end_sample: int) -> tupl
     wav_bytes = proc.stdout.read()
     rc = proc.wait()
     if rc != 0:
-        raise RuntimeError(f"flac range decode failed: rc={rc}, cmd={cmd}")
+        raise RuntimeError(f"flac範囲デコードに失敗いたしましたわ: rc={rc}, cmd={cmd}")
         
     wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size = parse_wav_header(wav_bytes)
     raw_pcm = wav_bytes[data_offset : data_offset + data_size]
