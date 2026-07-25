@@ -2,32 +2,11 @@
 
 🇯🇵 [日本語版](README.md)
 
-## Overview
+## What is this?
 
-**Flac_Analyzer** is a high-performance audio feature extraction and AI classification system for FLAC music files (including CUE sheet indexing). It extracts detailed acoustic features (BPM, volume dynamics, spectral descriptors, time-series sequences) and automatically classifies genres and moods using ONNX / Essentia AI models, persisting all results to PostgreSQL.
-
-Optimized for processing large-scale music libraries (from 50GB up to multi-terabyte collections) on Windows without Out-Of-Memory (OOM) crashes or database bottlenecking:
-
-- **Go-based Concurrent Job Management**: A Go dispatcher monitors system resources (free RAM, CPU load) to dynamically regulate parallel Python worker processes.
-- **Windows Shared Memory (WORM Transfer)**: Decoded waveform data and separated stems are transferred using Windows Shared Memory, locked to `PAGE_READONLY` (Write-Once Read-Many) to eliminate inter-process memory duplication and fragmentation.
-- **Pre-Hash Duplicate Bypass**: Computes MD5 checksums of decoded audio waveforms to query PostgreSQL. Existing tracks skip heavy Demucs stem separation and Librosa extraction entirely.
-- **Automatic CUE Parsing & Single-Track Fallback**: Automatically parses embedded or external CUE sheet boundaries into individual track tasks. Gracefully falls back to single-track processing if no CUE sheet is present or parsing fails.
-- **Native Array Preservation for Multi-Value Tags**: Preserves multi-value VorbisComment tags (such as multiple `ARTIST` or `GENRE` tags) as native JSON arrays (`["...", "..."]`) in the PostgreSQL `meta` (JSONB) column without flattening them into concatenated strings.
-- **PostgreSQL JSONB & DLQ Fallback**: Extracted data is asynchronously UPSERTed as JSONB documents. In case of database connection failures, payloads drop into a local SQLite Dead Letter Queue (`send_failed.db`) for safe retry upon recovery.
-- **Stale Task Auto-Recovery**: On startup, the Go orchestrator automatically detects tasks stuck in `RUNNING` or `PENDING` due to prior crashes or abrupt halts and resets them to `FAILED`, preventing accidental task skipping.
-- **Automated Temp Cache Cleanup**: Removes intermediate precache files (`flac_analyzer_cache`) automatically upon task completion or DLQ fallback, preventing RAM disk or storage depletion.
-- **Timestamp Preservation**: Accurately preserves and restores file timestamps (CreationTime, LastWriteTime) whenever modifying FLAC tags (VorbisComment).
-
-### 📚 Documentation
-| Document | Content |
-|:---|:---|
-| [State Diagram](docs/state_diagram.md) | Overall task execution state flow of the pipeline |
-| [ERD & Data Structures](docs/database_er_diagram.md) | PostgreSQL/SQLite schemas and JSONB specifications |
-| [SHM & WORM Architecture](docs/shm_architecture.md) | Windows Shared Memory management & Zero-Copy IPC |
-| [CPU Parallelism & RAM Guard](docs/cpu_parallelism_and_ram_guard.md) | Worker parallel execution & Memory backpressure |
-| [CUE Parsing Flow](docs/cue_parsing_flow.md) | CUE sheet parsing & Single-track fallback |
-| [DLQ & Error Recovery](docs/dlq_error_recovery.md) | Dead Letter Queue & Stale task recovery |
-| [GPU/RAM Fallback Strategy](docs/gpu_fallback_and_ram_defense.md) | CUDA-to-CPU automatic fallback & RAM protection |
+**Flac_Analyzer** is a high-performance audio feature extraction and AI classification system for FLAC music files (including CUE sheet indexing), persisting all results to PostgreSQL.
+Optimized for processing large-scale music libraries (from 50GB up to multi-terabyte collections) on Windows without Out-Of-Memory (OOM) crashes or database bottlenecking.
+Combines Go-based concurrent job management with Windows Shared Memory (WORM transfer) to maximize CPU utilization across all cores while ensuring memory safety.
 
 ---
 
@@ -149,6 +128,33 @@ If PostgreSQL was unreachable during processing, manually retry sending saved pa
 > [!NOTE]
 > **Notice Regarding Tensor STFT Window Calibration & Feature Numerical Output**
 > `worker_tensor.py` now explicitly applies `torch.hann_window` during STFT processing. This eliminates spectral leakage caused by rectangular windowing, resulting in refined Spectral Flux and Tensor feature outputs. If you wish to re-analyze existing tracks to apply this calibration, run `.\run_batch.ps1 -Force`.
+
+---
+
+## Detailed Overview
+
+**Flac_Analyzer** achieves non-blocking, high-speed execution while eliminating out-of-memory errors through the following technical design:
+
+- **Go-based Concurrent Job Management**: A Go dispatcher monitors system resources (free RAM, CPU load) to dynamically regulate parallel Python worker processes.
+- **Windows Shared Memory (WORM Transfer)**: Decoded waveform data and separated stems are transferred using Windows Shared Memory, locked to `PAGE_READONLY` (Write-Once Read-Many) to eliminate inter-process memory duplication and fragmentation.
+- **Pre-Hash Duplicate Bypass**: Computes MD5 checksums of decoded audio waveforms to query PostgreSQL. Existing tracks skip heavy Demucs stem separation and Librosa extraction entirely.
+- **Automatic CUE Parsing & Single-Track Fallback**: Automatically parses embedded or external CUE sheet boundaries into individual track tasks. Gracefully falls back to single-track processing if no CUE sheet is present or parsing fails.
+- **Native Array Preservation for Multi-Value Tags**: Preserves multi-value VorbisComment tags (such as multiple `ARTIST` or `GENRE` tags) as native JSON arrays (`["...", "..."]`) in the PostgreSQL `meta` (JSONB) column without flattening them into concatenated strings.
+- **PostgreSQL JSONB & DLQ Fallback**: Extracted data is asynchronously UPSERTed as JSONB documents. In case of database connection failures, payloads drop into a local SQLite Dead Letter Queue (`send_failed.db`) for safe retry upon recovery.
+- **Stale Task Auto-Recovery**: On startup, the Go orchestrator automatically detects tasks stuck in `RUNNING` or `PENDING` due to prior crashes or abrupt halts and resets them to `FAILED`, preventing accidental task skipping.
+- **Automated Temp Cache Cleanup**: Removes intermediate precache files (`flac_analyzer_cache`) automatically upon task completion or DLQ fallback, preventing RAM disk or storage depletion.
+- **Timestamp Preservation**: Accurately preserves and restores file timestamps (CreationTime, LastWriteTime) whenever modifying FLAC tags (VorbisComment).
+
+### 📚 Documentation
+| Document | Content |
+|:---|:---|
+| [State Diagram](docs/state_diagram.md) | Overall task execution state flow of the pipeline |
+| [ERD & Data Structures](docs/database_er_diagram.md) | PostgreSQL/SQLite schemas and JSONB specifications |
+| [SHM & WORM Architecture](docs/shm_architecture.md) | Windows Shared Memory management & Zero-Copy IPC |
+| [CPU Parallelism & RAM Guard](docs/cpu_parallelism_and_ram_guard.md) | Worker parallel execution & Memory backpressure |
+| [CUE Parsing Flow](docs/cue_parsing_flow.md) | CUE sheet parsing & Single-track fallback |
+| [DLQ & Error Recovery](docs/dlq_error_recovery.md) | Dead Letter Queue & Stale task recovery |
+| [GPU/RAM Fallback Strategy](docs/gpu_fallback_and_ram_defense.md) | CUDA-to-CPU automatic fallback & RAM protection |
 
 ---
 

@@ -2,33 +2,11 @@
 
 🇺🇸 [English version](README_en.md)
 
-## 概要
+## ナニコレ？
 
-**Flac_Analyzer** は、FLAC形式の音楽ファイル（CUEシートによるインデックス分割を含む）から高精度な音響特徴量（BPM、音量、周波数スペクトル、時系列変化など）を抽出し、AIモデル（ONNX / Essentia）によってジャンルやムードを自動分類・データベース永続化するシステムです。
-
-Windows環境における大量の音楽ライブラリ（50GB〜数TB規模）の一括バッチ処理に最適化されており、以下の技術的アプローチによりメモリ不足（OOM）やDB処理遅延を根絶しています。
-
-- **Go言語による並行ジョブ管理**: ディスパッチャがシステムリソース（空き物理メモリ・`MaxRamRatio` 基準のリアルタイムバックプレッシャー・CPUコア数）を常時監視し、ワーカープロセスの並列実行数を最適制御。`0` 設定時には `runtime.NumCPU()` から全自動スケール。
-- **ONNX SegFault 防止 ＆ 3段ワーカー並列実行**: 重い音源分離（Demucs）は `demucs_concurrent_limit = 1` セマフォで排他実行して ONNX Runtime の SegFault をゼロ防止。Demucs 完了後は Freeze（`PAGE_READONLY`）された共有メモリから `Librosa`・`Tensor`・`Essentia` ワーカーを `sync.WaitGroup` により **3本同時に並列実行** し、全CPUコア（全32スレッド）を100%フル稼働。
-- **Windows共有メモリ（Shared Memory）WORM転送**: Pythonワーカーでデコード・波形分離した巨大な波形データを、書き込み不可 (`PAGE_READONLY`) に保護した共有メモリ領域でやり取りし、プロセス間の不要なデータコピーやメモリ断片化を根絶。
-- **事前ハッシュ比較による高速スキップ**: デコード音源のMD5ハッシュを抽出し、PostgreSQL内の既存レコードと照合することで、解析済みの楽曲に対する重い音源分離（Demucs）や特徴量抽出処理を100%スキップ。
-- **CUE自動パース ＆ CUE無しFLACフォールバック**: CUEシート境界を自動パースしてトラック単位に展開。CUEが存在しない通常FLACファイルやパース失敗時も自動で単一トラック処理へ安全にフォールバック移行。
-- **VorbisComment 複数値タグの JSONB リスト完全保存**: `ARTIST` 等のマルチバリュータグを文字列結合で潰すことなく、`meta` (JSONB) カラムへ JSON 配列 (`["...", "..."]`) として完全保持したまま保存。
-- **PostgreSQL JSONB 永続化と DLQ フォールバック**: 抽出結果を JSONB フォーマットで非同期 UPSERT。データベース障害時はローカル SQLite (`send_failed.db`) に一時退避（Dead Letter Queue）し、復旧後に安全に再送。
-- **ゾンビタスクの自動検知・リセット**: オーケストレーター起動時に、前回クラッシュ等でステータスが `RUNNING` / `PENDING` のまま残ったタスクを自動検知して `FAILED` に安全リセットし、誤スキップを防止。
-- **一時キャッシュ自動クリーンアップ**: 共有メモリ波形分離および中間データ処理時のキャッシュ（`flac_analyzer_cache`）をタスク完了時・DLQ退避時に完全削除し、RAMディスクやストレージの枯渇を絶滅。
-- **タイムスタンプ保護（Timestamp Preservation）**: 解析結果の一部を FLAC タグ (VorbisComment) に書き戻す際、ファイルの各種タイムスタンプ（作成日時・更新日時）を取得し、寸分違わず完全に復元。
-
-### 📚 ドキュメント一覧
-| ドキュメント | 内容 |
-|:---|:---|
-| [状態遷移図](docs/state_diagram.md) | パイプライン全体の状態遷移フロー |
-| [ER図・データ構造](docs/database_er_diagram.md) | PostgreSQL/SQLite テーブル定義・JSONB仕様 |
-| [SHM/WORMアーキテクチャ](docs/shm_architecture.md) | 共有メモリ管理・ゼロコピーIPC |
-| [CPU並列処理・RAM制御](docs/cpu_parallelism_and_ram_guard.md) | ワーカー並列化・メモリバックプレッシャー |
-| [CUEパースフロー](docs/cue_parsing_flow.md) | CUEシート検出・フォールバック判定 |
-| [DLQ・エラーリカバリ](docs/dlq_error_recovery.md) | Dead Letter Queue・ゾンビタスクリセット |
-| [GPU/RAMフォールバック](docs/gpu_fallback_and_ram_defense.md) | CUDA→CPU自動切替・RAM防御 |
+**Flac_Analyzer** は、FLAC音楽ファイル（CUEシート分割対応）から音響特徴量を抽出し、AIでジャンルやムードを自動分類してPostgreSQLへ保存するシステムです。
+Windows環境における大規模ライブラリ（50GB〜数TB）のバッチ処理に最適化されており、メモリ不足（OOM）やDB処理遅延を根絶しています。
+Goによる並行ジョブ管理とWindows共有メモリ（Shared Memory）WORM転送により、全CPUコアを100%フル稼働させながら高速・安全に解析を行います。
 
 ---
 
@@ -152,6 +130,34 @@ PostgreSQL 送信失敗により `send_failed.db` へ一時退避（Dead Letter 
 > [!NOTE]
 > **Tensor特徴量抽出（STFT Hann窓適用）に関する計算結果変更の注意点**
 > `worker_tensor.py` の STFT 計算にて `torch.hann_window` を明示指定したことで、従来の矩形窓で発生していたスペクトル漏れ（Spectral Leakage）が解消され、Spectral Flux 等の算出精度が向上・補正されています。旧バージョンで解析済みの楽曲と数値結果がわずかに異なる場合があります。必要に応じて `.\run_batch.ps1 -Force` を使用して再解析を行ってください。
+
+---
+
+## 概要詳しく
+
+**Flac_Analyzer** は、以下の技術的アプローチによりメモリ不足（OOM）やDB処理遅延を根絶しています。
+
+- **Go言語による並行ジョブ管理**: ディスパッチャがシステムリソース（空き物理メモリ・`MaxRamRatio` 基準のリアルタイムバックプレッシャー・CPUコア数）を常時監視し、ワーカープロセスの並列実行数を最適制御。`0` 設定時には `runtime.NumCPU()` から全自動スケール。
+- **ONNX SegFault 防止 ＆ 3段ワーカー並列実行**: 重い音源分離（Demucs）は `demucs_concurrent_limit = 1` セマフォで排他実行して ONNX Runtime の SegFault をゼロ防止。Demucs 完了後は Freeze（`PAGE_READONLY`）された共有メモリから `Librosa`・`Tensor`・`Essentia` ワーカーを `sync.WaitGroup` により **3本同時に並列実行** し、全CPUコア（全32スレッド）を100%フル稼働。
+- **Windows共有メモリ（Shared Memory）WORM転送**: Pythonワーカーでデコード・波形分離した巨大な波形データを、書き込み不可 (`PAGE_READONLY`) に保護した共有メモリ領域でやり取りし、プロセス間の不要なデータコピーやメモリ断片化を根絶。
+- **事前ハッシュ比較による高速スキップ**: デコード音源のMD5ハッシュを抽出し、PostgreSQL内の既存レコードと照合することで、解析済みの楽曲に対する重い音源分離（Demucs）や特徴量抽出処理を100%スキップ。
+- **CUE自動パース ＆ CUE無しFLACフォールバック**: CUEシート境界を自動パースしてトラック単位に展開。CUEが存在しない通常FLACファイルやパース失敗時も自動で単一トラック処理へ安全にフォールバック移行。
+- **VorbisComment 複数値タグの JSONB リスト完全保存**: `ARTIST` 等のマルチバリュータグを文字列結合で潰すことなく、`meta` (JSONB) カラムへ JSON 配列 (`["...", "..."]`) として完全保持したまま保存。
+- **PostgreSQL JSONB 永続化と DLQ フォールバック**: 抽出結果を JSONB フォーマットで非同期 UPSERT。データベース障害時はローカル SQLite (`send_failed.db`) に一時退避（Dead Letter Queue）し、復旧後に安全に再送。
+- **ゾンビタスクの自動検知・リセット**: オーケストレーター起動時に、前回クラッシュ等でステータスが `RUNNING` / `PENDING` のまま残ったタスクを自動検知して `FAILED` に安全リセットし、誤スキップを防止。
+- **一時キャッシュ自動クリーンアップ**: 共有メモリ波形分離および中間データ処理時のキャッシュ（`flac_analyzer_cache`）をタスク完了時・DLQ退避時に完全削除し、RAMディスクやストレージの枯渇を絶滅。
+- **タイムスタンプ保護（Timestamp Preservation）**: 解析結果の一部を FLAC タグ (VorbisComment) に書き戻す際、ファイルの各種タイムスタンプ（作成日時・更新日時）を取得し、寸分違わず完全に復元。
+
+### 📚 ドキュメント一覧
+| ドキュメント | 内容 |
+|:---|:---|
+| [状態遷移図](docs/state_diagram.md) | パイプライン全体の状態遷移フロー |
+| [ER図・データ構造](docs/database_er_diagram.md) | PostgreSQL/SQLite テーブル定義・JSONB仕様 |
+| [SHM/WORMアーキテクチャ](docs/shm_architecture.md) | 共有メモリ管理・ゼロコピーIPC |
+| [CPU並列処理・RAM制御](docs/cpu_parallelism_and_ram_guard.md) | ワーカー並列化・メモリバックプレッシャー |
+| [CUEパースフロー](docs/cue_parsing_flow.md) | CUEシート検出・フォールバック判定 |
+| [DLQ・エラーリカバリ](docs/dlq_error_recovery.md) | Dead Letter Queue・ゾンビタスクリセット |
+| [GPU/RAMフォールバック](docs/gpu_fallback_and_ram_defense.md) | CUDA→CPU自動切替・RAM防御 |
 
 ---
 
