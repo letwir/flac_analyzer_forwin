@@ -6,7 +6,8 @@
 
 Windows環境における大量の音楽ライブラリ（50GB〜数TB規模）の一括バッチ処理に最適化されており、以下の技術的アプローチによりメモリ不足（OOM）やDB処理遅延を根絶しています。
 
-- **Go言語による並行ジョブ管理**: ディスパッチャがシステムリソース（空きメモリ・CPU負荷）を常時監視し、ワーカープロセスの並列実行数を最適制御。
+- **Go言語による並行ジョブ管理**: ディスパッチャがシステムリソース（空き物理メモリ・`MaxRamRatio` 基準のリアルタイムバックプレッシャー・CPUコア数）を常時監視し、ワーカープロセスの並列実行数を最適制御。`0` 設定時には `runtime.NumCPU()` から全自動スケール。
+- **ONNX SegFault 防止 ＆ 3段ワーカー並列実行**: 重い音源分離（Demucs）は `demucs_concurrent_limit = 1` セマフォで排他実行して ONNX Runtime の SegFault をゼロ防止。Demucs 完了後は Freeze（`PAGE_READONLY`）された共有メモリから `Librosa`・`Tensor`・`Essentia` ワーカーを `sync.WaitGroup` により **3本同時に並列実行** し、全CPUコア（全32スレッド）を100%フル稼働。
 - **Windows共有メモリ（Shared Memory）WORM転送**: Pythonワーカーでデコード・波形分離した巨大な波形データを、書き込み不可 (`PAGE_READONLY`) に保護した共有メモリ領域でやり取りし、プロセス間の不要なデータコピーやメモリ断片化を根絶。
 - **事前ハッシュ比較による高速スキップ**: デコード音源のMD5ハッシュを抽出し、PostgreSQL内の既存レコードと照合することで、解析済みの楽曲に対する重い音源分離（Demucs）や特徴量抽出処理を100%スキップ。
 - **PostgreSQL JSONB 永続化と DLQ フォールバック**: 抽出結果を JSONB フォーマットで非同期 UPSERT。データベース障害時はローカル SQLite (`send_failed.db`) に一時退避（Dead Letter Queue）し、復旧後に安全に再送。
@@ -87,8 +88,10 @@ skip_dup_by_hash = true
 | パラメータ | 型 | 説明 |
 | :--- | :--- | :--- |
 | `database.url` | String | PostgreSQL の接続 URI (`postgres://user:pass@host:port/dbname`)。 |
-| `orchestrator.num_workers` | Integer | ディスパッチャが同時に並列実行を許可する最大ワーカープロセス数。 |
-| `orchestrator.demucs_concurrent_limit` | Integer | 重い GPU/CPU 負荷を伴う音源分離 (`worker_demucs.py`) の最大同時実行制限セマフォ。 |
+| `orchestrator.num_workers` | Integer | ディスパッチャが同時に並列実行を許可する最大ワーカープロセス数。`0` を指定した場合、システム物理 RAM 容量（`max_ram_ratio` 基準）および CPU 論理コア数（`runtime.NumCPU()`）から安全な最大並列ワーカー数を自動決定します。 |
+| `orchestrator.max_ram_ratio` | Float | システム全体物理 RAM に対する使用許可割合（デフォルト: `0.625` ＝ 64GB 環境で約 40GB）。タスク投入時にリアルタイム空き RAM を監視し、この上限を超えると自動的にバックプレッシャー（スロットリング待機）がかかります。 |
+| `orchestrator.cpu_worker_ratio` | Float | ワーカー数自動計算時の CPU コア利用率割合（デフォルト: `0.80`）。 |
+| `orchestrator.demucs_concurrent_limit` | Integer | 重い GPU/CPU 負荷および ONNX Runtime の SegFault 防止を伴う音源分離 (`worker_demucs.py`) の最大同時実行制限セマフォ（`1` 固定を推奨）。 |
 | `orchestrator.shm_allocation_delay_sec` | Integer | 共有メモリ (SHM) の確保・解放タイミングにおけるプロセス間同期用の安全遅延（秒）。 |
 | `orchestrator.queue_dir` | String | 各抽出ワーカーが一時的に成果物 JSON を書き出すキューディレクトリのパス。 |
 | `orchestrator.skip_dup_by_hash` | Boolean | `true` の場合、音源分離の前に波形 MD5 ハッシュを算出（`--check-hash-only`）し、PostgreSQL に同ハッシュの解析成果が既に存在すれば Demucs 音源分離および特徴量抽出処理を **100% スキップ** します。 |
@@ -167,8 +170,8 @@ stateDiagram-v2
         AllocatingSHM --> DemucsProcessing: worker_demucs.py 起動<br/>（波形スライスデコード・分離・SHM書き込み）
         DemucsProcessing --> FreezingSHM: Go側で共有メモリを PAGE_READONLY 化
         FreezingSHM --> Precache: functor_precache.py 起動<br/>（SHM read-only アタッチ・メタデータ整合性検証）
-        Precache --> FeatureExtracting: 特徴量抽出プロセス起動<br/>（Librosa → Tensor → Essentia）
-        FeatureExtracting --> ReleaseSHM: Go側で共有メモリ (SHM) 解放
+        Precache --> ParallelFeatureExtracting: ポストDemucs並列特徴量抽出起動<br/>（Librosa, Tensor, Essentia 3本同時並列実行）
+        ParallelFeatureExtracting --> ReleaseSHM: Go側で共有メモリ (SHM) 解放
         ReleaseSHM --> WriteJSONFiles: 中間JSONファイル書き込み<br/>(queue/ ディレクトリへ一時出力)
         WriteJSONFiles --> Ingesting: ingester.py 起動（JSON集約・DB照合）
     }
