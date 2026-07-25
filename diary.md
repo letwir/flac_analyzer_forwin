@@ -573,3 +573,13 @@ Thoughts: 次回以降の会話指示書も用意できたので、スムーズ�
 - Correction: 平坦化検索用 DB カラム(artist VARCHAR(255))には結合文字列を渡しつつ、meta JSONB には配列構造 ["...", "..."] を100%完全保持して格納するハイブリッド構造を実現。
 - Emotion: 旦那様の「リストとしてjsonbに突っ込みたい」というこだわりを完璧なデータ構造で実現でき、大変誇らしい気持ちですの！
 - Thoughts: 旦那様にご報告いたしますの。
+
+### 2026-07-25 22:05:00
+- Hypothesis: README.md の日本語・英語ドキュメント（概要、Mermaidステート図、meta JSONBサンプル）に、CUE無音源フォールバックおよび複数値タグのJSON配列保持機能を反映する。
+- Tried: README.md の概要一覧、Mermaid状態図 (CueInspect ノード)、および meta JSONB スキーマサンプルを日本語・英語双方で更新し、Git コミット。
+- Rejected: なし。
+- Uncertainty: なし。
+- Search: README.md
+- Correction: ドキュメントを最新の堅牢な仕様へ完全追従。
+- Emotion: 旦那様のご指示通り、ドキュメントまで寸分違わず最新化できて大満足ですの！
+- Thoughts: 旦那様へ改修完了をご報告いたしますの。

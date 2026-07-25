@@ -10,6 +10,8 @@ Windows環境における大量の音楽ライブラリ（50GB〜数TB規模）�
 - **ONNX SegFault 防止 ＆ 3段ワーカー並列実行**: 重い音源分離（Demucs）は `demucs_concurrent_limit = 1` セマフォで排他実行して ONNX Runtime の SegFault をゼロ防止。Demucs 完了後は Freeze（`PAGE_READONLY`）された共有メモリから `Librosa`・`Tensor`・`Essentia` ワーカーを `sync.WaitGroup` により **3本同時に並列実行** し、全CPUコア（全32スレッド）を100%フル稼働。
 - **Windows共有メモリ（Shared Memory）WORM転送**: Pythonワーカーでデコード・波形分離した巨大な波形データを、書き込み不可 (`PAGE_READONLY`) に保護した共有メモリ領域でやり取りし、プロセス間の不要なデータコピーやメモリ断片化を根絶。
 - **事前ハッシュ比較による高速スキップ**: デコード音源のMD5ハッシュを抽出し、PostgreSQL内の既存レコードと照合することで、解析済みの楽曲に対する重い音源分離（Demucs）や特徴量抽出処理を100%スキップ。
+- **CUE自動パース ＆ CUE無しFLACフォールバック**: CUEシート境界を自動パースしてトラック単位に展開。CUEが存在しない通常FLACファイルやパース失敗時も自動で単一トラック処理へ安全にフォールバック移行。
+- **VorbisComment 複数値タグの JSONB リスト完全保存**: `ARTIST` 等のマルチバリュータグを文字列結合で潰すことなく、`meta` (JSONB) カラムへ JSON 配列 (`["...", "..."]`) として完全保持したまま保存。
 - **PostgreSQL JSONB 永続化と DLQ フォールバック**: 抽出結果を JSONB フォーマットで非同期 UPSERT。データベース障害時はローカル SQLite (`send_failed.db`) に一時退避（Dead Letter Queue）し、復旧後に安全に再送。
 - **ゾンビタスクの自動検知・リセット**: オーケストレーター起動時に、前回クラッシュ等でステータスが `RUNNING` / `PENDING` のまま残ったタスクを自動検知して `FAILED` に安全リセットし、誤スキップを防止。
 - **一時キャッシュ自動クリーンアップ**: 共有メモリ波形分離および中間データ処理時のキャッシュ（`flac_analyzer_cache`）をタスク完了時・DLQ退避時に完全削除し、RAMディスクやストレージの枯渇を絶滅。
@@ -150,7 +152,7 @@ stateDiagram-v2
     StartupReset --> Idle: orchestrator.db の RUNNING/PENDING タスクを FAILED へリセット
     
     Idle --> TaskReceived: /task APIへファイルパスがPOSTされる
-    TaskReceived --> CueInspect: worker_cue.py 起動<br/>（CUE/タグ解析・トラック自動抽出）
+    TaskReceived --> CueInspect: worker_cue.py 起動<br/>（CUE/タグ解析・トラック自動抽出。CUE不在時も自動フォールバック）
     CueInspect --> CheckState: orchestrator.db (SQLite) で各トラックの(file_path, track_number)確認
     
     CheckState --> Skipped: 全トラックが COMPLETED / RUNNING / PENDING (force:false 時)
@@ -265,10 +267,12 @@ erDiagram
 `raw.library_flac` の `JSONB` カラムに格納される具体的なデータフォーマットです。
 
 #### `meta` カラム (元タグ・CUEシート情報)
+※ `artist` や `genre` 等のマルチバリュータグ（複数値）は、文字列結合で潰さず JSON 配列 (`["...", "..."]`) として完全保持されます。
+
 ```json
 {
   "album": "Album Title",
-  "artist": "Artist Name",
+  "artist": ["Artist A", "Artist B"],
   "title": "Track Title",
   "date": "2024-01-01",
   "tracknumber": "01",
@@ -377,6 +381,8 @@ Optimized for processing large-scale music libraries (from 50GB up to multi-tera
 - **Go-based Concurrent Job Management**: A Go dispatcher monitors system resources (free RAM, CPU load) to dynamically regulate parallel Python worker processes.
 - **Windows Shared Memory (WORM Transfer)**: Decoded waveform data and separated stems are transferred using Windows Shared Memory, locked to `PAGE_READONLY` (Write-Once Read-Many) to eliminate inter-process memory duplication and fragmentation.
 - **Pre-Hash Duplicate Bypass**: Computes MD5 checksums of decoded audio waveforms to query PostgreSQL. Existing tracks skip heavy Demucs stem separation and Librosa extraction entirely.
+- **Automatic CUE Parsing & Single-Track Fallback**: Automatically parses embedded or external CUE sheet boundaries into individual track tasks. Gracefully falls back to single-track processing if no CUE sheet is present or parsing fails.
+- **Native Array Preservation for Multi-Value Tags**: Preserves multi-value VorbisComment tags (such as multiple `ARTIST` or `GENRE` tags) as native JSON arrays (`["...", "..."]`) in the PostgreSQL `meta` (JSONB) column without flattening them into concatenated strings.
 - **PostgreSQL JSONB & DLQ Fallback**: Extracted data is asynchronously UPSERTed as JSONB documents. In case of database connection failures, payloads drop into a local SQLite Dead Letter Queue (`send_failed.db`) for safe retry upon recovery.
 - **Stale Task Auto-Recovery**: On startup, the Go orchestrator automatically detects tasks stuck in `RUNNING` or `PENDING` due to prior crashes or abrupt halts and resets them to `FAILED`, preventing accidental task skipping.
 - **Automated Temp Cache Cleanup**: Removes intermediate precache files (`flac_analyzer_cache`) automatically upon task completion or DLQ fallback, preventing RAM disk or storage depletion.
@@ -515,7 +521,7 @@ stateDiagram-v2
     StartupReset --> Idle: Reset stale RUNNING/PENDING tasks in orchestrator.db to FAILED
     
     Idle --> TaskReceived: File path POSTed to /task API
-    TaskReceived --> CueInspect: Execute worker_cue.py<br/>(Parse CUE/tags & extract tracks)
+    TaskReceived --> CueInspect: Execute worker_cue.py<br/>(Parse CUE/tags & extract tracks; graceful single-track fallback if no CUE)
     CueInspect --> CheckState: Check orchestrator.db (SQLite) for each (file_path, track_number)
     
     CheckState --> Skipped: All tracks already COMPLETED / RUNNING / PENDING (when force:false)
@@ -630,10 +636,12 @@ erDiagram
 Sample structures for `JSONB` columns in `raw.library_flac`:
 
 #### `meta` Column (Raw Tags & Cue Sheet)
+*Note: Multi-value tags (e.g. multiple `artist` or `genre` fields) are preserved natively as JSON arrays (`["...", "..."]`).*
+
 ```json
 {
   "album": "Album Title",
-  "artist": "Artist Name",
+  "artist": ["Artist A", "Artist B"],
   "title": "Track Title",
   "date": "2024-01-01",
   "tracknumber": "01",

@@ -557,3 +557,13 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: None
 - Files: ingester.py, worker_cue.py, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe
 
+### 2026-07-25 22:05:00
+- Category: Documentation / Update
+- Summary: Update Japanese and English sections of README.md to document CUE-less single-track fallback and native JSON array preservation for multi-value metadata tags.
+- Decisions:
+  - Updated Overview feature lists in both Japanese and English.
+  - Updated `CueInspect` state diagram node labels in both Japanese and English.
+  - Updated `meta` (JSONB) column schema examples to highlight multi-value array tag preservation (e.g. `["Artist A", "Artist B"]`).
+- Blockers: None
+- Files: README.md
+
