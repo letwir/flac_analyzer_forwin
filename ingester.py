@@ -111,6 +111,19 @@ def main():
     # Extract tag metadata directly from FLAC file using mutagen
     try:
         audio = FLAC(args.flac_path)
+        vorbis_meta = {}
+        for k, v in audio.items():
+            val_list = [str(x) for x in v]
+            key_lower = k.lower()
+            if len(val_list) == 1:
+                vorbis_meta[key_lower] = val_list[0]
+            elif len(val_list) == 0:
+                vorbis_meta[key_lower] = ""
+            else:
+                vorbis_meta[key_lower] = val_list
+        vorbis_meta.update(meta)
+        meta = vorbis_meta
+
         if not title:
             title = audio.get("title", [""])[0]
         if not artist:

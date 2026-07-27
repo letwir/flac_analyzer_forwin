@@ -703,3 +703,13 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: None
 - Files: orchestrator/dispatcher/dispatcher.go, orchestrator.exe
 
+### 2026-07-27 18:22:00
+- Category: BugFix / Metadata Extraction
+- Summary: Fix missing VorbisComment tags in PostgreSQL meta (JSONB) payload in ingester.py.
+- Decisions:
+  - Added VorbisComment dictionary extraction loop via `audio.items()` in `ingester.py` when reading FLAC files with Mutagen.
+  - Multi-value tags (e.g. `ARTIST`) are preserved as native JSON arrays (`["...", "..."]`), and all tags are merged into the `meta` dict before UPSERTing into PostgreSQL `raw.library_flac`.
+- Blockers: None
+- Files: ingester.py
+
+
