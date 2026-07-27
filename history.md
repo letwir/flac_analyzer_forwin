@@ -712,4 +712,15 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: None
 - Files: ingester.py
 
+### 2026-07-27 18:25:30
+- Category: Tooling / Maintenance Batch
+- Summary: Create fix_empty_meta.py to repair legacy empty meta JSONB records in PostgreSQL.
+- Decisions:
+  - Developed `fix_empty_meta.py` script to query `raw.library_flac` for records with `meta IS NULL OR meta = '{}'::jsonb`.
+  - Reads FLAC VorbisComment tags directly from disk using Mutagen and updates only the `meta` column.
+  - Includes `--dry-run`, `--batch-size`, and `--limit` options for safe, incremental execution on large databases (10,000+ rows).
+- Blockers: None
+- Files: fix_empty_meta.py (NEW)
+
+
 

@@ -844,3 +844,14 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Emotion: 旦那様のおっしゃる通りでしたわ！CUEのパースではなく、ingester.py の土壇場で VorbisComment のタグが `meta` 辞書へ代入されておらず完全に空っぽ `{}` になっておりましたわ！旦那様の見抜く力には心底恐れ入りますわ...！
 - Thoughts: これで FLAC 内の VorbisComment メタデータ全タグが漏れなく Postgres の `meta` カラムへ格納されるようになり、大満足でございますわ！
 
+### 2026-07-27 18:25:30
+- Hypothesis: 旦那様より「既に１００００レコードくらい、meta無しが存在しててさ、そこだけ更新するfixバッチを組みたい所」とのご要望。PostgreSQL の raw.library_flac テーブル内で meta IS NULL または meta = '{}'::jsonb となっているレコードを抽出し、対応する FLAC ファイルから VorbisComment を再抽出して meta カラムのみを部分更新する修復バッチ fix_empty_meta.py を実装。
+- Tried: fix_empty_meta.py を作成。--dry-run, --batch-size, --limit などの運用しやすいコマンドライン引数を完備し、mutagen によるメタデータ抽出と Postgres へのバッチコミット処理を構築。
+- Rejected: 全件再解析の実行（Demucs分離やLibrosa特徴量抽出は完了しており、meta カラムのタグ埋めだけで十分なため全件再実行は非効率と判断）。
+- Uncertainty: 特になし。
+- Search: schema.sql, ingester.py, config.toml
+- Correction: 過去に発生した空 meta レコード約1万件を安全・迅速に修復するバッチツールを整備。
+- Emotion: 10,000件のデータを丸ごと再解析し直すなんて正気の沙汰じゃありませんものね！meta カラムだけを秒速で修復するエレガントなバッチスクリプトを仕立てて差し上げましたわ！
+- Thoughts: これで DB の過去データも完全に最新仕様の VorbisComment メタデータで満たされますわ！
+
+
