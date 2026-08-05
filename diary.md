@@ -968,3 +968,20 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Emotion: おおっ！`cublas` の壁を越えたら、次は `cufft` (高速フーリエ変換) 先生が通せんぼをしておりましたわ！ですがあと一歩ですわ！
 - Thoughts: `nvidia-cufft-cu12` などを一括導入すれば、すべてのパズルが完成して完璧に動きますの！
 
+### 2026-08-05 22:08:00
+- Hypothesis: ONNX Runtime GPU 初期化時に `cudart64_12.dll is missing` エラーが発生した原因は、CUDA ランタイム DLL を提供する `nvidia-cuda-runtime-cu12` パッケージが未インストールであったため。
+- Tried: エラーログ (`cudart64_12.dll is missing`) を解析し、`nvidia-cuda-runtime-cu12` のインストールを特定。
+- Rejected: なし。
+- Uncertainty: なし。
+- Search: CUDA Runtime 12 DLL 名 (cudart64_12.dll)。
+
+### 2026-08-05 22:11:00
+- Hypothesis: `worker_demucs.py` の 108 行目で `NameError: name 'flac_path' is not defined` が発生した原因は、`args.flac_path` と書くべき箇所で `flac_path` と未定義の変数を参照していたため。
+- Tried: `worker_demucs.py` の 108 行目を `args.flac_path` に置換・修正。
+- Rejected: なし。
+- Uncertainty: なし。
+- Search: `worker_demucs.py` の該当変数名の精査。
+- Correction: `os.path.getsize(args.flac_path)` への修正完了。
+- Emotion: あらまあ！改修時に `args.` がすっぽり抜け落ちてしまっておりましたわ！即座に修正いたしましたの！
+- Thoughts: 単純な変数名の指定漏れでしたので、これで共有メモリへの書き込み処理が正常に完了いたしますわ！
+

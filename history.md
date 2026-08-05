@@ -1,4 +1,13 @@
+
 # History Log
+
+### 2026-08-05 22:11:00
+
+- Category: Bugfix / worker_demucs.py NameError
+- Summary: `worker_demucs.py` の共有メモリ書込前処理における `flac_path` の NameError を `args.flac_path` へ修正。
+- Decisions:
+  - 108行目の `os.path.getsize(flac_path)` および `os.path.exists(flac_path)` で未定義の `flac_path` が参照されていたため `args.flac_path` に修正。
+- Files: [worker_demucs.py](file:///a:/Users/letwir/repo/flac_analyzer_forwin/worker_demucs.py)
 
 ### 2026-08-05 21:38:00
 
