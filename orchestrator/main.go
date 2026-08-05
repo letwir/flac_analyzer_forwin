@@ -152,6 +152,19 @@ func main() {
 		totalRamGB = 32.0
 	}
 
+	// Auto-detect host hardware specs and update HARDWARE_SPECS.md
+	specsPath := "HARDWARE_SPECS.md"
+	if _, err := os.Stat(specsPath); os.IsNotExist(err) {
+		if _, err := os.Stat("../HARDWARE_SPECS.md"); err == nil {
+			specsPath = "../HARDWARE_SPECS.md"
+		}
+	}
+	if err := sysinfo.UpdateHardwareSpecsFile(specsPath); err != nil {
+		log.Printf("Warning: Failed to auto-detect hardware specs for HARDWARE_SPECS.md: %v", err)
+	} else {
+		log.Printf("Successfully auto-detected hardware specs and updated %s", specsPath)
+	}
+
 	// Compute Target RAM Workers (Clamped to 95% maximum safety ceiling)
 	effectiveRamRatio := cfg.Orchestrator.MaxRamRatio
 	if effectiveRamRatio > 0.95 {

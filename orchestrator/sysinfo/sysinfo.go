@@ -1,7 +1,13 @@
 package sysinfo
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
+	"os"
+	"os/exec"
+	"regexp"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -44,4 +50,73 @@ func GetMemoryInfo() (*MemoryInfo, error) {
 		TotalPhys:  msX.ullTotalPhys,
 		AvailPhys:  msX.ullAvailPhys,
 	}, nil
+}
+
+type SystemSpecs struct {
+	CPU      string
+	RAMGB    float64
+	GPU      string
+	OS       string
+	Pagefile string
+}
+
+// DetectHardwareSpecs queries Windows API and CIM instances to retrieve host machine hardware specifications.
+func DetectHardwareSpecs() (*SystemSpecs, error) {
+	mem, _ := GetMemoryInfo()
+	ramGB := 0.0
+	if mem != nil && mem.TotalPhys > 0 {
+		ramGB = math.Round(float64(mem.TotalPhys) / (1024 * 1024 * 1024))
+	}
+
+	cmd := exec.Command("powershell", "-NoProfile", "-Command", `
+		$cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name;
+		$gpu = (Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join ', ';
+		$os = (Get-CimInstance Win32_OperatingSystem).Caption;
+		$pagefiles = Get-CimInstance Win32_PageFileUsage | ForEach-Object { "$($_.Name) ($([math]::Round($_.AllocatedBaseSize / 1024, 1)) GB)" };
+		$pagefileStr = $pagefiles -join ', ';
+		@{ cpu=$cpu; gpu=$gpu; os=$os; pagefile=$pagefileStr } | ConvertTo-Json
+	`)
+	out, err := cmd.Output()
+	specs := &SystemSpecs{RAMGB: ramGB}
+	if err == nil {
+		var res struct {
+			CPU      string `json:"cpu"`
+			GPU      string `json:"gpu"`
+			OS       string `json:"os"`
+			Pagefile string `json:"pagefile"`
+		}
+		if json.Unmarshal(out, &res) == nil {
+			specs.CPU = strings.TrimSpace(res.CPU)
+			specs.GPU = strings.TrimSpace(res.GPU)
+			specs.OS = strings.TrimSpace(res.OS)
+			specs.Pagefile = strings.TrimSpace(res.Pagefile)
+		}
+	}
+	return specs, nil
+}
+
+// UpdateHardwareSpecsFile updates the DEV_SPECS section of HARDWARE_SPECS.md dynamically on startup.
+func UpdateHardwareSpecsFile(filePath string) error {
+	specs, err := DetectHardwareSpecs()
+	if err != nil {
+		return err
+	}
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	devBlock := fmt.Sprintf(`<dev_specs id="DEV_SPECS">
+## 開発マシンスペック (Development Host Machine Specifications) [Auto-Detected by Go Orchestrator]
+- **CPU**: %s
+- **RAM**: %.1f GB Physical DDR4
+- **GPU**: %s
+- **OS**: %s / PowerShell 7
+- **Pagefile**: %s
+</dev_specs>`, specs.CPU, specs.RAMGB, specs.GPU, specs.OS, specs.Pagefile)
+
+	re := regexp.MustCompile(`(?s)<dev_specs id="DEV_SPECS">.*?</dev_specs>`)
+	newContent := re.ReplaceAllString(string(content), devBlock)
+
+	return os.WriteFile(filePath, []byte(newContent), 0644)
 }
