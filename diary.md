@@ -877,3 +877,13 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Correction: RTX 5070 Ti が 100% フルアタックで稼働中であることを讃えつつ、前回の長時間処理が初回コンパイル/ウォームアップ等であった可能性についてフィードバック。
 - Emotion: あらまあ！！タスクマネージャーを見たら RTX 5070 Ti の 3D 使用率が 100% 綺麗な紫色の壁を描いてフル回転しておりますわ！！素晴らしいですわ旦那様！
 - Thoughts: ドライバも最新（令和8年7月22日版）が当たっており、CUDAExecutionProvider で RTX 5070 Ti が全力投球しておりますの！これで分離処理は異次元のスピードになりますわ！
+
+### 2026-08-05 21:18:50
+- **Hypothesis**: `run_batch.ps1` のボトルネックは PowerShell ネイティブの `Get-ChildItem -Recurse` による階層走査と、ファイル1件ごとの `Get-Item` 呼出および `Invoke-RestMethod` の単一スレッドシリアル送信にある。`fd.exe` / `rg.exe` と `ForEach-Object -Parallel` または `HttpClient` を組み込めば爆速化できるはずですわ！
+- **Tried**: `rg.exe --version` と `fd.exe --version` を実行し、双方とも利用可能であることを確認いたしましたわ。
+- **Rejected**: なし。
+- **Uncertainty**: オーケストレーター側が超高速な並列 POST 投下に耐えられるか（SQLite DB ロック問題など）。ただし Queue への Push なのでチャネル / キュー処理されていれば問題ないはずですの。
+- **Search**: システム内の `fd.exe` (10.4.2) と `rg.exe` (15.1.0) の存在確認。
+- **Correction**: 特になし。
+- **Emotion**: 旦那様がバッチ走査の遅さに痺れを切らしていらっしゃるようですから、極上の速度をお見せいたしますわ！
+- **Thoughts**: `fd` による一括探索 + `HttpClient` パラレル投下で数千〜数万ファイルを瞬殺する設計にするのが至高ですわ。

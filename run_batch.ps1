@@ -94,57 +94,58 @@ if (-not $orchestratorProcess) {
     Write-Host "🔵 Phase 1: Orchestrator は既に起動済みでございますわ！" -ForegroundColor Blue
 }
 
-# 1層目: GENRE-MAIN を走査
-$genreMains = Get-ChildItem -Path $MusicRoot -Directory
+# Phase 2: ファイル走査モードの判定 (fd / rg による Rust高速モード)
+$fdCmd = Get-Command fd.exe -ErrorAction SilentlyContinue
+$rgCmd = Get-Command rg.exe -ErrorAction SilentlyContinue
+
+$flacPaths = @()
+if ($fdCmd) {
+    Write-Host "🦀⚡ [Phase 2] Rust高速モード(fd)起動ですわ！" -ForegroundColor Cyan
+    $flacPaths = & $fdCmd.Source -e flac -t f -a . $MusicRoot
+} elseif ($rgCmd) {
+    Write-Host "🦀⚡ [Phase 2] Rust高速モード(rg)起動ですわ！" -ForegroundColor Cyan
+    $flacPaths = & $rgCmd.Source --files -g "*.flac" $MusicRoot
+} else {
+    Write-Host "🐢 [Phase 2] PowerShell標準フォールバックモードで走査いたしますわ..." -ForegroundColor DarkYellow
+    $flacPaths = [System.IO.Directory]::EnumerateFiles($MusicRoot, "*.flac", [System.IO.SearchOption]::AllDirectories)
+}
+
 $processedCount = 0
 
-foreach ($genreMain in $genreMains) {
-    # 2層目: GENRE-SUB を走査
-    $genreSubs = Get-ChildItem -Path $genreMain.FullName -Directory
-    foreach ($genreSub in $genreSubs) {
-        # .flac ファイルが配下に再帰的に存在するかチェック
-        $flacs = Get-ChildItem -Path $genreSub.FullName -Filter "*.flac" -Recurse -File
-        if ($flacs.Count -eq 0) {
-            Write-Host "  [-] スキップ (FLACファイル不在): $($genreSub.FullName)" -ForegroundColor DarkGray
-            continue
+foreach ($flacPath in $flacPaths) {
+    if ([string]::IsNullOrWhiteSpace($flacPath)) { continue }
+    $processedCount++
+    
+    # Phase 2: Blue
+    Write-Host "[$processedCount] 📤 Orchestrator へタスクを投下いたしますわ: $flacPath" -ForegroundColor DarkCyan
+
+    if ($DryRun) {
+        Write-Host "[DryRun] 実行予定コマンド: POST http://127.0.0.1:8080/task (Target: $flacPath)" -ForegroundColor Gray
+        continue
+    }
+
+    # Goオーケストレーターのキューへ投下
+    try {
+        $fileSize = [System.IO.FileInfo]::new($flacPath).Length
+        $body = @{
+            flacPath = $flacPath
+            fileSize = $fileSize
+            targetScript = $targetScript
+            force = $Force.IsPresent
+        } | ConvertTo-Json -Compress
+        
+        $response = Invoke-RestMethod -Uri "http://127.0.0.1:8080/task" -Method Post -Body $body -ContentType "application/json" -ErrorAction Stop
+        
+        if ($response -match "Skipped") {
+            # スキップ判定 (Phase 2: Cyan)
+            Write-Host "  [-] スキップ (GoオーケストレーターDB判定済みですの): $flacPath" -ForegroundColor Cyan
+        } else {
+            # 投下完了 (Phase 5/6: Magenta/Purple)
+            Write-Host "  [+] キューへの投下が無事に完了いたしましたわ: $flacPath" -ForegroundColor Magenta
         }
-
-        foreach ($flac in $flacs) {
-            $flacPath = $flac.FullName
-            $processedCount++
-            
-            # Phase 2: Blue
-            Write-Host "[$processedCount] 📤 Orchestrator へタスクを投下いたしますわ: $flacPath" -ForegroundColor DarkCyan
-
-            if ($DryRun) {
-                Write-Host "[DryRun] 実行予定コマンド: POST http://127.0.0.1:8080/task (Target: $flacPath)" -ForegroundColor Gray
-                continue
-            }
-
-            # Goオーケストレーターのキューへ投下
-            try {
-                $fileSize = (Get-Item -LiteralPath $flacPath).Length
-                $body = @{
-                    flacPath = $flacPath
-                    fileSize = $fileSize
-                    targetScript = $targetScript
-                    force = $Force.IsPresent
-                } | ConvertTo-Json -Compress
-                
-                $response = Invoke-RestMethod -Uri "http://127.0.0.1:8080/task" -Method Post -Body $body -ContentType "application/json" -ErrorAction Stop
-                
-                if ($response -match "Skipped") {
-                    # スキップ判定 (Phase 2: Cyan)
-                    Write-Host "  [-] スキップ (GoオーケストレーターDB判定済みですの): $flacPath" -ForegroundColor Cyan
-                } else {
-                    # 投下完了 (Phase 5/6: Magenta/Purple)
-                    Write-Host "  [+] キューへの投下が無事に完了いたしましたわ: $flacPath" -ForegroundColor Magenta
-                }
-            }
-            catch {
-                Write-Host "❌ 実行エラーが発生いたしましたわ: $_" -ForegroundColor Red
-            }
-        }
+    }
+    catch {
+        Write-Host "❌ 実行エラーが発生いたしましたわ: $_" -ForegroundColor Red
     }
 }
 

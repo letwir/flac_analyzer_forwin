@@ -720,7 +720,16 @@ Files: run_batch.ps1, orchestrator/main.go
   - Reads FLAC VorbisComment tags directly from disk using Mutagen and updates only the `meta` column.
   - Includes `--dry-run`, `--batch-size`, and `--limit` options for safe, incremental execution on large databases (10,000+ rows).
 - Blockers: None
-- Files: fix_empty_meta.py (NEW)
+
+### 2026-08-05 21:20:30
+- Category: Refactoring / Optimization
+- Summary: run_batch.ps1 の Rust高速モード (fd.exe/rg.exe) 自動判定および .NET FileInfo によるファイル探索・メタデータ取得の爆速化。
+- Decisions:
+  - `fd.exe` または `rg.exe` がインストールされている環境において `🦀⚡ [Phase 2] Rust高速モード(fd/rg)起動ですわ！` メッセージを表示し、高速ファイル列挙を実施。
+  - メタデータ取得時の低速な `Get-Item` を廃止し、`.NET FileInfo` 直接アクセスでオーバーヘッドを撤廃。
+- Blockers: なし
+- Files: run_batch.ps1, implementation_plan.md, walkthrough.md, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md
+
 
 
 
