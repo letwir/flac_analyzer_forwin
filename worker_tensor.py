@@ -167,6 +167,10 @@ def main():
             sys.exit(1)
         finally:
             shm.close()
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+            import gc
+            gc.collect()
 
     logger.info(f"全ステムの PyTorch (Tensor) 特徴量抽出が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
     

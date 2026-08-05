@@ -84,6 +84,7 @@ type Dispatcher struct {
 	taskQueue              chan TaskPayload
 	allocMutex             sync.Mutex
 	demucsSemaphore        chan struct{}
+	tensorSemaphore        chan struct{}
 	wg                     sync.WaitGroup
 	logLevel               LogLevel
 	eventLog               EventLogger
@@ -108,6 +109,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		db:                     db,
 		taskQueue:              make(chan TaskPayload, 1000),
 		demucsSemaphore:        make(chan struct{}, cfg.DemucsConcurrentLimit),
+		tensorSemaphore:        make(chan struct{}, 1),
 		logLevel:               cfg.LogLevel,
 		eventLog:               cfg.EventLog,
 		skipDupByHash:          cfg.SkipDupByHash,
@@ -576,6 +578,14 @@ func (d *Dispatcher) worker(id int) {
 
 			go func() {
 				defer wg.Done()
+
+				// Tensor (ONNX/PyTorch) Exclusive Execution Lock to prevent VRAM spikes across parallel workers
+				d.tensorSemaphore <- struct{}{}
+				defer func() {
+					time.Sleep(150 * time.Millisecond) // VRAM GC cleanup margin
+					<-d.tensorSemaphore
+				}()
+
 				out, err := d.runPythonScript("worker_tensor.py", []string{
 					"--shm-metadata", precacheOut,
 					"--track-hash", trackHash,
