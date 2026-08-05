@@ -1013,8 +1013,8 @@ def _calc_scipy_stats_features(ctx: AudioContext) -> ScipyStatsFeatures | None:
                 skew_vals[valid_mask] = scipy.stats.skew(valid_spectro, axis=0, nan_policy='omit')
                 kurt_vals[valid_mask] = scipy.stats.kurtosis(valid_spectro, axis=0, nan_policy='omit')
         
-        skew_vals = np.nan_to_num(skew_vals, nan=0.0, posinf=0.0, neginf=0.0)
-        kurt_vals = np.nan_to_num(kurt_vals, nan=0.0, posinf=0.0, neginf=0.0)
+        skew_vals = np.nan_to_num(skew_vals, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+        kurt_vals = np.nan_to_num(kurt_vals, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
         skew_seq = _resample_to_fixed_frames(skew_vals)
         kurt_seq = _resample_to_fixed_frames(kurt_vals)
