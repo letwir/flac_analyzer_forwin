@@ -1,14 +1,12 @@
 # System & Environment Specifications
 
 <dev_specs id="DEV_SPECS">
-## 開発マシンスペック (Development Host Machine Specifications)
-- **CPU**: AMD Ryzen 9 5950X (16 Cores / 32 Threads)
-- **RAM**: 64 GB Physical DDR4
-- **GPU**: NVIDIA GeForce RTX 5070 Ti (Blackwell Architecture)
-- **OS**: Windows 11 Pro (25H2) / PowerShell 7 (`pwsh.exe`)
-- **Pagefile**:
-  - `C:` Drive: System Managed
-  - `Q:` Drive: 128 GB Dedicated High-Speed Pagefile
+## 開発マシンスペック (Development Host Machine Specifications) [Auto-Detected]
+- **CPU**: AMD Ryzen 7 7735HS with Radeon Graphics        
+- **RAM**: 32.0 GB Physical DDR4
+- **GPU**: AMD Radeon(TM) Graphics
+- **OS**: Microsoft Windows 11 Pro / PowerShell 7 (`pwsh.exe`)
+- **Pagefile**: C:\pagefile.sys (18.5 GB)
 </dev_specs>
 
 <exec_specs id="EXEC_SPECS">
