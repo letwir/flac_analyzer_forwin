@@ -2,10 +2,8 @@ package dispatcher
 
 // EstimateShmSize calculates the required shared memory size for a single stem
 // based on the original FLAC file size.
-// It assumes the decoded float32 stereo PCM size will not exceed 6 times the FLAC file size.
-// EstimateShmSize calculates the required shared memory size for a single stem.
 func EstimateShmSize(fileSize int64) uint32 {
-	marginMultiplier := int64(6)
+	marginMultiplier := int64(5)
 	estimated := fileSize * marginMultiplier
 	
 	if estimated < 1024*1024 {
@@ -13,6 +11,22 @@ func EstimateShmSize(fileSize int64) uint32 {
 	}
 	
 	return uint32(estimated)
+}
+
+// EstimateShmSizeForTask calculates the required shared memory size for a single stem,
+// taking into account whether the task is a sliced CUE track or a full FLAC file.
+func EstimateShmSizeForTask(task TaskPayload) uint32 {
+	if task.StartSample >= 0 && task.EndSample > task.StartSample {
+		// CUE track calculation: numSamples * 2 (channels) * 4 (float32 bytes) * 1.5 (safety margin)
+		numSamples := uint64(task.EndSample - task.StartSample)
+		neededBytes := numSamples * 2 * 4
+		estimated := uint64(float64(neededBytes) * 1.5)
+		if estimated < 1024*1024 {
+			estimated = 1024 * 1024
+		}
+		return uint32(estimated)
+	}
+	return EstimateShmSize(task.FileSize)
 }
 
 // EstimateDemucsTotalRamBytes estimates the total memory (stems + PyTorch buffer + processing margin)

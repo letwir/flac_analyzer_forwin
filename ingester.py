@@ -25,19 +25,45 @@ def main():
 
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    if args.check_hash:
-        try:
-            config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+def get_db_url() -> str:
+    db_url = ""
+    config_path = os.path.join(os.path.dirname(__file__), "config.toml")
+    try:
+        if os.path.exists(config_path):
             with open(config_path, "rb") as f:
                 config = tomllib.load(f)
             db_url = config.get("database", {}).get("url", "")
-        except Exception as e:
-            logging.exception(f"{config_path} からの DB URL 読込に失敗いたしましたわ！")
-            sys.exit(1)
+    except Exception as e:
+        logging.warning(f"{config_path} からの DB URL 読込中に問題が発生いたしましたわ: {e}")
 
-        if not db_url:
-            logging.error("DB URLが空でございますわ！config.tomlの設定をご確認なさってくださいませ。")
-            sys.exit(1)
+    if not db_url:
+        db_url = os.environ.get("FLAC_DB_URL", "")
+
+    if not db_url:
+        logging.error(f"DB URLが空でございますわ！ {config_path} の [database].url または環境変数 FLAC_DB_URL をご確認くださいませ。")
+        sys.exit(1)
+        
+    return db_url
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--flac-path", required=True)
+    parser.add_argument("--json-path", required=True)
+    parser.add_argument("--predictions-json-path", required=False, default="")
+    parser.add_argument("--tensor-json-path", required=False, default="")
+    parser.add_argument("--track-hash", required=True)
+    parser.add_argument("--track-number", type=int, default=0)
+    parser.add_argument("--title", type=str, default="")
+    parser.add_argument("--artist", type=str, default="")
+    parser.add_argument("--album", type=str, default="")
+    parser.add_argument("--album-artist", type=str, default="")
+    parser.add_argument("--check-hash", action="store_true", help="Check if track_hash exists in PostgreSQL")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    if args.check_hash:
+        db_url = get_db_url()
 
         try:
             conn = psycopg2.connect(db_url)
@@ -142,18 +168,7 @@ def main():
     except Exception as e:
         logging.warning(f"FLACメタデータタグの読み込みに失敗いたしましたわ: {e}")
 
-    try:
-        config_path = os.path.join(os.path.dirname(__file__), "config.toml")
-        with open(config_path, "rb") as f:
-            config = tomllib.load(f)
-        db_url = config.get("database", {}).get("url", "")
-    except Exception as e:
-        logging.exception(f"{config_path} からの DB URL 読込に失敗いたしましたわ！")
-        sys.exit(1)
-
-    if not db_url:
-        logging.error("DB URLが空でございますわ！config.tomlの設定をご確認なさってくださいませ。")
-        sys.exit(1)
+    db_url = get_db_url()
 
     try:
         conn = psycopg2.connect(db_url)

@@ -492,3 +492,18 @@ Context/Finding/Source/Gotchas:
   3. Python 側でも Go 側と同一の計算式 (`estimate_shm_size`) を用いて `estimated_size` を同期・指定して `mmap.mmap(-1, estimated_size, ...)` を呼び出すことで、Windows API の拒否を100%回避し Zero-copy 通信が完全に確立される。
 - **Source**: `shm_interop.py`, `worker_demucs.py`, `worker_librosa.py`, `orchestrator/dispatcher/shm_windows.go`
 </api>
+
+<api id="WIN_SHM_1455_CUE_SIZE_MISMATCH">
+<title>CUEトラック解析時の共有メモリ(SHM)計算不整合による WinError 1455 (Commit Limit 超過) バグ</title>
+- **Context**: Goオーケストレーター (`dispatcher.go`) が CUE シート配下のサブトラックを処理する際、共有メモリサイズ計算に `task.FileSize` (親FLAC全体の巨大なファイルサイズ) をそのまま `EstimateShmSize` に渡していた。
+- **Finding**: 
+  1. 親FLACが500MB~1GBある巨大コンピレーションアルバム等の場合、1ステム当たり 3GB~6GB、7ステムで 20GB~40GB もの Shared Memory コミットチャージが Go 側 (`CreateFileMappingW`) で要求される。
+  2. ワーカーが複数並列起動（または Librosa/Tensor/Essentia が `mmap`）した際、Windowsのコミット上限（物理RAM 32GB + ページファイル 18.5GB = 50.5GB）を超過し、`OSError: [WinError 1455] ページング ファイルが小さすぎるため、この操作を完了できません。` が発生してワーカーが死亡する。
+- **Fix**: `EstimateShmSizeForTask(task TaskPayload) uint32` を新設し、CUEトラック (StartSample/EndSample が指定されている場合) は `(EndSample - StartSample) * channels * 4 * margin` から必要最小限の SHM サイズを割り当てるよう修正する。
+</api>
+
+<api id="SCIPY_STATS_MOMENT_WARNING">
+<title>Scipy moment 計算時 (skewness / kurtosis) の catastrophic cancellation 警告制御</title>
+- **Context**: クラシック音楽や無音区間を含むスペクトログラムにおいて、`scipy.stats.skew` や `scipy.stats.kurtosis` の分散が極小となり `RuntimeWarning: Precision loss occurred in moment calculation due to catastrophic cancellation` が発生する。
+- **Fix**: `analyzer.py` の `_calc_scipy_stats_features` 内で `warnings.catch_warnings()` を適用し、警告をログ汚染なく安全にキャッチおよびゼロ補填処理する。
+</api>

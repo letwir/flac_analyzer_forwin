@@ -437,7 +437,7 @@ func (d *Dispatcher) worker(id int) {
 				}
 			}
 			
-			estimatedSize := EstimateShmSize(task.FileSize)
+			estimatedSize := EstimateShmSizeForTask(task)
 			
 			d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot...", id)
 			d.demucsSemaphore <- struct{}{}

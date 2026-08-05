@@ -47,12 +47,10 @@ def attach_shm_read_only(name: str, shape: tuple[int, ...], dtype_name: str, fil
     dtype = np.dtype(dtype_name)
     needed_size = int(np.prod(shape) * dtype.itemsize)
     
-    if estimated_size <= 0 and file_size > 0:
-        estimated_size = estimate_shm_size(file_size)
-    if estimated_size < needed_size:
-        estimated_size = needed_size
+    # 既存の共有メモリハンドルに対して必要な最小サイズ (needed_size) でマッピングを開きます
+    map_size = estimated_size if estimated_size >= needed_size else needed_size
 
-    shm = mmap.mmap(-1, estimated_size, tagname=name, access=mmap.ACCESS_READ)
+    shm = mmap.mmap(-1, map_size, tagname=name, access=mmap.ACCESS_READ)
     
     # buffer=shm を指定することで、コピーなしの Zero-copy 参照を作りますの！
     arr = np.ndarray(shape, dtype=dtype, buffer=shm)

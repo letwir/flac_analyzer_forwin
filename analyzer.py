@@ -994,12 +994,12 @@ def _calc_scipy_stats_features(ctx: AudioContext) -> ScipyStatsFeatures | None:
     if ctx.spectro is None or ctx.spectro.size == 0:
         return None
     try:
-        # spectro: (n_bins, t_frames)
-        # 警告を抑制するため、合計が0に近いフレームは微小値を足す
-        spectro = ctx.spectro + 1e-10
-        # 時間軸に沿って周波数ビンの分布を計算
-        skew_vals = scipy.stats.skew(spectro, axis=0, nan_policy='omit')
-        kurt_vals = scipy.stats.kurtosis(spectro, axis=0, nan_policy='omit')
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            # 時間軸に沿って周波数ビンの分布を計算
+            skew_vals = scipy.stats.skew(spectro, axis=0, nan_policy='omit')
+            kurt_vals = scipy.stats.kurtosis(spectro, axis=0, nan_policy='omit')
         
         skew_vals = np.nan_to_num(skew_vals, nan=0.0, posinf=0.0, neginf=0.0)
         kurt_vals = np.nan_to_num(kurt_vals, nan=0.0, posinf=0.0, neginf=0.0)
