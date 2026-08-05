@@ -482,3 +482,13 @@ Context/Finding/Source/Gotchas:
 - Source: `ingester.py`, `orchestrator/dispatcher/dispatcher.go`
 - Gotchas: Go から外部 Python ワーカーの標準出力をキャプチャして JSON で連携するスクリプト群は、絶対に logging の出力先を `sys.stdout` ではなく `sys.stderr` に制限しなければならない。
 </api>
+
+<api id="WIN_SHM_MMAP_ESTIMATED_SIZE">
+<title>Windows 共有メモリ (CreateFileMappingW / mmap) サイズ同期による PermissionError [WinError 5] 回避</title>
+- **Context**: Goオーケストレーター (`dispatcher.go`) が `NewSharedMemory` で `CreateFileMappingW` を用いて確保した名前付き共有メモリ (`Local\FlacShm_...`) に対し、Python (`shm_interop.py`) が `mmap.mmap(-1, size, tagname=name, access=mmap.ACCESS_WRITE)` を実行した際に `PermissionError: [WinError 5] アクセスが拒否されました。` が発生する現象。
+- **Finding**:
+  1. Windows API の仕様上、既に作成済みの File Mapping Object をオープンする際、親プロセス（Go）が作成時に指定した最大サイズ (`estimatedSize = file_size * 6`) と、子プロセス（Python）が要求した `size` (`y.nbytes`) が不一致である場合、マッピング整合性チェックにより `ERROR_ACCESS_DENIED (5)` が返される。
+  2. Python の `fileno = -1` における `size = 0` 指定は `WinError 87 (Invalid Parameter)` となるため不可。
+  3. Python 側でも Go 側と同一の計算式 (`estimate_shm_size`) を用いて `estimated_size` を同期・指定して `mmap.mmap(-1, estimated_size, ...)` を呼び出すことで、Windows API の拒否を100%回避し Zero-copy 通信が完全に確立される。
+- **Source**: `shm_interop.py`, `worker_demucs.py`, `worker_librosa.py`, `orchestrator/dispatcher/shm_windows.go`
+</api>

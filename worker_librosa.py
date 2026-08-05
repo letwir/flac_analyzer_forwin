@@ -49,10 +49,11 @@ def main():
         tag_name = info["shm_tag"]
         shape = tuple(info["shape"])
         dtype_name = info["dtype"]
+        file_size = info.get("file_size", 0)
         spectro_path = info.get("spectro_path")
         
         logger.info(f"ステム [{stem_name}] のため共有メモリ [{tag_name}] (Read-Only) にアタッチいたしますわ")
-        shm, y = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name)
+        shm, y = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name, file_size=file_size)
         
         try:
             # AudioContext の構築 (Zero-copy)

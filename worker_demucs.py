@@ -104,14 +104,16 @@ def main():
             tag_name = shm_tags[stem_name]
             logger.info(f"ステム [{stem_name}] を共有メモリ [{tag_name}] へ書き込んでおりますわ")
             
-            # Zero-copy write
-            shm = shm_interop.write_to_shm(tag_name, ctx.y)
+            # Zero-copy write (Go の CreateFileMapping サイズと一致させるため file_size を渡しますわ)
+            file_size = os.path.getsize(flac_path) if os.path.exists(flac_path) else 0
+            shm = shm_interop.write_to_shm(tag_name, ctx.y, file_size=file_size)
             shm_objects.append(shm)
             
             metadata["stems"][stem_name] = {
                 "shm_tag": tag_name,
                 "shape": ctx.y.shape,
-                "dtype": str(ctx.y.dtype)
+                "dtype": str(ctx.y.dtype),
+                "file_size": file_size
             }
             
     except Exception as e:
