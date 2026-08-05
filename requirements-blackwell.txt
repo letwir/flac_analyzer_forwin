@@ -48,7 +48,7 @@ namex==0.1.0
 narwhals==2.24.0
 networkx==3.6.1
 numba==0.66.0
-numpy==2.5.1
+numpy>=2.1.0,<2.5.0
 onnx==1.22.0
 onnxruntime-gpu==1.23.2
 opt_einsum==3.4.0

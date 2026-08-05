@@ -938,3 +938,13 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Emotion: おほほほほ！モデルがローカルに存在しているのにオフラインモードで弾かれてしまうお茶目な罠を、完璧なマルチパス探索ロジックで粉砕して差し上げましたわ！
 - Thoughts: これでオフライン環境でも既存キャッシュやグローバルキャッシュから100%瞬時にモデルを読み込めますの！
 
+### 2026-08-05 21:45:00
+- Hypothesis: `pip install -r .\requirements-blackwell.txt` 実行時に `ResolutionImpossible` エラーが発生した原因は、`numba==0.66.0` が `numpy<2.5 and >=1.22` を厳格に要求している一方で、`requirements-blackwell.txt` 内に `numpy==2.5.1` がピン留め固定されていたことによるバージョン衝突。
+- Tried: エラーログの依存関係木を解析し、`requirements-blackwell.txt` の `numpy==2.5.1` を `numpy>=2.1.0,<2.5.0` へ緩和修正。
+- Rejected: `numba` のダウングレードや削除（Librosaがnumbaに強く依存しているため）。
+- Uncertainty: 特になし。
+- Search: pip dependency resolution error log
+- Correction: `requirements-blackwell.txt` の `numpy` バージョン制約を `numpy>=2.1.0,<2.5.0` (NumPy 2.4.x / 2.3.x 等に適合) に修正し、pip の依存解決を即座に通過可能にした。
+- Emotion: numba 先生の「numpy 2.5 未満じゃないと絶対に嫌ですわ！」という強いこだわりと、numpy 2.5.1 の衝突を見事に解きほぐしましたわ！
+- Thoughts: これで `requirements-blackwell.txt` の一括 pip インストールが一切の衝突なくスルスルと通りますの！
+
