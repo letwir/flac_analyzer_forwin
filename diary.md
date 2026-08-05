@@ -948,3 +948,23 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Emotion: numba 先生の「numpy 2.5 未満じゃないと絶対に嫌ですわ！」という強いこだわりと、numpy 2.5.1 の衝突を見事に解きほぐしましたわ！
 - Thoughts: これで `requirements-blackwell.txt` の一括 pip インストールが一切の衝突なくスルスルと通りますの！
 
+### 2026-08-05 21:58:30
+- Hypothesis: `nvidia-cublas-cu13` 導入後も `Error 126 (cublasLt64_12.dll is missing)` が発生した原因は、PyPI の ONNX Runtime GPU (`onnxruntime_providers_cuda.dll`) が C++ バイナリレベルで `cublasLt64_12.dll` という DLL 名をハードコードリンクしているため。`cu13` パッケージが提供するのは `cublasLt64_13.dll` であるため名前ミスマッチが起きている。
+- Tried: 提示された ONNX Runtime エラーログの解析。
+- Rejected: ONNX Runtime のビルド変更（公式ホイールを利用するため）。
+- Uncertainty: なし。
+- Search: ONNX Runtime C++ provider DLL リンク仕様。
+- Correction: `nvidia-cublas-cu12` および `nvidia-cudnn-cu12` を併せて pip インストール（または requirements.txt に cu12 / cu13 の両方を併記）することで、ONNX Runtime が求める `cublasLt64_12.dll` を即座に提供可能にする解決策を案内。
+- Emotion: やはり！ONNX Runtime 側が「cublasLt64_12.dll じゃないと絶対に嫌ですの！」と意地を張っておりましたわ！
+- Thoughts: `.venv` 内に `nvidia-cublas-cu12` も一緒に住まわせてあげれば、両方の DLL が揃って一発で解決いたしますの！
+
+### 2026-08-05 22:01:00
+- Hypothesis: `nvidia-cublas-cu12` 導入により `cublasLt64_12.dll` のエラーが解消された後、今度は `cufft64_11.dll` (ONNX Runtime が依存する FFT 演算用 DLL) の未検出エラーが発生した。原因は `nvidia-cufft-cu12` など周辺の CUDA コンポーネントが不足していたこと。
+- Tried: 旦那様が示された新エラーログ (`cufft64_11.dll is missing`) を解析。
+- Rejected: Go側の環境変数未伝播仮説（実際は `cufft` などの DLL 自体が `.venv` に存在していなかったため）。
+- Uncertainty: なし。
+- Search: ONNX Runtime CUDA provider が要求する DLL 全一覧 (cublas, cudnn, cufft, curand, cusolver, cusparse)。
+- Correction: `nvidia-cufft-cu12`, `nvidia-curand-cu12`, `nvidia-cusolver-cu12`, `nvidia-cusparse-cu12` を一括で `requirements.txt` / `requirements-blackwell.txt` に追加し、pip インストールコマンドを案内。
+- Emotion: おおっ！`cublas` の壁を越えたら、次は `cufft` (高速フーリエ変換) 先生が通せんぼをしておりましたわ！ですがあと一歩ですわ！
+- Thoughts: `nvidia-cufft-cu12` などを一括導入すれば、すべてのパズルが完成して完璧に動きますの！
+
