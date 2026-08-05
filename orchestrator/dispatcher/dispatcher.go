@@ -79,15 +79,17 @@ type Config struct {
 }
 
 type Dispatcher struct {
-	config          Config
-	db              *state.DB
-	taskQueue       chan TaskPayload
-	allocMutex      sync.Mutex
-	demucsSemaphore chan struct{}
-	wg              sync.WaitGroup
-	logLevel        LogLevel
-	eventLog        EventLogger
-	skipDupByHash   bool
+	config                 Config
+	db                     *state.DB
+	taskQueue              chan TaskPayload
+	allocMutex             sync.Mutex
+	demucsSemaphore        chan struct{}
+	wg                     sync.WaitGroup
+	logLevel               LogLevel
+	eventLog               EventLogger
+	skipDupByHash          bool
+	activeInFlightRamBytes uint64
+	inFlightMutex          sync.Mutex
 }
 
 const (
@@ -102,13 +104,14 @@ const (
 
 func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 	return &Dispatcher{
-		config:          cfg,
-		db:              db,
-		taskQueue:       make(chan TaskPayload, 1000),
-		demucsSemaphore: make(chan struct{}, cfg.DemucsConcurrentLimit),
-		logLevel:        cfg.LogLevel,
-		eventLog:        cfg.EventLog,
-		skipDupByHash:   cfg.SkipDupByHash,
+		config:                 cfg,
+		db:                     db,
+		taskQueue:              make(chan TaskPayload, 1000),
+		demucsSemaphore:        make(chan struct{}, cfg.DemucsConcurrentLimit),
+		logLevel:               cfg.LogLevel,
+		eventLog:               cfg.EventLog,
+		skipDupByHash:          cfg.SkipDupByHash,
+		activeInFlightRamBytes: 0,
 	}
 }
 
@@ -287,31 +290,60 @@ func cleanupCache(trackHash string) {
 	}
 }
 
+func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.Duration) {
+	estimatedRam := EstimateDemucsTotalRamBytes(task)
+	memInfo, err := sysinfo.GetMemoryInfo()
+	if err != nil || memInfo == nil {
+		return true, 0
+	}
+
+	d.inFlightMutex.Lock()
+	inFlight := d.activeInFlightRamBytes
+	d.inFlightMutex.Unlock()
+
+	minAvailBytes := uint64(d.config.MinAvailRamGB * 1024 * 1024 * 1024)
+	var maxUsableBytes uint64
+	if d.config.MaxRamRatio > 0 {
+		maxUsableBytes = uint64(float64(memInfo.TotalPhys) * d.config.MaxRamRatio)
+	} else {
+		maxUsableBytes = uint64(float64(memInfo.TotalPhys) * 0.95)
+	}
+	usedBytes := memInfo.TotalPhys - memInfo.AvailPhys
+
+	if memInfo.AvailPhys < (estimatedRam + minAvailBytes) {
+		d.LogWarn("[W-%d] [Gatekeeper: NOGO] Available RAM (%d MB) < Estimated Demucs RAM (%d MB) + MinAvail (%d MB). Delaying dispatch...",
+			workerID, memInfo.AvailPhys/1024/1024, estimatedRam/1024/1024, minAvailBytes/1024/1024)
+		return false, 2 * time.Second
+	}
+
+	if (usedBytes + inFlight + estimatedRam) > maxUsableBytes {
+		d.LogWarn("[W-%d] [Gatekeeper: NOGO] Projected RAM (Used %d MB + InFlight %d MB + Task %d MB) > MaxAllowed (%d MB). Delaying dispatch...",
+			workerID, usedBytes/1024/1024, inFlight/1024/1024, estimatedRam/1024/1024, maxUsableBytes/1024/1024)
+		return false, 3 * time.Second
+	}
+
+	if memInfo.MemoryLoad >= 90 {
+		d.LogWarn("[W-%d] [Gatekeeper: NOGO] System MemoryLoad too high (%d%%). Delaying dispatch...", workerID, memInfo.MemoryLoad)
+		return false, 4 * time.Second
+	}
+
+	d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Estimated Demucs RAM: %d MB, AvailPhys: %d MB)",
+		workerID, estimatedRam/1024/1024, memInfo.AvailPhys/1024/1024)
+	return true, 0
+}
+
 func (d *Dispatcher) worker(id int) {
 	defer d.wg.Done()
 	
 	stems := []string{"mix", "bass", "drums", "vocals", "other", "guitar", "piano"}
 
 	for task := range d.taskQueue {
-		// Real-time Memory Guard (Backpressure before executing task)
+		// Gatekeeper Pre-flight Decision (CUE/FLAC Demucs RAM Estimation)
 		for {
-			memInfo, err := sysinfo.GetMemoryInfo()
-			if err == nil && memInfo != nil {
-				usedBytes := memInfo.TotalPhys - memInfo.AvailPhys
-				var maxUsableBytes uint64
-				if d.config.MaxRamRatio > 0 {
-					maxUsableBytes = uint64(float64(memInfo.TotalPhys) * d.config.MaxRamRatio)
-				} else {
-					maxUsableBytes = uint64(float64(memInfo.TotalPhys) * 0.95)
-				}
-				minAvailBytes := uint64(d.config.MinAvailRamGB * 1024 * 1024 * 1024)
-
-				if (maxUsableBytes > 0 && usedBytes >= maxUsableBytes) || memInfo.MemoryLoad >= 95 || memInfo.AvailPhys < minAvailBytes {
-					d.LogWarn("[W-%d] Memory pressure detected (Used: %d MB / MaxAllowed: %d MB, Load: %d%%). Throttling dispatch...",
-						id, usedBytes/1024/1024, maxUsableBytes/1024/1024, memInfo.MemoryLoad)
-					time.Sleep(2 * time.Second)
-					continue
-				}
+			isGo, waitDur := d.EvaluateGoNoGo(id, task)
+			if !isGo {
+				time.Sleep(waitDur)
+				continue
 			}
 			break
 		}
@@ -319,6 +351,21 @@ func (d *Dispatcher) worker(id int) {
 		func(task TaskPayload) {
 			metrics.AnalyzerQueueLength.Dec()
 			metrics.AnalyzerActiveWorkers.Inc()
+			
+			estimatedRam := EstimateDemucsTotalRamBytes(task)
+			d.inFlightMutex.Lock()
+			d.activeInFlightRamBytes += estimatedRam
+			d.inFlightMutex.Unlock()
+
+			defer func() {
+				d.inFlightMutex.Lock()
+				if d.activeInFlightRamBytes >= estimatedRam {
+					d.activeInFlightRamBytes -= estimatedRam
+				} else {
+					d.activeInFlightRamBytes = 0
+				}
+				d.inFlightMutex.Unlock()
+			}()
 			
 			d.LogInfo("[W-%d] [IO Monad] Starting processing: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
 			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusRunning, "")
