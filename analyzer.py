@@ -994,12 +994,24 @@ def _calc_scipy_stats_features(ctx: AudioContext) -> ScipyStatsFeatures | None:
     if ctx.spectro is None or ctx.spectro.size == 0:
         return None
     try:
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            # 時間軸に沿って周波数ビンの分布を計算
-            skew_vals = scipy.stats.skew(spectro, axis=0, nan_policy='omit')
-            kurt_vals = scipy.stats.kurtosis(spectro, axis=0, nan_policy='omit')
+        # 1. float64 へキャストして演算精度を倍増（仮数部23bit->52bitで桁落ちの物理発生を極小化）
+        spectro = ctx.spectro.astype(np.float64)
+        
+        # 2. 各フレーム（時間軸）の標準偏差を計算し、平坦・無音フレームを特定
+        stds = np.std(spectro, axis=0)
+        valid_mask = stds > 1e-8
+        
+        skew_vals = np.zeros(spectro.shape[1], dtype=np.float64)
+        kurt_vals = np.zeros(spectro.shape[1], dtype=np.float64)
+        
+        # 3. 有意な分散を持つフレームのみ莫大・無意味な除算を避けて計算
+        if np.any(valid_mask):
+            valid_spectro = spectro[:, valid_mask]
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                skew_vals[valid_mask] = scipy.stats.skew(valid_spectro, axis=0, nan_policy='omit')
+                kurt_vals[valid_mask] = scipy.stats.kurtosis(valid_spectro, axis=0, nan_policy='omit')
         
         skew_vals = np.nan_to_num(skew_vals, nan=0.0, posinf=0.0, neginf=0.0)
         kurt_vals = np.nan_to_num(kurt_vals, nan=0.0, posinf=0.0, neginf=0.0)
