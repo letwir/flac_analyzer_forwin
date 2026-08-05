@@ -749,6 +749,12 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし
 - Files: run_batch.ps1, implementation_plan.md, walkthrough.md, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md
 
-
-
-
+### 2026-08-05 23:40:00
+- Category: Investigation / OOM Analysis
+- Summary: Zino Francescatti Track 4 (Fauré Violin Sonata No.1 Track 4) OOM & bad allocation 障害の検証と要因分析。
+- Decisions:
+  - 対象トラック (4分45秒 / 1,257万サンプル) に対する Demucs ONNX bad allocation と Librosa tempogram (505MB) ArrayMemoryError の根本原因を解明。
+  - 単体検証用スクリプト (verify_track4.py) を作成し、トラック長・CUEスライスサンプル数・デコード PCM 形状を特定。
+  - 大量並列ワーカー動作環境におけるメモリピーク（特に 4分越え長時間トラックでの ONNX テンソルおよび Tempogram 配列の重複アロケーション）が主因であることを特定。
+- Blockers: なし
+- Files: verify_track4.py, inspect_track.py

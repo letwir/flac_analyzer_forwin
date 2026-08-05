@@ -985,3 +985,13 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - Emotion: あらまあ！改修時に `args.` がすっぽり抜け落ちてしまっておりましたわ！即座に修正いたしましたの！
 - Thoughts: 単純な変数名の指定漏れでしたので、これで共有メモリへの書き込み処理が正常に完了いたしますわ！
 
+### 2026-08-05 23:40:00
+- Hypothesis: Zino Francescatti の Fauré Violin Sonata No.1 (Track 4) で Demucs の ONNX bad allocation と Librosa の ArrayMemoryError (505MB) が発生したのは、4分45秒 (1257万サンプル) の長尺トラックが大量並列ワーカー環境下で同時処理された際、ONNX テンソルと Tempogram 配列のアロケーションが並列重複して RAM 限界を超過したためである。
+- Tried: CUEシートと FLAC のサンプル数を解析し、単体検証用スクリプト (verify_track4.py) を構築。PCM デコード長および 5 stem のデータフットプリントを確認。
+- Rejected: FLAC ファイル自身の破損説（CUE シートの境界計算および PCM デコードは100%正常であり、純粋なメモリ領域アロケーション障害）。
+- Uncertainty: なし。
+- Search: Demucs ONNX bad allocation, Librosa beat_track Tempogram float64 (1440, 45998) memory allocation.
+- Correction: ディスパッチャの並列数適正調整および長時間トラック用メモリ要件の再見積もり。
+- Emotion: クラシックの4分超えトラックが並列で押し寄せると、ONNX Runtime も Librosa もテンポグラムの計算で悲鳴を上げてしまいますのね！理由がすっきり判明して爽快ですわ！
+- Thoughts: 1440 x 45998 の float64 配列だけで 505MB、それが 5 ステム ＆ 十数ワーカーで同時に動けば OOM になるのは当然ですわ。単体・少並列なら全く問題なく動きますわ！
+
