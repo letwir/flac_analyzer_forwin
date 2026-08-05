@@ -101,7 +101,12 @@ class AudioContext:
         if self._stft is None:
             logging.debug(f"    [CSE Cache Miss] stft 計算開始 (source: {self.source})")
             with LIBROSA_LOCK:
-                self._stft = librosa.stft(self.y, n_fft=2048, hop_length=512)
+                self._stft = librosa.stft(
+                    self.y.astype(np.float32, copy=False),
+                    n_fft=2048,
+                    hop_length=512,
+                    dtype=np.complex64,
+                )
         else:
             logging.debug(f"    [CSE Cache Hit] stft 再利用 (source: {self.source})")
         return self._stft

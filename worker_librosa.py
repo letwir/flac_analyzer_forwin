@@ -90,6 +90,8 @@ def main():
             sys.exit(1)
         finally:
             shm.close()
+            import gc
+            gc.collect()
             
     logger.info(f"全ステムの Librosa 特徴量抽出が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
     

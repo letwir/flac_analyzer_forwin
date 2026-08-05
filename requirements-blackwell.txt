@@ -49,6 +49,7 @@ narwhals==2.24.0
 networkx==3.6.1
 numba==0.66.0
 numpy>=2.1.0,<2.5.0
+nvidia-cuda-runtime-cu12
 nvidia-cublas-cu12
 nvidia-cudnn-cu12
 nvidia-cufft-cu12
