@@ -8,9 +8,23 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
 import tomllib
 from typing import Any
+
+# Windows環境で .venv 内の nvidia ディレクトリ (nvidia-cublas-cu12, nvidia-cudnn-cu12等) の bin を動的追加
+if sys.platform == "win32":
+    nvidia_base = os.path.join(sys.prefix, "Lib", "site-packages", "nvidia")
+    if os.path.exists(nvidia_base):
+        for root, dirs, _ in os.walk(nvidia_base):
+            if "bin" in dirs:
+                bin_path = os.path.join(root, "bin")
+                try:
+                    os.add_dll_directory(bin_path)
+                except Exception:
+                    pass
+                os.environ["PATH"] = bin_path + os.pathsep + os.environ.get("PATH", "")
 
 import librosa
 import numpy as np
@@ -309,26 +323,58 @@ class HTDemucsSeparator:
             import os
             import glob
             cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demucs")
+            user_hf_cache = os.path.expanduser("~/.cache/huggingface/hub")
             os.makedirs(cache_dir, exist_ok=True)
 
-            # キャッシュ済みモデルの実体パスを優先探索し、あればダウンロードをスキップしますわ
-            model_pattern = os.path.join(
-                cache_dir, 
-                "models--StemSplitio--htdemucs-6s-onnx", 
-                "snapshots", 
-                "*", 
-                "htdemucs_6s_fp16weights.onnx"
-            )
-            cached_models = glob.glob(model_pattern)
-            
-            if cached_models and os.path.exists(cached_models[0]):
-                self.model_path = cached_models[0]
-                logging.info(f"ローカルキャッシュから Demucs モデルを直接ロードしますの: {self.model_path}")
+            target_filename = f"{self.canonical}_{precision}.onnx" if precision != "fp32" else f"{self.canonical}.onnx"
+            # precision "fp16weights" の場合のファイル名補正
+            if precision == "fp16weights":
+                target_filename = "htdemucs_6s_fp16weights.onnx"
+
+            search_patterns = [
+                os.path.join(cache_dir, "models--StemSplitio--htdemucs-6s-onnx", "snapshots", "*", target_filename),
+                os.path.join(user_hf_cache, "models--StemSplitio--htdemucs-6s-onnx", "snapshots", "*", target_filename),
+                os.path.join(cache_dir, "models--StemSplitio--htdemucs-6s-onnx", "snapshots", "*", "*.onnx"),
+                os.path.join(user_hf_cache, "models--StemSplitio--htdemucs-6s-onnx", "snapshots", "*", "*.onnx"),
+            ]
+
+            found_model = None
+            for pattern in search_patterns:
+                matches = glob.glob(pattern)
+                for m in matches:
+                    if os.path.exists(m) and os.path.getsize(m) > 10 * 1024 * 1024:
+                        found_model = m
+                        break
+                if found_model:
+                    break
+
+            # snapshots にない場合、blobs 配下の大容量ファイルを最後の手段として探索しますの
+            if not found_model:
+                blob_patterns = [
+                    os.path.join(cache_dir, "models--StemSplitio--htdemucs-6s-onnx", "blobs", "*"),
+                    os.path.join(user_hf_cache, "models--StemSplitio--htdemucs-6s-onnx", "blobs", "*"),
+                ]
+                for bp in blob_patterns:
+                    for bm in glob.glob(bp):
+                        if os.path.isfile(bm) and os.path.getsize(bm) > 100 * 1024 * 1024:
+                            found_model = bm
+                            break
+                    if found_model:
+                        break
+
+            if found_model:
+                self.model_path = found_model
+                logging.info(f"ローカルキャッシュから Demucs ONNX モデルを直接ロードしますの: {self.model_path}")
             else:
-                logging.info("キャッシュモデルが見つからないため、Hugging Face Hub からダウンロードしますわ...")
-                self.model_path = inf.download_single_model(
-                    self.canonical, precision=precision, cache_dir=cache_dir
-                )
+                logging.info("キャッシュモデルが見つからないため、Hugging Face Hub からダウンロードを試みますわ...")
+                orig_offline = os.environ.pop("HF_HUB_OFFLINE", None)
+                try:
+                    self.model_path = inf.download_single_model(
+                        self.canonical, precision=precision, cache_dir=cache_dir
+                    )
+                finally:
+                    if orig_offline is not None:
+                        os.environ["HF_HUB_OFFLINE"] = orig_offline
             # ONNXセッションの構築 (カスタム作成フックを経由)
             self.session = _custom_make_session(self.model_path, self.providers)
         else:

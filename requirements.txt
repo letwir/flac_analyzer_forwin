@@ -14,7 +14,8 @@ onnx
 #onnxruntime-directml
 # RTX
 #onnxruntime-gpu
-#nvidia-cudnn
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
 demucs-onnx
 scipy
 numba

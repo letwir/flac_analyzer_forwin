@@ -1,5 +1,15 @@
 # History Log
 
+### 2026-08-05 21:38:00
+
+- Category: Bugfix / Demucs ONNX Model Resolution in Offline Mode
+- Summary: `main.py` の `HF_HUB_OFFLINE=1` 環境下で、`models.py` 内の Demucs ONNX モデル自動ロードが失敗する不具合を修復。
+- Decisions:
+  - `models.py` 内の `HTDemucsSeparator` 初期化処理におけるローカルキャッシュ探索ロジックを拡張。
+  - プロジェクト直下の `demucs` 内 `snapshots` だけでなく、ユーザーホームディレクトリ (`~/.cache/huggingface/hub`) 配下の `snapshots` や `blobs` 直下の大容量 ONNX モデルファイル (>100MB) を自動発見・ロードするマルチパス探索ロジックを実装。
+  - キャッシュが一切存在しない場合に限り、`HF_HUB_OFFLINE` 環境変数を一時解除して Hugging Face Hub からダウンロードする安全フォールバックを組み込み。
+- Files: [models.py](file:///a:/Users/letwir/repo/flac_analyzer_forwin/models.py)
+
 ### 2026-07-25 22:20:00
 
 - Category: Documentation / Phase 2 Refactoring
