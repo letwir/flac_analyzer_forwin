@@ -146,6 +146,7 @@ PostgreSQL 送信失敗により `send_failed.db` へ一時退避（Dead Letter 
 - **PostgreSQL JSONB 永続化と DLQ フォールバック**: 抽出結果を JSONB フォーマットで非同期 UPSERT。データベース障害時はローカル SQLite (`send_failed.db`) に一時退避（Dead Letter Queue）し、復旧後に安全に再送。
 - **ゾンビタスクの自動検知・リセット**: オーケストレーター起動時に、前回クラッシュ等でステータスが `RUNNING` / `PENDING` のまま残ったタスクを自動検知して `FAILED` に安全リセットし、誤スキップを防止。
 - **一時キャッシュ自動クリーンアップ**: 共有メモリ波形分離および中間データ処理時のキャッシュ（`flac_analyzer_cache`）をタスク完了時・DLQ退避時に完全削除し、RAMディスクやストレージの枯渇を絶滅。
+- **float32 保持 ＆ 一元プロパティキャッシュによるメモリ最適化**: Librosa の音響特徴量（`spectral_centroid`, `spectral_rolloff` 等）抽出において、`AudioContext.centroid` の一元プロパティキャッシュ化および `float32` 直計算による軽量実装を適用。25分超の長尺トラックでも 64-bit float 暗黙キャスト（291MB/108MB等の巨大配列割当）を完全に抑止し、Windows ページファイル容量上限（WinError 1455）の超過を根絶。
 - **タイムスタンプ保護（Timestamp Preservation）**: 解析結果の一部を FLAC タグ (VorbisComment) に書き戻す際、ファイルの各種タイムスタンプ（作成日時・更新日時）を取得し、寸分違わず完全に復元。
 
 ### 📚 ドキュメント一覧

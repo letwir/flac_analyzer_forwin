@@ -143,6 +143,7 @@ If PostgreSQL was unreachable during processing, manually retry sending saved pa
 - **PostgreSQL JSONB & DLQ Fallback**: Extracted data is asynchronously UPSERTed as JSONB documents. In case of database connection failures, payloads drop into a local SQLite Dead Letter Queue (`send_failed.db`) for safe retry upon recovery.
 - **Stale Task Auto-Recovery**: On startup, the Go orchestrator automatically detects tasks stuck in `RUNNING` or `PENDING` due to prior crashes or abrupt halts and resets them to `FAILED`, preventing accidental task skipping.
 - **Automated Temp Cache Cleanup**: Removes intermediate precache files (`flac_analyzer_cache`) automatically upon task completion or DLQ fallback, preventing RAM disk or storage depletion.
+- **float32 Preservation & Unified Property Caching**: Optimizes Librosa feature extraction (`spectral_centroid`, `spectral_rolloff`) with float32 direct calculations and unified property caching (`AudioContext.centroid`). Eliminates implicit 64-bit float casts (preventing 291MB/108MB allocations) and protects against Windows Pagefile exhaustion (`WinError 1455`) on long tracks (25+ min).
 - **Timestamp Preservation**: Accurately preserves and restores file timestamps (CreationTime, LastWriteTime) whenever modifying FLAC tags (VorbisComment).
 
 ### 📚 Documentation

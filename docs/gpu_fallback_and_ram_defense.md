@@ -121,13 +121,28 @@ flowchart TD
 
 ---
 
-## 4. 既存ドキュメントとの関連
+## 4. Python ワーカー内音響特徴量抽出の float32 保持 ＆ キャッシュ完全解放
+
+`analyzer.py` の Librosa 音響特徴量（`spectral_centroid`, `spectral_rolloff`, `spectral_bandwidth` 等）抽出において、以下のメモリ防護が適用されています：
+
+- **`float32` 直計算による暗黙 64-bit float キャスト排除**:
+  - `AudioContext.centroid`: Librosa の `spectral_centroid` 呼出を廃止し、`spectro` (float32) からの直接演算により float32 保持のまま超高速に計算。
+  - `_calc_rolloff_features`: Librosa 内部で発生していた 291 MiB の巨大 float64 配列（`np.where`）割当を消去し、`float32` の `cumsum` による軽量実装へ置換。
+- **一元プロパティキャッシュ化**:
+  - `_calc_spectral_centroid_mean` および `_calc_spectral_centroid_sd` において `ctx.centroid` を一元参照し、重いアロケーションの二重発生を防止。
+- **`AudioContext.clear()` による完全解放**:
+  - 各ステム処理後、`self._centroid` を含むすべてのプロパティキャッシュ参照を即座に `None` 化し、GC（ガベージコレクション）によるメモリ即時回収を保証。
+
+---
+
+## 5. 既存ドキュメントとの関連
 
 本ドキュメントで解説する RAM 防御は **ワーカープロセスレベル** の自律的保護機構です。これとは別に、**Go オーケストレーターレベル** の RAM 制御として以下が存在します：
 
 | レイヤー | 機構 | 詳細ドキュメント |
 |:---|:---|:---|
-| **Go オーケストレーター** | `MaxRamRatio` バックプレッシャー<br/>（タスク投入前に空き RAM を監視し、上限超過時にスリープ） | [cpu_parallelism_and_ram_guard.md](cpu_parallelism_and_ram_guard.md) |
-| **Python ワーカー** | `get_transfer_mode()` による SHM/ディスク動的切替<br/>CUDA OOM → CPU フォールバック | 本ドキュメント |
+| **Go オーケストレーター** | `MaxRamRatio` バックプレッシャー ＆ `estimated_worker_ram_gb = 3.5` 動的クランプ<br/>（タスク投入前に空き RAM を監視し、上限超過時にスリープ） | [cpu_parallelism_and_ram_guard.md](cpu_parallelism_and_ram_guard.md) |
+| **Python ワーカー** | `get_transfer_mode()` による SHM/ディスク動的切替<br/>CUDA OOM → CPU フォールバック<br/>Librosa `float32` 直計算 ＆ `AudioContext.clear()` 完全解放 | 本ドキュメント |
 
-両レイヤーが協調することで、**システム全体の OOM を多段防御** しています。
+両レイヤーが協調することで、**システム全体の OOM および WinError 1455 コミット制限超過を多段防御** しています。
+
