@@ -15,6 +15,8 @@ func TestSharedMemory(t *testing.T) {
 	}
 	defer shm.Close()
 
+	t.Logf("SharedMemory created successfully. isLocked: %v", shm.isLocked)
+
 	testData := []byte("hello shared memory")
 	if err := shm.Write(testData); err != nil {
 		t.Fatalf("Failed to write to shared memory: %v", err)
@@ -27,5 +29,6 @@ func TestSharedMemory(t *testing.T) {
 	if err := shm.Freeze(); err != nil {
 		t.Fatalf("Failed to freeze shared memory: %v", err)
 	}
+
 
 }

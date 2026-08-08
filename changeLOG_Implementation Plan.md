@@ -1,7 +1,7 @@
-# Implementation Plan: CUE SHM Optimization & Robustness Fixes
+# Implementation Plan: Physical RAM Lock & Graceful Fallback Optimization
 
-- **Goal**: Fix WinError 1455 by estimating SHM size per task (handling CUE tracks precisely), add DB URL fallback in ingester.py, and suppress scipy moment calculation warnings.
+- **Goal**: Transition from pagefile-backed shared memory to direct physical RAM locking via Win32 `VirtualLock` API and `SetProcessWorkingSetSizeEx`, while guaranteeing a 100% transparent fallback to standard shared memory management.
 
-- Target: `run_batch.ps1`
-- Feature: Rust高速モード (fd/rg) 自動判定および .NET FileInfo メタデータ取得による処理高速化
+- Target: `orchestrator/dispatcher/shm_windows.go`, `main.go`, `config.toml.example`
+- Feature: Win32 `VirtualLock` / `VirtualUnlock` physical RAM pinning, working set extension, and graceful fallback log reporting.
 - Status: Completed

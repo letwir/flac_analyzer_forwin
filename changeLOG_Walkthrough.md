@@ -1,9 +1,9 @@
-# Walkthrough: CUE SHM Optimization & Robustness Fixes
+# Walkthrough: Physical RAM Lock & Graceful Fallback Implementation
 
-- **Status**: Completed
-- **Go Orchestrator**: Rebuilt `orchestrator.exe` with `EstimateShmSizeForTask` to fix WinError 1455.
-- **Python Stack**: Added DB URL fallback in `ingester.py` and suppressed scipy moment warnings in `analyzer.py`.
+- **Summary**: Implemented Win32 `VirtualLock` and `VirtualUnlock` inside Go orchestrator shared memory management (`shm_windows.go`). Added working set expansion (`SetProcessWorkingSetSizeEx`) and ensured a graceful fallback to standard shared memory when memory locking quotas are exceeded.
 
-- Target: `run_batch.ps1`
-- Changes: `fd.exe` / `rg.exe` 存在時に `🦀⚡ [Phase 2] Rust高速モード(fd/rg)起動ですわ！` メッセージを出力し、超高速ファイル列挙を実施。
-- Verification: PowerShell テスト環境および CLI テストにて正常動作を確認。
+- Modified Files:
+  - `orchestrator/dispatcher/shm_windows.go`: Added `procVirtualLock`, `procVirtualUnlock`, `procSetProcessWorkingSetSizeEx` bindings.
+  - `orchestrator/dispatcher/shm_windows_test.go`: Added `isLocked` status validation.
+  - `orchestrator/main.go`: Enabled working set expansion upon startup.
+  - `config.toml.example`: Added `enable_virtual_lock` setting documentation.

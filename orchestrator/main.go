@@ -165,6 +165,14 @@ func main() {
 		log.Printf("Successfully auto-detected hardware specs and updated %s", specsPath)
 	}
 
+	// 物理RAMへの固着 (VirtualLock) 用にプロセスのワーキングセットサイズを拡張試行いたしますの
+	if err := dispatcher.EnableProcessWorkingSetLock(512, 16384); err != nil {
+		log.Printf("[INFO] Working set expansion note: %v (using standard Working Set quotas)", err)
+	} else {
+		log.Printf("[INFO] Successfully expanded process working set quotas for physical RAM locking.")
+	}
+
+
 	// Compute Target RAM Workers (Clamped to 95% maximum safety ceiling)
 	effectiveRamRatio := cfg.Orchestrator.MaxRamRatio
 	if effectiveRamRatio > 0.95 {

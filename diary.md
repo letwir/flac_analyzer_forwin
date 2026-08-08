@@ -1034,3 +1034,32 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Emotion**: あらまあ！`beat_track` がせっかく計算した `onset_env` を無視して波形 `y` から巨大スペクトログラムを作り直していたなんて、なんてお転婆な振る舞いですの！わたくしが `onset_envelope` をしっかり手渡して無駄遣いを止めさせて差し上げましたわ！
 - **Thoughts**: メモリ空間の Functor に不要な自己ループ（再計算）を許さず、最小構成の射へ射影いたしますの！
 
+### 2026-08-09 05:28:00
+- **Hypothesis**: 旦那様より「ページキャッシュに頼るのではなく、可能な限りRAM（物理メモリ）上にキャッシュを直載せ固定できないか」との要望を頂いた。現状は Win32 `CreateFileMappingW(INVALID_HANDLE_VALUE)` によるページファイルバッキング共有メモリとOSのファイルシステムページキャッシュ依存であるため、`VirtualLock` APIによる物理RAM固着化、SQLite RAM Cache拡張、および波形/モデルの物理RAMインメモリ固定化の計画を立案する。
+- **Tried**: `shm_windows.go`, `dispatcher.go`, `shm_interop.py`, `HARDWARE_SPECS.md` 等のメモリ空間設計を横断調査し、ページキャッシュ/ページファイルバッキングから物理RAM直載せ・固定化への移行計画（VirtualLock, SQLite In-Memory PRAGMA, Waveform RAM LRU Pool, Warm Model Process Pool）を作成。
+- **Rejected**: OSのデフォルトのページキャッシュ制御に丸投げし続けること。
+- **Uncertainty**: なし。
+- **Search**: `VirtualLock`, `CreateFileMappingW`, `MapViewOfFile`, SQLite PRAGMA cache_size/temp_store.
+- **Correction**: 旦那様の豊かな物理RAM（32GB / 64GB）を最大限に活用し、ページアウトの発生しない物理RAM直載せ固定化アーキテクチャへ昇華させる。
+- **Emotion**: おほほほ！ページキャッシュというレイジーなOSの好意に甘えるのではなく、旦那様の潤沢な物理RAMを豪快に専有して固着させるなんて、なんと贅沢で最高にカオスなメモリ戦略でございましょう！
+- **Thoughts**: メモリ空間の圏における全射を物理RAMにガッチリとピン留め（VirtualLock）して差し上げますわ！
+
+### 2026-08-09 05:31:00
+- **Hypothesis**: 旦那様より「SQLiteは実行済みチェック用で整合性重視なので従来のままでよい」との指示を頂いた。SQLiteのインメモリチューニング（PRAGMA変更）を取りやめ、既存の整合性保証設定をそのまま維持する方針に計画を修正する。
+- **Tried**: `implementation_plan.md` から SQLite 変更セクションを削除し、Win32 `VirtualLock` による共有メモリ物理RAM固着化、波形 LRU RAM Cache、Working Set 拡張の3軸に計画を絞り込む。
+- **Rejected**: SQLite をインメモリ化してクラッシュ時の ACID 整合性を損なうリスクを犯すこと。
+- **Uncertainty**: なし。
+- **Search**: SQLite WAL mode stability in orchestrator.db.
+- **Correction**: 旦那様の仰る通り、DB整合性は安全性の要！SQLite には触れず、重い音源波形メモリ共有（SHM）と波形RAMキャッシュに全力を注ぐ。
+- **Emotion**: おっしゃる通りでございますわ旦那様！タスク状態管理の SQLite は堅実・整合性第一！無用なイタズラは厳禁ですわね！
+- **Thoughts**: 堅固な構造を保つべき射（DB）と、高速伝送を要する射（波形SHM）の圏論的疎結合をより厳格に保ちますわ！
+
+### 2026-08-09 05:32:00
+- **Hypothesis**: 旦那様より「RAM固着ができない場合は従来の方法（ページファイルバッキング共有メモリ＋Goオーケストレーターのタスクキュー管理）でよいか」との最終確認を頂いた。VirtualLock 失敗時は警告ログを出力し、従来通りの共有メモリとGoのキュー管理メカニズムに透過的にフォールバック（Graceful Fallback）する仕様であることを明確化する。
+- **Tried**: `implementation_plan.md` のフォールバック仕様を更新し、VirtualLock 失敗時も例外停止せず従来のGoタスクキュー管理を100%継続する旨を追記。
+- **Rejected**: VirtualLock 失敗時にプロセスをハードクラッシュさせる設計（可用性を著しく損なうため）。
+- **Uncertainty**: なし。
+- **Search**: VirtualLock error code handling in Win32 API.
+- **Correction**: 「物理RAM固着（最適経路）」と「従来のページファイルバッキング共有メモリ（安全フォールバック）」の二重安全構造を確立。
+- **Emotion**: おほほほ！万が一の時の逃げ道（フォールバック射）も完璧に用意されたアーキテクチャこそ、真のエレガンスでございますわ！
+- **Thoughts**: 主射が全単射にならざるを得ない例外状況でも、包含射へのフォールバックで健全性を保ちますの！

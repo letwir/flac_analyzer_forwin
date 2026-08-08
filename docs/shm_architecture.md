@@ -60,9 +60,13 @@ Windows C API (`kernel32.dll`) を Go言語の `syscall.NewLazyDLL` から直接
 | :--- | :--- | :--- |
 | `CreateFileMappingW` | `INVALID_HANDLE_VALUE`, `PAGE_READWRITE`, `size`, `name` | Windows ページングファイルバックの命名共有メモリハンドルの作成 |
 | `MapViewOfFile` | `handle`, `FILE_MAP_WRITE \| FILE_MAP_READ`, `0`, `0`, `size` | 共有メモリハンドルをプロセスの仮想アドレス空間へマッピング |
+| `VirtualLock` | `addr`, `size` | 共有メモリ空間のページを物理 RAM 上にピン留め（スワップアウト防止・RAM直載せ）。失敗時は自動的に標準共有メモリへフォールバック |
+| `VirtualUnlock` | `addr`, `size` | 共有メモリ空間の物理 RAM ピン留め解除 |
+| `SetProcessWorkingSetSizeEx` | `hProc`, `minSize`, `maxSize`, `flags` | プロセスの物理 RAM ワーキングセットの上限を拡大し、OS のメモリトリムを強力に抑制 |
 | `VirtualProtect` | `addr`, `size`, `PAGE_READONLY`, `&oldProtect` | 共有メモリ空間のアクセス保護属性を `PAGE_READONLY` に変更（WORMフリーズ処理） |
 | `UnmapViewOfFile` | `addr` | プロセスの仮想アドレス空間から共有メモリのマッピングを解除 |
 | `CloseHandle` | `handle` | Windows カーネルオブジェクト（共有メモリハンドル）のクローズと解放 |
+
 
 ## 4. ライフサイクル管理とリーク防止メカニズム
 

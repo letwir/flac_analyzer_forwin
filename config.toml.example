@@ -25,6 +25,9 @@ test_flac_dir = "./testFLAC"
 # mix波形MD5ハッシュによる登録済みトラックの事前重複判定・解析バイパス
 skip_dup_by_hash = true
 
+# Windows 共有メモリ (SHM) の物理 RAM 固着化 (VirtualLock / Pinning) 有効化
+enable_virtual_lock = true
+
 [python_env]
 # Python シングルスレッド化および環境変数設定 (CPU スレッド競合・オーバーヘッドの防止)
 omp_num_threads = "1"
