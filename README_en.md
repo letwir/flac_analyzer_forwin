@@ -112,11 +112,11 @@ Place necessary ONNX classifier models and mapping JSONs into the `models/` dire
 
 ### 4. Execution Steps
 
-#### Step 1: Launch Go Orchestrator
-Execute `init.bat` at project root or build and launch in `orchestrator` directory:
+#### Step 1: Launch Go Orchestrator via One-Tap Setup
+Executing `init.bat` automatically sets up the **Python virtual environment**, **downloads all required models**, **converts .pb models to .onnx**, and **builds the Go Orchestrator binary**:
 
 ```powershell
-# Option A: One-tap build and run via init.bat
+# Option A: One-tap full setup and build via init.bat
 .\init.bat
 
 # Option B: Manual build and run

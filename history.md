@@ -780,3 +780,13 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: decisions.md, docs/install_blackwell_rtx50.md, README.md, README_en.md, docs/cpu_parallelism_and_ram_guard.md, docs/gpu_fallback_and_ram_defense.md, history.md
 
+### 2026-08-09 05:18:00
+- Category: Enhancement / Automation
+- Summary: `init.bat` の全面ブラッシュアップ（Python環境検出 ＋ モデル自動DL ＋ .pbから.onnxへの自己変換 ＋ 依存セットアップ ＋ Goオーケストレーターコンパイル・配置のワンストップ自動化）。
+- Decisions:
+  1. `init_dl_model.py`: Essentia DLモデル一括取得に加え、`.pb` のみ提供されている Discogs400 モデルのダウンロード、`tf2onnx` による `.onnx` 自己変換、変換後の一時モジュール全自動アンインストールクリーンアップを完備。
+  2. `init.bat`: UTF-8化、Python自動判定、仮想環境構築、`init_dl_model.py` 呼び出し、`go build` およびルートディレクトリへの `orchestrator.exe` 配置までをワンタップ一元化。
+  3. `README.md` / `README_en.md`: USAGE セクションのステップ1を更新し、ワンタップ初期化手順を強調。
+- Blockers: なし。
+- Files: init.bat, init_dl_model.py, README.md, README_en.md, diary.md, history.md
+

@@ -113,14 +113,14 @@ skip_dup_by_hash = true
 
 ### 4. 実行手順
 
-#### ステップ 1: Go オーケストレーターの起動
-プロジェクトルートの `init.bat` を実行するか、`orchestrator` ディレクトリでビルド・起動します。
+#### ステップ 1: ワンタップ初期化 ＆ Go オーケストレーターの起動
+プロジェクトルートの `init.bat` を実行することで、**Python仮想環境構築**、**モデルの自動ダウンロード ＆ .pb から .onnx への自己変換**、および **Go オーケストレーターのコンパイル** が一括で自動実行されます。
 
 ```powershell
-# 方法 A: init.bat によるワンタップビルド & 起動
+# 方法 A: init.bat によるワンタップ一括初期化 ＆ ビルド
 .\init.bat
 
-# 方法 B: 手動ビルド & 起動
+# 方法 B: 手動ビルド ＆ 起動
 cd orchestrator
 go build -o orchestrator.exe
 .\orchestrator.exe

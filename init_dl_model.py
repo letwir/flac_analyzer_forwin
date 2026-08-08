@@ -69,7 +69,7 @@ URLS = [
     "https://essentia.upf.edu/models/feature-extractors/maest/discogs-maest-30s-pw-519l-2.json",
     "https://essentia.upf.edu/models/feature-extractors/maest/discogs-maest-30s-pw-519l-2.onnx",
 
-    # Genre Discogs400
+    # Genre Discogs400 (.pb 形式のみ提供されているモデル)
     "https://essentia.upf.edu/models/classification-heads/genre_discogs400/genre_discogs400-discogs-effnet-1.json",
     "https://essentia.upf.edu/models/classification-heads/genre_discogs400/genre_discogs400-discogs-effnet-1.pb",
 ]
@@ -77,6 +77,8 @@ URLS = [
 
 def _download_progress(count, block_size, total_size):
     """シンプルな進捗表示コールバックですの。"""
+    if total_size <= 0:
+        return
     percent = int(count * block_size * 100 / total_size)
     percent = min(100, percent)
     sys.stdout.write(f"\r  └─ ダウンロード中... {percent}%")
@@ -85,7 +87,7 @@ def _download_progress(count, block_size, total_size):
 
 def download_models():
     """Essentia ONNX/PBモデルをダウンロードしますわ。"""
-    print("=== 1. Essentia Deep Learning モデルのダウンロードを開始しますわ ===")
+    print("\n=== 1. Essentia Deep Learning モデルのダウンロードを開始しますわ ===")
     if not os.path.exists(MODELS_DIR):
         os.makedirs(MODELS_DIR)
         print(f"ディレクトリ `{MODELS_DIR}` を作成いたしましたの。")
@@ -93,17 +95,30 @@ def download_models():
     for url in URLS:
         fname = os.path.basename(url)
         dest = os.path.join(MODELS_DIR, fname)
-        if os.path.exists(dest):
-            if os.path.getsize(dest) > 0:
-                print(f" [SKIP] {fname} (既に存在しておりますわ)")
-                continue
+        if os.path.exists(dest) and os.path.getsize(dest) > 0:
+            print(f" [SKIP] {fname} (既に存在しておりますわ)")
+            continue
 
         print(f" [DOWNLOAD] {url}")
         try:
-            urllib.request.urlretrieve(url, dest, reporthook=_download_progress)
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            )
+            with urllib.request.urlopen(req) as response, open(dest, 'wb') as out_file:
+                total_size = int(response.headers.get('Content-Length', 0))
+                block_size = 8192
+                count = 0
+                while True:
+                    buffer = response.read(block_size)
+                    if not buffer:
+                        break
+                    out_file.write(buffer)
+                    count += 1
+                    _download_progress(count, block_size, total_size)
             print("\n  └─ 完了いたしましたわ！")
         except Exception as e:
-            print(f"\n  └─ 警告: ダウンロード失敗いたしましたわ: {e}")
+            print(f"\n  └─ 警告: ダウンロードに失敗いたしましたわ ({fname}): {e}")
 
 
 def transform_pb_to_onnx():
@@ -124,8 +139,8 @@ def transform_pb_to_onnx():
     pip_exe = os.path.join(VENV_DIR, "Scripts", "pip.exe")
     python_exe = os.path.join(VENV_DIR, "Scripts", "python.exe")
     if not os.path.exists(pip_exe):
-        pip_exe = os.path.join(VENV_DIR, "bin", "pip")
-        python_exe = os.path.join(VENV_DIR, "bin", "python")
+        pip_exe = sys.executable
+        python_exe = sys.executable
 
     # A. 一時的に tensorflow と tf2onnx をインストール
     print("変換用モジュール (tensorflow, tf2onnx) を一時的にインストールしますわ...")
@@ -181,31 +196,31 @@ def setup_environment():
     # 2. pip を介した requirements.txt のインストール
     pip_exe = os.path.join(VENV_DIR, "Scripts", "pip.exe")
     if not os.path.exists(pip_exe):
-        pip_exe = os.path.join(VENV_DIR, "bin", "pip")
+        pip_exe = "pip"
 
-    if os.path.exists(pip_exe):
-        print("pip をアップグレードしておりますわ...")
+    print("pip をアップグレードしておりますわ...")
+    try:
+        subprocess.run([pip_exe, "install", "--upgrade", "pip"], check=True)
+    except Exception as e:
+        print(f"  └─ pipのアップグレード中に警告が発生しましたの: {e}")
+
+    req_file = "requirements.txt"
+    if os.path.exists("requirements-blackwell.txt"):
+        print("💡 Blackwell (RTX 50xx) 環境用定義要件が検出されましたわ。")
+
+    if os.path.exists(req_file):
+        print(f"{req_file} に基づいて依存ライブラリをインストールしておりますわ...")
         try:
-            subprocess.run([pip_exe, "install", "--upgrade", "pip"], check=True)
+            subprocess.run([pip_exe, "install", "-r", req_file], check=True)
+            print("  └─ ライブラリのインストールが完了いたしましたわ！")
         except Exception as e:
-            print(f"  └─ pipのアップグレード中に警告が発生しましたの: {e}")
-
-        req_file = "requirements.txt"
-        if os.path.exists(req_file):
-            print(f"{req_file} に基づいて依存ライブラリをインストールしておりますわ...")
-            try:
-                subprocess.run([pip_exe, "install", "-r", req_file], check=True)
-                print("  └─ ライブラリのインストールが完了いたしましたわ！")
-            except Exception as e:
-                print(f"  └─ エラー: 依存ライブラリのインストールに失敗しましたの: {e}")
-        else:
-            print(f"  └─ 警告: `{req_file}` が見つかりませんわ。")
+            print(f"  └─ エラー: 依存ライブラリのインストールに失敗しましたの: {e}")
     else:
-        print(f"  └─ エラー: `{pip_exe}` が見つかりませんの。")
+        print(f"  └─ 警告: `{req_file}` が見つかりませんわ。")
 
 
 if __name__ == "__main__":
     download_models()
     setup_environment()
     transform_pb_to_onnx()
-    print("\nすべての初期セットアップと変換処理が完了いたしましたわ！おーほほほほ！")
+    print("\n✨ すべてのモデル取得・ONNX変換・環境セットアップが完了いたしましたわ！おーほほほほ！")
