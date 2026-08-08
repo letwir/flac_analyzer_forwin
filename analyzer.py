@@ -177,7 +177,7 @@ class AudioContext:
             )
             try:
                 with LIBROSA_LOCK:
-                    bpm, beats = librosa.beat.beat_track(y=self.y, sr=self.sr)
+                    bpm, beats = librosa.beat.beat_track(onset_envelope=self.onset_env, sr=self.sr)
                 bpm_val = float(bpm[0] if isinstance(bpm, np.ndarray) else bpm)
                 import math
 
@@ -1951,9 +1951,9 @@ def _calc_hnr_nap(ctx: AudioContext) -> float:
             end = min(start + CHUNK, n_frames)
             x_chunk = x[start:end]
 
-            X_chunk = np.fft.rfft(x_chunk, n=n_fft, axis=-1)
-            S_chunk = X_chunk * np.conj(X_chunk)
-            r_chunk = np.fft.irfft(S_chunk, n=n_fft, axis=-1)[:, :N]
+            X_chunk = np.fft.rfft(x_chunk, n=n_fft, axis=-1).astype(np.complex64, copy=False)
+            S_chunk = (X_chunk * np.conj(X_chunk)).real.astype(np.float32, copy=False)
+            r_chunk = np.fft.irfft(S_chunk, n=n_fft, axis=-1)[:, :N].astype(np.float32, copy=False)
 
             r_0_chunk = r_chunk[:, 0:1]
             valid_mask = r_0_chunk[:, 0] > 1e-10

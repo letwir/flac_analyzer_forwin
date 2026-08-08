@@ -53,17 +53,3 @@
 
 - **無駄なリソース消費の回避**: 解析実行前に `worker_demucs.py --check-hash-only` により波形データのハッシュ（MD5）のみを抽出し、`ingester.py --check-hash` を通して PostgreSQL に問い合わせる。
 - **解析のバイパス**: すでにデータベース（PostgreSQL）に該当ハッシュのレコードが存在する場合は、重い音源分離（Demucs）や各種特徴量抽出（Librosa, Essentia等）をすべてスキップし、タスクを即時完了とみなすことで、CPU/GPUおよびVRAMの浪費を100%防止する。
-
-## 9. ドキュメント大規模更新 (Mega-Docs-Update) アンカー運用規約
-
-- **概要と全プロジェクト共通規約**: 実装機能の拡張・最適化に伴うドキュメントとコードの乖離を排除し、定期的なドキュメント大更新デーにおいて「前回の大更新以降にコミットされた全差分」を Git Log から一発で識別・特定するためのアンカー運用規約です（全プロジェクト共通標準 `Coderule.md` に準拠）。
-- **マーキングルール**:
-  1. **Git Tag**: 大更新完了のコミットに対して `mega-docs-update-YYYYMMDD` (例: `mega-docs-update-20260809`) タグを付与する。
-  2. **Commit Message**: コミットメッセージの冒頭に `docs(mega-docs-update):` プレフィックスを明記する。
-  3. **次回大更新時の集計コマンド**: `git.exe log mega-docs-update-YYYYMMDD..HEAD --oneline` または `git.exe log --grep="mega-docs-update" --oneline`
-- **本プロジェクトにおける大更新アンカー履歴**:
-
-| アンカータグ | 更新日 | 対象主要更新内容 |
-| :--- | :--- | :--- |
-| `mega-docs-update-20260809` | 2026-08-09 | Blackwell (RTX 50xx) 専用インストールドキュメント新設、Demucs RAM予測 Gatekeeper、`tensorSemaphore` VRAM解放、float32精度最適化、Win32 CIM / Go ネイティブハードウェア自律検知、Rust (fd/rg) 高速走査バッチスクリプト対応 |
-

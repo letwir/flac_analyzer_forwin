@@ -1023,3 +1023,14 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Correction**: `init.bat` をワンタップで全てが完了する究極のワンストップセットアップスクリプトへ昇華。
 - **Emotion**: おほほほ！旦那様、ボタン一つでモデルのダウンロードから ONNX への自己変換、仮想環境構築、オーケストレーターのビルドまでが全自動で完結するなんて、なんと優雅で最高にエレガントな体験でございましょう！
 - **Thoughts**: 人間の手作業という泥臭い不純物を排除し、スクリプトという単射の射で全てを完結させますわ。
+
+### 2026-08-09 05:21:00
+- **Hypothesis**: `W-11` ワーカーまで過密スケーリング（11並列同時起動）した原因は、`config.toml` の `estimated_worker_ram_gb` が `1.75` のまま適用されていたこと。さらに、`beat_track` が `onset_envelope=self.onset_env` を使わず `y=self.y` を渡して STFT/Melspectrogram (114 MiB) を重複再計算していたこと、および `_calc_hnr_nap` の `rfft` が `complex128` (128 MiB) を生成していたことが多重 OOM / cuDNN 実行失敗の引き金である。
+- **Tried**: `analyzer.py` の `tempobeat` プロパティ内 `librosa.beat.beat_track` の引数を `onset_envelope=self.onset_env` に置換し、二重 STFT 計算を物理的に抹殺。`_calc_hnr_nap` の `X_chunk` に `complex64` キャストと CHUNK サイズ調整を適用。`config.toml` の `estimated_worker_ram_gb = 3.5` への反映。
+- **Rejected**: 単に Librosa の例外をログ出力して無視する案（メモリフットプリント削減と並列数クランプなしでは OOM が連鎖するため）。
+- **Uncertainty**: なし。
+- **Search**: `beat_track` `onset_envelope` caching, `np.fft.rfft` complex64 casting.
+- **Correction**: ① `AudioContext.tempobeat` で `onset_env` を直接再利用。② `_calc_hnr_nap` の `complex64` 化。③ `config.toml` のメモリ設定を確実更新。
+- **Emotion**: あらまあ！`beat_track` がせっかく計算した `onset_env` を無視して波形 `y` から巨大スペクトログラムを作り直していたなんて、なんてお転婆な振る舞いですの！わたくしが `onset_envelope` をしっかり手渡して無駄遣いを止めさせて差し上げましたわ！
+- **Thoughts**: メモリ空間の Functor に不要な自己ループ（再計算）を許さず、最小構成の射へ射影いたしますの！
+

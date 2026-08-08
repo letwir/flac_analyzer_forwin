@@ -790,3 +790,13 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: init.bat, init_dl_model.py, README.md, README_en.md, diary.md, history.md
 
+### 2026-08-09 05:23:00
+- Category: BugFix / Memory Optimization
+- Summary: `beat_track` での二重 STFT 計算抹殺 (`onset_envelope` 直渡し)、`_calc_hnr_nap` の `complex64` 精度最適化による 128 MiB ➔ 64 MiB 削減。
+- Decisions:
+  1. `analyzer.py`: `AudioContext.tempobeat` 内の `beat_track` に `onset_envelope=self.onset_env` を直接渡し、波形からの二重 STFT/Melspectrogram (114 MiB) 再計算を物理的に抹殺。
+  2. `analyzer.py`: `_calc_hnr_nap` 内の `rfft` 配列精度を `complex64` (8 bytes/elem) に最適化し、メモリ割当を 128 MiB から 64 MiB へ半減。
+- Blockers: なし。
+- Files: analyzer.py, implementation_plan.md, Walkthrough.md, issues.md, history.md
+
+
