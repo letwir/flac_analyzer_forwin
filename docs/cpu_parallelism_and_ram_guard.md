@@ -39,17 +39,26 @@ Flac_Analyzer は、各処理ステップを**厳格な射（Morphism）**およ
 - 各 Python ワーカー内部で OpenMP / OpenBLAS / MKL のスレッド数を無闇に引き上げると（例: 22ワーカー × 4スレッド ＝ 88スレッド）、OS の CPU スケジューラキューで過剰なコンテキストスイッチ爆発が発生し、スループットが低下します。
 - ワーカープロセス自体の並列度を高め、`OMP_NUM_THREADS = 1` を維持することで、無駄なスレッド競合と隠蔽された可変状態 (Hidden Shared State) を回避しています。
 
-### ④ `MaxRamRatio` ＆ `estimated_worker_ram_gb` によるリアルタイム空き RAM バックプレッシャー Guard
+### ④ Waveform長ベース Demucs RAM予測 ＆ GO/NOGO ゲートキーパー (Gatekeeper Decision)
+- CUEシート分割およびスタンドアロン FLAC の波形長 (PCM サンプリング長) から Demucs 音源分離に必要な RAM 容量をタスク投入前に動的算定。
+- ホストのリアルタイム利用可能物理メモリ (`AvailPhys`) と想定必要 RAM を比較し、メモリが不足している場合はタスク投入を自動一時停止 (NOGO Gatekeeper Decision)。
+- これにより、大長尺トラックや複数ステム処理時における Windows ページファイル容量上限 (`WinError 1455`) および Out-Of-Memory (OOM) クラッシュを完全防御します。
+
+### ⑤ `tensorSemaphore` ＆ VRAM 逐次解放 (`torch.cuda.empty_cache`)
+- Go ディスパッチャ内に PyTorch 用の `tensorSemaphore` を個別に配置し、複数ワーカー間での VRAM 競合・フラグメンテーションを防止。
+- 各 `worker_tensor.py` 完了直後に `torch.cuda.empty_cache()` を自律呼び出しし、VRAM キャッシュを即座に解放して後続タスクへ引き継ぎます。
+
+### ⑥ `MaxRamRatio` ＆ リアルタイム空き RAM バックプレッシャー Guard
 - タスク投入直前、Windows API (`GetMemoryInfo`) を呼び出し、リアルタイムのシステム使用中メモリ量 (`TotalPhys - AvailPhys`) を監視します。
 - 使用量が目標上限（例: `max_ram_ratio = 0.625` ≒ **40GB上限**）に達している場合、Worker は自動的に 2 秒間スリープ（バックプレッシャー）し、既存タスクのメモリ解放を安全に待ちます。
-- 長尺トラック（25分超）が連続投入された場合の Windows ページファイル容量上限（`WinError 1455` コミット制限）超過を防ぐため、ワーカー1基あたりの想定メモリ容量 (`estimated_worker_ram_gb`) を **`3.5` GB** へ適正化し、並列ワーカー数の過密スケーリングを動的にクランプします。
 
-### ⑤ Python ワーカー内の `float32` 保持 ＆ 一元プロパティキャッシュ化
+### ⑦ Python ワーカー内の `float32` 保持 ＆ 一元プロパティキャッシュ化
 - Librosa による音響特徴量算出（`spectral_centroid`, `spectral_rolloff` 等）において、`AudioContext.centroid` の一元キャッシュ化および `spectro` (float32) からの直接演算を適用。
 - 従来 Librosa 内部で発生していた 64-bit float への暗黙キャスト（291 MiB / 108 MiB 等の巨大アロケーション）を完全排除し、各ワーカープロセスが消費するメモリ領域を従来の 1/3 以下へ抑圧します。
 
-### ⑥ `0` 指定時の `runtime.NumCPU()` 自動解決 (`resolvePythonEnv`)
-- `config.toml` の `num_workers` や `python_env` の各項目に `0` または `"0"` が指定された場合、純粋関数 `resolvePythonEnv` が現在のシステム CPU 論理コア数 (`runtime.NumCPU()`) を検出し、決定論的に最適なワーカー数およびパラメータを動的算出します。
+### ⑧ `0` 指定時の `runtime.NumCPU()` 自動解決 (`resolvePythonEnv`) ＆ ハードウェア自律検知
+- `config.toml` の `num_workers` 等に `0` が指定された場合、純粋関数 `resolvePythonEnv` が現在のシステム CPU 論理コア数 (`runtime.NumCPU()`) および物理 RAM 容量を検出し、最適なワーカー数を動的決定します。
+- 起動時にホストの CPU/RAM/GPU 仕様を自動取得し、`HARDWARE_SPECS.md` の `[EXEC_SPECS]` 情報として自律更新します。
 
 ---
 

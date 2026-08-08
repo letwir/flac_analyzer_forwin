@@ -63,6 +63,8 @@ except Exception as e:
 
 - **透過性**: フォールバックは呼出元に対して透過的。`extract_tensor_features()` は GPU/CPU の違いを意識する必要がない
 - **結果の一貫性**: CPU フォールバック後、結果テンソルは元のデバイスに `.to(x.device)` で戻されるため、後続処理への影響がゼロ
+- **Blackwell (RTX 50xx) サポート**: CUDA 13.2+ 環境における VRAM 割り当て挙動および PyTorch Nightly 演算子の自動検出に対応
+- **VRAM 解放 (`tensorSemaphore`)**: Go ディスパッチャの `tensorSemaphore` と連携し、処理完了毎に `torch.cuda.empty_cache()` を自律呼出することで VRAM キャッシュの連鎖的増大を防ぎます
 - **安全性**: CPU でも同一演算が失敗した場合のみ例外を再送出（真の致命的エラー）
 
 ---

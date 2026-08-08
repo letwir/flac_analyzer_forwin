@@ -769,3 +769,14 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: analyzer.py, implementation_plan.md, Walkthrough.md, issues.md, history.md
 
+### 2026-08-09 05:08:00
+- Category: Documentation / Synchronization & Governance
+- Summary: 大規模ドキュメント完全同期 (README.md, README_en.md, docs/*) ＋ Git Log 大更新アンカー規約 (`mega-docs-update`) の確立 ＋ NVIDIA RTX 50xx (Blackwell) 専用インストールドキュメント新設。
+- Decisions:
+  1. `decisions.md`: ドキュメント大規模更新（Mega-Docs-Update）アンカー運用規約を策定。`mega-docs-update-YYYYMMDD` タグおよび `docs(mega-docs-update):` プレフィックスの運用ルールを定義しアンカー履歴テーブルを設置。
+  2. `docs/install_blackwell_rtx50.md` [NEW]: NVIDIA GeForce RTX 50xx シリーズ (Blackwell / CUDA 13.2+) 専用環境構築ドキュメントを新設。
+  3. `README.md` / `README_en.md`: Coderule.md の 9 大セクション規約に従い最新実装（Demucs RAM Gatekeeper, `tensorSemaphore` VRAM解放, float32ハイブリッド精度, ハードウェア自律検知, Rust高速走査バッチ等）を反映し全同期。
+  4. `docs/cpu_parallelism_and_ram_guard.md` / `docs/gpu_fallback_and_ram_defense.md`: 最新の Gatekeeper 意思決定フローおよび VRAM Liberation メカニズムを更新反映。
+- Blockers: なし。
+- Files: decisions.md, docs/install_blackwell_rtx50.md, README.md, README_en.md, docs/cpu_parallelism_and_ram_guard.md, docs/gpu_fallback_and_ram_defense.md, history.md
+
