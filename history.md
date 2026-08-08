@@ -758,3 +758,14 @@ Files: run_batch.ps1, orchestrator/main.go
   - 大量並列ワーカー動作環境におけるメモリピーク（特に 4分越え長時間トラックでの ONNX テンソルおよび Tempogram 配列の重複アロケーション）が主因であることを特定。
 - Blockers: なし
 - Files: verify_track4.py, inspect_track.py
+
+### 2026-08-09 04:33:00
+- Category: BugFix / Memory Optimization
+- Summary: Librosa 64-bit float 内部アロケーション排除、`AudioContext.centroid` 重複呼び出し統合および ページファイル超過 (WinError 1455) 防御。
+- Decisions:
+  1. `analyzer.py`: `AudioContext.centroid` を `spectro` (float32) から直接高速計算する実装に更新。
+  2. `analyzer.py`: `_calc_spectral_centroid_mean`, `_calc_spectral_centroid_sd` における Librosa 重複呼び出しを `ctx.centroid` に一元統一。
+  3. `analyzer.py`: `_calc_rolloff_features` を float32 の `cumsum` による軽量自作実装に切り替え、Librosa の 291 MiB 巨大 float64 配列割当を解消。
+- Blockers: なし。
+- Files: analyzer.py, implementation_plan.md, Walkthrough.md, issues.md, history.md
+

@@ -1004,3 +1004,13 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Emotion**: CUEトラックの共有メモリ計算が親ファイルサイズ丸抱えだっただなんて、なんて恐ろしいトラップでございますの旦那様！でももう原因は完全に特定いたしましたわ！
 - **Thoughts**: メモリ空間の Morphism を正確に対応させ、ページングファイルの悲哀を根絶いたしますわ。
 
+### 2026-08-09 04:26:00
+- **Hypothesis**: 25分を超えるロングトラック（128,740フレーム超）の複数ステム処理中、W-1〜W-7 などの多重並行ワーカー環境下で Librosa の `spectral_rolloff` や `spectral_centroid` 内の float64 内部キャスト (291 MiB / 108 MiB) および STFT (1007 MiB) 確保が重複発生。これにより Windows の Commit Limit (RAM 32GB + Pagefile 18.5GB = 50.5GB) に達し、WinError 1455 (ページングファイル不足) および ArrayMemoryError が発動している。
+- **Tried**: `analyzer.py`, `worker_librosa.py`, `config.toml`, `shm_interop.py` の全処理フローとメモリ領域割当を精査。`_calc_spectral_centroid_mean` / `sd` が `ctx.centroid` を使わず直呼び出しして重複計算している問題、および `spectral_rolloff` が Librosa の `np.where` で float64 巨大配列を作っている箇所を特定。
+- **Rejected**: ワーカープロセス側で単に try-except で例外を呑み込む対処（根本原因である Commit Limit 突破および計算重複・64bitキャスト膨張を放置するため却下）。
+- **Uncertainty**: なし。
+- **Search**: `librosa.feature.spectral_rolloff` float64 allocation, `spectral_centroid` memory usage, `estimated_worker_ram_gb`.
+- **Correction**: ① `analyzer.py` の `spectral_centroid` / `spectral_rolloff` / `spectral_bandwidth` を float32 のまま計算するメモリ高効率自作実装に置換し `ctx.centroid` を一元利用。② `config.toml` の `estimated_worker_ram_gb` を 1.75GB から 3.5GB に引き上げ、ロングトラック連続投入時にも Commit Limit に達しないワーカー並列数へ安全クランプ。
+- **Emotion**: あらまあ旦那様！またしても Librosa の隠れた float64 キャストと `ctx.centroid` プロパティのキャッシュ無視、探知の網をすり抜けたワーカー推定メモリの過小評価が牙を剥いていたのでございますわね！わたくしが見事に見破って差し上げましたわ！
+- **Thoughts**: メモリ空間の Morphism において float64 への暗黙射を阻止し、float32 単射を維持することで、ページングファイルの悲哀を静寂に変えて差し上げますわ！
+

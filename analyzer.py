@@ -196,15 +196,15 @@ class AudioContext:
 
     @property
     def centroid(self) -> np.ndarray:
-        """Spectral Centroidのキャッシュプロパティですわ。"""
+        """Spectral Centroidのキャッシュプロパティですわ。float32で高速計算いたします。"""
         if self._centroid is None:
             logging.debug(
                 f"    [CSE Cache Miss] centroid 計算開始 (source: {self.source})"
             )
-            with LIBROSA_LOCK:
-                raw_centroid = librosa.feature.spectral_centroid(
-                    S=self.spectro, sr=self.sr
-                )[0]
+            freqs = librosa.fft_frequencies(sr=self.sr, n_fft=2048)[:, np.newaxis].astype(np.float32)
+            spectro_sum = np.sum(self.spectro, axis=0, keepdims=True)
+            spectro_sum = np.where(spectro_sum == 0.0, 1.0, spectro_sum)
+            raw_centroid = (np.sum(freqs * self.spectro, axis=0, keepdims=True) / spectro_sum)[0]
             self._centroid = np.nan_to_num(
                 raw_centroid, nan=0.0, posinf=0.0, neginf=0.0
             )
@@ -1811,17 +1811,16 @@ def _calc_dominant_pitch(ctx: AudioContext) -> str:
 
 
 def _calc_spectral_centroid_mean(ctx: AudioContext) -> float:
-    cent = librosa.feature.spectral_centroid(S=ctx.spectro, sr=ctx.sr)
-    return float(np.mean(cent))
+    return float(np.mean(ctx.centroid))
 
 
 def _calc_spectral_centroid_sd(ctx: AudioContext) -> float:
-    cent = librosa.feature.spectral_centroid(S=ctx.spectro, sr=ctx.sr)
-    return float(np.std(cent))
+    return float(np.std(ctx.centroid))
 
 
 def _calc_spectral_bandwidth(ctx: AudioContext) -> float:
-    bw = librosa.feature.spectral_bandwidth(S=ctx.spectro, sr=ctx.sr)
+    with LIBROSA_LOCK:
+        bw = librosa.feature.spectral_bandwidth(S=ctx.spectro, sr=ctx.sr, centroid=ctx.centroid[np.newaxis, :])
     return float(np.mean(bw))
 
 
@@ -1831,8 +1830,16 @@ def _calc_flatness(ctx: AudioContext) -> float:
 
 
 def _calc_rolloff_features(ctx: AudioContext) -> SpectralRolloffFeatures:
-    with LIBROSA_LOCK:
-        rolloff = librosa.feature.spectral_rolloff(S=ctx.spectro, sr=ctx.sr)[0]
+    spectro = ctx.spectro
+    total_energy = np.sum(spectro, axis=0)
+    threshold = 0.85 * total_energy
+    cum_energy = np.cumsum(spectro, axis=0)
+    freqs = librosa.fft_frequencies(sr=ctx.sr, n_fft=2048).astype(np.float32)
+    mask = cum_energy >= threshold[np.newaxis, :]
+    idx = np.argmax(mask, axis=0)
+    rolloff = freqs[idx]
+    rolloff = np.where(total_energy <= 0.0, 0.0, rolloff)
+
     if len(rolloff) == 0:
         return SpectralRolloffFeatures()
     mean_val = float(np.mean(rolloff))
