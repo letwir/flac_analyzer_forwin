@@ -63,4 +63,8 @@
     <why>To avoid dependency on environment variables, ensure configuration consistency across execution modes, and treat local PostgreSQL purely as a test target.</why>
     <how>All database connections and run options must be unified into and managed by config.toml. Fallbacks to default values should only occur if the config is not present, and retry/ingestion scripts must parse config.toml rather than relying on environment variables (like FLAC_DB_URL).</how>
   </target>
+  <target id="MEGA_DOCS_UPDATE_ANCHOR">
+    <why>To eliminate divergence between implementation and documentation, enforcing Coderule.md (9-section README structure & docs/ separation) while creating clear, traceable Git Log anchors for periodic documentation updates.</why>
+    <how>Apply git tag `mega-docs-update-YYYYMMDD` and commit message prefix `docs(mega-docs-update):` on major documentation syncs. Use `git.exe log mega-docs-update-YYYYMMDD..HEAD --oneline` to instantly extract all commits since the last major update.</how>
+  </target>
 </methods>
