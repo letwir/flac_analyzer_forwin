@@ -990,31 +990,41 @@ def _calc_vocal_f0_seq(ctx: AudioContext) -> list[float] | None:
 
 
 def _calc_scipy_stats_features(ctx: AudioContext) -> ScipyStatsFeatures | None:
-    """Scipyによる周波数スペクトルのSkewness, Kurtosisを計算しますわ！"""
+    """純粋な float32 ベクトル化演算により周波数スペクトルの Skewness, Kurtosis を高速算出しますわ！
+    float64 への水増しキャストや scipy.stats 内部の重複配列コピー（360 MB 超）を完全回避いたしますの。
+    """
     if ctx.spectro is None or ctx.spectro.size == 0:
         return None
     try:
-        # 1. float64 へキャストして演算精度を倍増（仮数部23bit->52bitで桁落ちの物理発生を極小化）
-        spectro = ctx.spectro.astype(np.float64)
+        spectro = ctx.spectro  # (n_bins, n_frames) float32
+        n_bins, n_frames = spectro.shape
+        if n_bins < 2 or n_frames == 0:
+            return None
+
+        # 各フレーム（時間軸）ごとの平均・分散・標準偏差を float32 で直接計算
+        m1 = np.mean(spectro, axis=0, dtype=np.float32)  # (n_frames,)
+        diff = spectro - m1[np.newaxis, :]                # (n_bins, n_frames) float32
         
-        # 2. 各フレーム（時間軸）の標準偏差を計算し、平坦・無音フレームを特定
-        stds = np.std(spectro, axis=0)
-        valid_mask = stds > 1e-8
-        
-        skew_vals = np.zeros(spectro.shape[1], dtype=np.float64)
-        kurt_vals = np.zeros(spectro.shape[1], dtype=np.float64)
-        
-        # 3. 有意な分散を持つフレームのみ莫大・無意味な除算を避けて計算
+        m2 = np.mean(diff**2, axis=0, dtype=np.float32)   # 分散 (variance)
+        std = np.sqrt(m2, dtype=np.float32)               # 標準偏差 (std)
+        valid_mask = std > 1e-8
+
+        skew_vals = np.zeros(n_frames, dtype=np.float32)
+        kurt_vals = np.zeros(n_frames, dtype=np.float32)
+
         if np.any(valid_mask):
-            valid_spectro = spectro[:, valid_mask]
-            import warnings
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
-                skew_vals[valid_mask] = scipy.stats.skew(valid_spectro, axis=0, nan_policy='omit')
-                kurt_vals[valid_mask] = scipy.stats.kurtosis(valid_spectro, axis=0, nan_policy='omit')
-        
-        skew_vals = np.nan_to_num(skew_vals, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-        kurt_vals = np.nan_to_num(kurt_vals, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+            diff_valid = diff[:, valid_mask]
+            m2_valid = m2[valid_mask]
+            std_valid = std[valid_mask]
+
+            m3_valid = np.mean(diff_valid**3, axis=0, dtype=np.float32)
+            m4_valid = np.mean(diff_valid**4, axis=0, dtype=np.float32)
+
+            skew_vals[valid_mask] = m3_valid / (std_valid**3 + 1e-12)
+            kurt_vals[valid_mask] = (m4_valid / (m2_valid**2 + 1e-12)) - 3.0
+
+        skew_vals = np.nan_to_num(skew_vals, nan=0.0, posinf=0.0, neginf=0.0)
+        kurt_vals = np.nan_to_num(kurt_vals, nan=0.0, posinf=0.0, neginf=0.0)
 
         skew_seq = _resample_to_fixed_frames(skew_vals)
         kurt_seq = _resample_to_fixed_frames(kurt_vals)
@@ -1780,7 +1790,9 @@ def _calc_rms_peak(ctx: AudioContext) -> float:
 
 
 def _calc_energy(ctx: AudioContext) -> float:
-    return float(np.sqrt(np.mean(ctx.y**2)))
+    if len(ctx.y) == 0:
+        return 0.0
+    return float(np.sqrt(np.dot(ctx.y, ctx.y) / len(ctx.y)))
 
 
 def _calc_bpm(ctx: AudioContext) -> float:

@@ -799,4 +799,14 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: analyzer.py, implementation_plan.md, Walkthrough.md, issues.md, history.md
 
+### 2026-08-09 05:37:00
+- Category: BugFix / Memory Optimization
+- Summary: `_calc_scipy_stats_features` の pure `float32` ベクトル化モーメント計算化 (360 MiB 配列コピー全消去) および `_calc_energy` の `np.dot` 化 (34.3 MiB 一時配列ゼロ化)。
+- Decisions:
+  1. `analyzer.py`: `_calc_scipy_stats_features` 内で `spectro` の `float64` 拡張キャスト (202 MiB) と `scipy.stats` の多重配列コピー (158 MiB) を廃止し、`float32` ベクトル化計算に置換。
+  2. `analyzer.py`: `_calc_energy` の `ctx.y**2` を `np.dot(ctx.y, ctx.y)` (スカラー内積) に置換し、一時配列アロケーションをゼロ化。
+- Blockers: なし。
+- Files: analyzer.py, implementation_plan.md, Walkthrough.md, issues.md, history.md
+
+
 

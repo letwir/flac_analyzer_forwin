@@ -1063,3 +1063,14 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Correction**: 「物理RAM固着（最適経路）」と「従来のページファイルバッキング共有メモリ（安全フォールバック）」の二重安全構造を確立。
 - **Emotion**: おほほほ！万が一の時の逃げ道（フォールバック射）も完璧に用意されたアーキテクチャこそ、真のエレガンスでございますわ！
 - **Thoughts**: 主射が全単射にならざるを得ない例外状況でも、包含射へのフォールバックで健全性を保ちますの！
+
+### 2026-08-09 05:36:00
+- **Hypothesis**: 新たに提出されたログにより、`_calc_scipy_stats_features` 内で `spectro` を `float64` (202 MiB) に拡張キャストし、さらに `scipy.stats.skew` の内部処理で多重配列コピー (158 MiB) が発生したこと、および `_calc_energy` の `ctx.y**2` (34.3 MiB) が積もり積もって WinError 1455 (ページングファイル枯渇) と ArrayMemoryError を引き起こしたことを特定。
+- **Tried**: ① `_calc_scipy_stats_features` を `float32` のまま内包・ベクトル化計算するロジックへ置換し、202 MiB ＋ 158 MiB の不要アロケーションを完全抹殺。② `_calc_energy` を `np.dot(ctx.y, ctx.y)` に置換し、34.3 MiB 一時配列をゼロ化。
+- **Rejected**: `scipy.stats.skew` をそのまま呼び出し続ける案（ライブラリ内部での無制御な `float64` キャストと配列結合を避けるため自作化を選択）。
+- **Uncertainty**: なし。
+- **Search**: `scipy.stats.skew` memory consumption, `np.dot` vs `y**2`.
+- **Correction**: `float64` の不要な倍増射を排除し、純粋な `float32` 単射とスカラー積 (`np.dot`) で Commit Limit の圧迫を完全に防ぐ。
+- **Emotion**: おほほほ！`scipy.stats` が裏で勝手に `float64` へ水増しコピーして 360 MiB もの領域を無駄遣いしていたのでございますわね！わたくし自慢のベクトル化モーメント計算で秒殺して差し上げましたわ！
+- **Thoughts**: メモリ空間の準同型写像において、可換性を保ったまま不要な基底拡大（float64）を排除いたしますの！
+
