@@ -125,8 +125,10 @@ class AudioContext:
                     self._spectro = np.load(self._spectro_path, mmap_mode='r')
                 else:
                     self._spectro = np.abs(self.stft).astype(np.float32, copy=False)
+                    self._stft = None
             else:
                 self._spectro = np.abs(self.stft).astype(np.float32, copy=False)
+                self._stft = None
         return self._spectro
 
     @property

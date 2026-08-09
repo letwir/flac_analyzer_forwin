@@ -35,6 +35,8 @@ type Config struct {
 		DemucsConcurrentLimit int     `toml:"demucs_concurrent_limit"`
 		ShmAllocationDelaySec int     `toml:"shm_allocation_delay_sec"`
 		ShmExpansionRatio     float64 `toml:"shm_expansion_ratio"`
+		ShmRetryCount         int     `toml:"shm_retry_count"`
+		ShmRetryDelaySec      int     `toml:"shm_retry_delay_sec"`
 		QueueDir              string  `toml:"queue_dir"`
 
 		LogLevel              string  `toml:"log_level"`
@@ -143,6 +145,12 @@ func main() {
 	}
 	if cfg.Orchestrator.ShmExpansionRatio <= 0 {
 		cfg.Orchestrator.ShmExpansionRatio = 3.5
+	}
+	if cfg.Orchestrator.ShmRetryCount <= 0 {
+		cfg.Orchestrator.ShmRetryCount = 5
+	}
+	if cfg.Orchestrator.ShmRetryDelaySec <= 0 {
+		cfg.Orchestrator.ShmRetryDelaySec = 8
 	}
 
 
@@ -305,6 +313,8 @@ func main() {
 		DemucsConcurrentLimit: cfg.Orchestrator.DemucsConcurrentLimit,
 		ShmAllocationDelaySec: cfg.Orchestrator.ShmAllocationDelaySec,
 		ShmExpansionRatio:     cfg.Orchestrator.ShmExpansionRatio,
+		ShmRetryCount:         cfg.Orchestrator.ShmRetryCount,
+		ShmRetryDelaySec:      cfg.Orchestrator.ShmRetryDelaySec,
 		QueueDir:              cfg.Orchestrator.QueueDir,
 
 		PythonEnv:             resolvedPythonEnv,

@@ -72,6 +72,8 @@ type Config struct {
 	DemucsConcurrentLimit int
 	ShmAllocationDelaySec int
 	ShmExpansionRatio     float64
+	ShmRetryCount         int
+	ShmRetryDelaySec      int
 	QueueDir              string
 	PythonEnv             map[string]string
 	LogLevel              LogLevel
@@ -473,24 +475,56 @@ func (d *Dispatcher) worker(id int) {
 				d.allocMutex.Lock()
 			}
 			
-			baseTag := fmt.Sprintf("Local\\FlacShm_W%d_%d", id, task.FileSize)
-			for _, stem := range stems {
-				tagName := fmt.Sprintf("%s_%s", baseTag, stem)
-				tagsMap[stem] = tagName
-				shm, err := NewSharedMemory(tagName, estimatedSize)
-				if err != nil {
-					allocError = fmt.Errorf("Failed to allocate SHM for %s: %v", stem, err)
+			retryCount := d.config.ShmRetryCount
+			if retryCount <= 0 {
+				retryCount = 5
+			}
+			retryDelaySec := d.config.ShmRetryDelaySec
+			if retryDelaySec <= 0 {
+				retryDelaySec = 8
+			}
+
+			for attempt := 1; attempt <= retryCount; attempt++ {
+				allocError = nil
+				shmMap = make(map[string]*SharedMemory)
+				tagsMap = make(map[string]string)
+
+				baseTag := fmt.Sprintf("Local\\FlacShm_W%d_%d_a%d", id, task.FileSize, attempt)
+				for _, stem := range stems {
+					tagName := fmt.Sprintf("%s_%s", baseTag, stem)
+					tagsMap[stem] = tagName
+					shm, err := NewSharedMemory(tagName, estimatedSize)
+					if err != nil {
+						allocError = fmt.Errorf("Failed to allocate SHM for %s (attempt %d/%d): %v", stem, attempt, retryCount, err)
+						break
+					}
+					shmMap[stem] = shm
+				}
+				if allocError == nil {
 					break
 				}
-				shmMap[stem] = shm
+
+				for _, shm := range shmMap {
+					shm.Close()
+				}
+				shmMap = make(map[string]*SharedMemory)
+
+				if attempt < retryCount {
+					d.LogWarn("[W-%d] SHM allocation limit hit (attempt %d/%d): %v. Throttling queue & sleeping %d seconds...", id, attempt, retryCount, allocError, retryDelaySec)
+					d.allocMutex.Unlock()
+					time.Sleep(time.Duration(retryDelaySec) * time.Second)
+					d.allocMutex.Lock()
+				}
 			}
 			time.Sleep(2 * time.Second)
 			d.allocMutex.Unlock()
-			
+
 			if allocError != nil {
 				<-d.demucsSemaphore
 				metrics.AnalyzerDemucsSlotsInUse.Dec()
-				for _, shm := range shmMap { shm.Close() }
+				for _, shm := range shmMap {
+					shm.Close()
+				}
 				d.failTask(task, allocError.Error())
 				metrics.AnalyzerTasksTotal.WithLabelValues("oom_failed").Inc()
 				return

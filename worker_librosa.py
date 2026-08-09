@@ -45,6 +45,27 @@ def main():
     
     extracted_features = {}
 
+    # config.toml からリトライパラメータを取得 (デフォルト: count=3, delay=6)
+    memory_retry_count = 3
+    memory_retry_delay_sec = 6.0
+    try:
+        try:
+            import tomllib
+            with open("config.toml", "rb") as f:
+                cfg = tomllib.load(f)
+                py_env = cfg.get("python_env", {})
+                memory_retry_count = int(py_env.get("memory_retry_count", 3))
+                memory_retry_delay_sec = float(py_env.get("memory_retry_delay_sec", 6.0))
+        except ImportError:
+            import tomli
+            with open("config.toml", "rb") as f:
+                cfg = tomli.load(f)
+                py_env = cfg.get("python_env", {})
+                memory_retry_count = int(py_env.get("memory_retry_count", 3))
+                memory_retry_delay_sec = float(py_env.get("memory_retry_delay_sec", 6.0))
+    except Exception:
+        pass
+
     for stem_name, info in stems_info.items():
         tag_name = info["shm_tag"]
         shape = tuple(info["shape"])
@@ -56,35 +77,49 @@ def main():
         shm, y = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name, file_size=file_size)
         
         try:
-            # AudioContext の構築 (Zero-copy)
-            ctx = AudioContext(y=y, sr=sr, source=stem_name, spectro_path=spectro_path)
-            
-            # config取得と Pre-warming
-            config = STEM_CONFIGS.get(stem_name, STEM_CONFIGS["other"])
-            for prop in config["warmup"]:
+            for attempt in range(1, memory_retry_count + 1):
                 try:
-                    _ = getattr(ctx, prop)
-                except Exception as e:
-                    logger.warning(f"Pre-warming '{prop}' 実行中に問題が発生いたしましたわ: {e}")
-            
-            # Librosa 抽出実行
-            logger.info(f"ステム [{stem_name}] の特徴量を抽出しておりますわ...")
-            raw_features = librosa_extractor.run(ctx)
-            
-            # 結果を辞書に変換（Postgresへの格納用などにシリアライズ）
-            if hasattr(raw_features, "to_postgres_dict"):
-                extracted_features[stem_name] = raw_features.to_postgres_dict(track_id=args.track_hash)
-            else:
-                # 代替処理：dataclassならasdictなど
-                import dataclasses
-                if dataclasses.is_dataclass(raw_features):
-                    extracted_features[stem_name] = dataclasses.asdict(raw_features)
-                else:
-                    extracted_features[stem_name] = str(raw_features)
+                    # AudioContext の構築 (Zero-copy)
+                    ctx = AudioContext(y=y, sr=sr, source=stem_name, spectro_path=spectro_path)
                     
-            # 明示的な解放
-            ctx.clear()
-            
+                    # config取得と Pre-warming
+                    config = STEM_CONFIGS.get(stem_name, STEM_CONFIGS["other"])
+                    for prop in config["warmup"]:
+                        try:
+                            _ = getattr(ctx, prop)
+                        except Exception as e:
+                            logger.warning(f"Pre-warming '{prop}' 実行中に問題が発生いたしましたわ: {e}")
+                    
+                    # Librosa 抽出実行
+                    logger.info(f"ステム [{stem_name}] の特徴量を抽出しておりますわ...")
+                    raw_features = librosa_extractor.run(ctx)
+                    
+                    # 結果を辞書に変換（Postgresへの格納用などにシリアライズ）
+                    if hasattr(raw_features, "to_postgres_dict"):
+                        extracted_features[stem_name] = raw_features.to_postgres_dict(track_id=args.track_hash)
+                    else:
+                        import dataclasses
+                        if dataclasses.is_dataclass(raw_features):
+                            extracted_features[stem_name] = dataclasses.asdict(raw_features)
+                        else:
+                            extracted_features[stem_name] = str(raw_features)
+                            
+                    ctx.clear()
+                    break
+
+                except Exception as e:
+                    import gc
+                    gc.collect()
+                    is_mem_err = "MemoryError" in type(e).__name__ or "MemoryError" in str(e)
+                    if is_mem_err and attempt < memory_retry_count:
+                        logger.warning(
+                            f"ステム [{stem_name}] 処理中に MemoryError が発生いたしましたわ！ (試行 {attempt}/{memory_retry_count}). "
+                            f"他ワーカー完了待ちのため {memory_retry_delay_sec:.1f} 秒スリープいたします...: {e}"
+                        )
+                        time.sleep(memory_retry_delay_sec)
+                    else:
+                        raise e
+
         except Exception as e:
             logger.exception(f"ステム [{stem_name}] の処理中にエラーが発生いたしましたわ！")
             sys.exit(1)

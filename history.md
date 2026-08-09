@@ -810,3 +810,14 @@ Files: run_batch.ps1, orchestrator/main.go
 
 
 
+
+### 2026-08-09 19:14:00
+- Category: BugFix / Memory Optimization / Architecture
+- Summary: テンソル形状保持 ＆ config.toml可変キュー絞り・バックオフリトライによるメモリ保護メカニズムの実装完遂。
+- Decisions:
+  1. config.toml / config.toml.example: shm_retry_count(5), shm_retry_delay_sec(8), memory_retry_count(3), memory_retry_delay_sec(6) を新設し動的制御化。
+  2. orchestrator/dispatcher: NewSharedMemory失敗（Commit Limit到達時）に投入キューを一時スロットリングし設定秒数スリープ待機して自動リトライするループを実装。
+  3. analyzer/core.py: AudioContext.spectro 生成直後に self._stft = None とし 211MB+ complex64 配列を早期解放。
+  4. worker_librosa.py: MemoryError/ArrayMemoryError 発生時に gc.collect() ＋ 設定秒数スリープ待機して最大N回リトライする自律バックオフ機構を追加。
+- Blockers: なし。
+- Files: config.toml, config.toml.example, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, analyzer/core.py, worker_librosa.py, implementation_plan.md, walkthrough.md, issues.md, history.md

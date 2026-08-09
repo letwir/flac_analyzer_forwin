@@ -18,6 +18,9 @@
 - [x]DONE #10 【Docs】 README.md: Mermaid図に FLAC タグ書き戻し + Windows タイムスタンプ保護のステップを追加
 
 ## 課題・仕様検討
+- [x]DONE 【Fix/Memory】 テンソル形状保持 ＆ config.toml可変キュー絞り・バックオフリトライによるメモリ保護
+  - 概要: テンソル形状・計算式を変更せず、ArrayMemoryError / CreateFileMappingW (WinError 1455) 発生時に Go Dispatcher で投入キューを絞りスリープ待機 (shm_retry_count=5, shm_retry_delay_sec=8)、Python Worker で MemoryError バックオフリトライ (memory_retry_count=3, memory_retry_delay_sec=6) させる自律スロットリング機構を実装。
+
 - [-]WIP 【Fix/Memory】 `spectral_bandwidth` float64 抹殺 ＆ FLACデコードインプレース化 ＋ config.toml 反映
   - 現状: `_calc_spectral_bandwidth` で Librosa が float64 (154 MiB) を多重確保し、`pcm_bytes_to_float32` の非インプレース除算 (91.9 MiB) および `config.toml` 未反映による11並列動作が重なり `WinError 1455` 発生。
   - 方針: ① `_calc_spectral_bandwidth` を `ctx.centroid` 利用の pure float32 ベクトル計算へ置換。② `flac_decode.py` の `pcm_bytes_to_float32` をインプレース乗算 (`*=`) に修正。③ `config.toml` の `estimated_worker_ram_gb = 3.5` の安全適用手順。

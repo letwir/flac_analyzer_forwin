@@ -18,7 +18,9 @@ demucs_concurrent_limit = 1
 shm_allocation_delay_sec = 2
 # 共有メモリ (SHM) の FLAC ファイルに対する PCM 展開マージン比率 (デフォルト: 3.5)
 shm_expansion_ratio = 3.5
-
+# 共有メモリ確保失敗時の最大リトライ回数およびバックオフスリープ秒数
+shm_retry_count = 5
+shm_retry_delay_sec = 8
 
 # 解析中間 JSON の出力キューディレクトリ (相対パスまたは絶対パス)
 queue_dir = "./queue"
@@ -41,6 +43,9 @@ veclib_maximum_threads = "1"
 hf_hub_offline = "1"
 pythonutf8 = "1"
 pythonioencoding = "utf-8"
+# メモリエラー(ArrayMemoryError)発生時のリトライ回数およびスリープ秒数
+memory_retry_count = "3"
+memory_retry_delay_sec = "6"
 
 [models]
 # ONNX / ステム分離・特徴量抽出モデル用パラメータ
