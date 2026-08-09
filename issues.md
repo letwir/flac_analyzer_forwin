@@ -18,6 +18,9 @@
 - [x]DONE #10 【Docs】 README.md: Mermaid図に FLAC タグ書き戻し + Windows タイムスタンプ保護のステップを追加
 
 ## 課題・仕様検討
+- [x]DONE 【Feature】 Win32 Job Object 導入による Chrome 風プロセスグループ化 ＆ 自動一括クリーンアップ
+  - 概要: リソース数値制限フラグを一切設定せず JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE のみを適用した軽量 Job Object を導入。タスクマネージャー上での orchestrator.exe 配下への Python ワーカーぶら下がり表示と、親死亡時のゾンビプロセス自動一括 Kill を実現。
+
 - [x]DONE 【Fix/Memory】 テンソル形状保持 ＆ config.toml可変キュー絞り・バックオフリトライによるメモリ保護
   - 概要: テンソル形状・計算式を変更せず、ArrayMemoryError / CreateFileMappingW (WinError 1455) 発生時に Go Dispatcher で投入キューを絞りスリープ待機 (shm_retry_count=5, shm_retry_delay_sec=8)、Python Worker で MemoryError バックオフリトライ (memory_retry_count=3, memory_retry_delay_sec=6) させる自律スロットリング機構を実装。
 

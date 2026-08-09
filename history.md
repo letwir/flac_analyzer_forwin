@@ -830,3 +830,14 @@ Files: run_batch.ps1, orchestrator/main.go
   2. Windows OS カーネルの仕様に従い、Go (CreateFileMappingW) が作成した既存共有メモリセクションサイズそのままで安全マッピングを開き、サイズミスマッチによる Access Denied を 100% 撲滅。
 - Blockers: なし。
 - Files: shm_interop.py, walkthrough.md, history.md
+
+### 2026-08-09 19:41:00
+- Category: Feature / Win32 Job Object Process Grouping
+- Summary: Win32 Job Object の導入による Chrome 風プロセスグループ化 ＆ 親死亡時の全自動一括クリーンアップ機能の実装完遂。
+- Decisions:
+  1. orchestrator/dispatcher/job_windows.go [NEW]: Win32 API (CreateJobObjectW, SetInformationJobObject, AssignProcessToJobObject, OpenProcess) バインディングを実装。JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE のみを適用。
+  2. orchestrator/main.go: 起動時に InitGlobalJob() を呼び出しグローバル Job Object を作成。
+  3. orchestrator/dispatcher/dispatcher.go: runPythonScript 内で cmd.Start() 成功直後に AssignPidToJob(cmd.Process.Pid) を呼んで Python 子プロセスをバインド。
+  4. タスクマネージャー上での orchestrator.exe 配下への Python ワーカーの Chrome 風ツリーぶら下がり表示と、リソース制限非適用によるノーリスク運用を保証。
+- Blockers: なし。
+- Files: orchestrator/dispatcher/job_windows.go, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, walkthrough.md, issues.md, history.md

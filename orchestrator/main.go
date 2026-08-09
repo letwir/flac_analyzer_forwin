@@ -186,6 +186,11 @@ func main() {
 		log.Printf("[INFO] Successfully expanded process working set quotas for physical RAM locking.")
 	}
 
+	// Win32 Job Object の初期化（Chrome風プロセスグループ化 ＆ 自動一括クリーンアップ）
+	if err := dispatcher.InitGlobalJob(); err != nil {
+		log.Printf("[WARN] Failed to initialize Win32 Job Object: %v", err)
+	}
+
 
 	// Compute Target RAM Workers (Clamped to 95% maximum safety ceiling)
 	effectiveRamRatio := cfg.Orchestrator.MaxRamRatio

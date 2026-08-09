@@ -269,6 +269,12 @@ func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID 
 		return "", fmt.Errorf("failed to start %s: %w", role, err)
 	}
 
+	if cmd.Process != nil {
+		if err := AssignPidToJob(cmd.Process.Pid); err != nil {
+			d.LogWarn("[W-%d] AssignPidToJob note: %v", workerID, err)
+		}
+	}
+
 	d.streamColoredLog(stderrPipe, workerID, role, color)
 
 	err = cmd.Wait()
