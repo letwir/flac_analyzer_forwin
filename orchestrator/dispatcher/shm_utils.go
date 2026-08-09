@@ -3,8 +3,9 @@ package dispatcher
 // EstimateShmSize calculates the required shared memory size for a single stem
 // based on the original FLAC file size.
 func EstimateShmSize(fileSize int64) uint32 {
-	marginMultiplier := int64(5)
-	estimated := fileSize * marginMultiplier
+	// FLAC 圧縮率 (約50%) に対する float32 PCM の展開比率は約 3.5 倍ですわ。
+	// 不要なコミットチャージ過剰要求 (WinError 1455) を回避するため適正化しますの。
+	estimated := int64(float64(fileSize) * 3.5)
 	
 	if estimated < 1024*1024 {
 		estimated = 1024 * 1024

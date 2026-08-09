@@ -18,6 +18,9 @@
 - [x]DONE #10 【Docs】 README.md: Mermaid図に FLAC タグ書き戻し + Windows タイムスタンプ保護のステップを追加
 
 ## 課題・仕様検討
+- [-]WIP 【Fix/Memory】 `spectral_bandwidth` float64 抹殺 ＆ FLACデコードインプレース化 ＋ config.toml 反映
+  - 現状: `_calc_spectral_bandwidth` で Librosa が float64 (154 MiB) を多重確保し、`pcm_bytes_to_float32` の非インプレース除算 (91.9 MiB) および `config.toml` 未反映による11並列動作が重なり `WinError 1455` 発生。
+  - 方針: ① `_calc_spectral_bandwidth` を `ctx.centroid` 利用の pure float32 ベクトル計算へ置換。② `flac_decode.py` の `pcm_bytes_to_float32` をインプレース乗算 (`*=`) に修正。③ `config.toml` の `estimated_worker_ram_gb = 3.5` の安全適用手順。
 - [ ] 【Spec/HNR】 HNR特徴量の評価値（NAP: 0.0〜1.0）から一般的な Harmonics-to-Noise Ratio (dB) へのスケール変換・Vorbisタグ/DB命名の見直し
   - 現状: `_calc_hnr_nap` は Wiener–Khinchin 経由の正規化自己相関ピーク (NAP, 0.0〜1.0) を算出しており、一般的な音響分析ツール (Praat等) の HNR (dB: $10 \cdot \log_{10}(\text{NAP}/(1-\text{NAP}))$) と数値スケールが異なる。
   - 方針: ETL実行中のため即時コード変更は避け、次回バッチ/マイグレーション時に① `LIBROSA_HNR` タグを dB 変換値に切り替えるか、② `LIBROSA_NAP` (0.0~1.0) と `LIBROSA_HNR` (dB) の定義を分離整理するかを決定して適用する。

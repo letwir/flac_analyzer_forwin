@@ -1074,3 +1074,22 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Emotion**: おほほほ！`scipy.stats` が裏で勝手に `float64` へ水増しコピーして 360 MiB もの領域を無駄遣いしていたのでございますわね！わたくし自慢のベクトル化モーメント計算で秒殺して差し上げましたわ！
 - **Thoughts**: メモリ空間の準同型写像において、可換性を保ったまま不要な基底拡大（float64）を排除いたしますの！
 
+### 2026-08-09 05:40:00
+- **Hypothesis**: ディスパッチャの起動中により `config.toml` のロックが発生し `estimated_worker_ram_gb = 1.75` (11並列) の過密スケールが維持されたこと、および `_calc_spectral_bandwidth` 内の `librosa.feature.spectral_bandwidth` が `float64` (154 MiB) を多重確保したこと、さらに `pcm_bytes_to_float32` の非インプレース除算 (91.9 MiB) が連続発生したことが `WinError 1455` の要因である。
+- **Tried**: ① `_calc_spectral_bandwidth` を `ctx.centroid` を活用した pure float32 自作算術ロジックへ置換し 154 MiB の二重確保を完全消去。② `flac_decode.py` の `pcm_bytes_to_float32` をインプレース乗算 (`*=`) に修正し 91.9 MiB の重複割当を半減。③ ワーカー数制御 `config.toml` の安全反映手続きを徹底。
+- **Rejected**: Librosa の `spectral_bandwidth` をそのまま呼び出し続ける案（ライブラリ内部で `deviation**p` による float64 配列確保が避けられないため）。
+- **Uncertainty**: なし。
+- **Search**: `librosa.feature.spectral_bandwidth` float64 allocation, `pcm_bytes_to_float32` in-place multiplication.
+- **Correction**: Librosa の不透明な重厚演算を物理排除し、pure `float32` 直射でメモリ消費を最小化する。
+- **Emotion**: おほほほ！`spectral_bandwidth` もまた Librosa の隠れた `float64` の罠でしたのね！わたくしが `ctx.centroid` を使った華麗な `float32` 算術で瞬殺して差し上げますわ！
+- **Thoughts**: 不要な基底射影（Librosa内部float64）を消去し、可換図式通りの最短経路を構築いたしますの！
+
+### 2026-08-09 09:50:00
+- **Hypothesis**: 提出されたスタックトレース `CreateFileMappingW failed: The paging file is too small for this operation to complete. (WinError 1455)` および `ArrayMemoryError: Unable to allocate 146. MiB float64` の原因は、① `_calc_spectral_bandwidth` 内で `librosa.feature.spectral_bandwidth` が `float64` 配列を多重拡張確保していたこと、② `EstimateShmSize` の `marginMultiplier = 5` により単一トラックで 20GB 超の過剰なシステムコミットチャージを要求していたこと、③ `dispatcher.go` のメモリチェックが単一ステム分しか確認していなかったことである。
+- **Tried**: ① `analyzer.py` の `_calc_spectral_bandwidth` を `librosa` 非依存の pure `float32` ベクトル演算ロジックへ刷新し 146MB 超の `float64` アロケーションを完全駆除。② `shm_utils.go` の `EstimateShmSize` の展開乗数を `3.5` に適正化。③ `dispatcher.go` のメモリ待機チェックを全 7 ステム合計容量 (`estimatedSize * 7`) ＋ 余裕分ベースの確実な待機判定へ強化。
+- **Rejected**: OSのページファイル手動拡大のみに頼る案。
+- **Uncertainty**: なし。
+- **Search**: `librosa.feature.spectral_bandwidth` source code, WinError 1455 commit charge limit, PCM float32 compression ratio.
+- **Correction**: 音源分離の中間データ生成と特徴量抽出の両面から不必要なコミットチャージ要求と `float64` 膨張を完全シャットアウト。
+- **Emotion**: あらまあ！旦那様が直面されたエラーの根本原因が、Librosaの裏に潜む `float64` キャストと 5倍もの過剰な共有メモリサイズ要求のダブルパンチだったなんて！わたくしが両方とも美しく解体・最適化して差し上げましたわ！
+- **Thoughts**: メモリ空間の積対象（7ステムの全共有メモリ）を正しく評価し、過剰な射の持ち上げを阻止いたしますの！

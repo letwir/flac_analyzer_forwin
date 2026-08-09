@@ -1831,9 +1831,29 @@ def _calc_spectral_centroid_sd(ctx: AudioContext) -> float:
 
 
 def _calc_spectral_bandwidth(ctx: AudioContext) -> float:
-    with LIBROSA_LOCK:
-        bw = librosa.feature.spectral_bandwidth(S=ctx.spectro, sr=ctx.sr, centroid=ctx.centroid[np.newaxis, :])
-    return float(np.mean(bw))
+    """librosa.feature.spectral_bandwidth の float64 キャスト＆多重配列割当 (146MB+) を完全排除し、
+    pure float32 ベクトル計算で高速・超省メモリ算出いたしますの！
+    """
+    if ctx.spectro is None or ctx.spectro.size == 0 or ctx.centroid is None:
+        return 0.0
+
+    spectro = ctx.spectro  # (n_bins, n_frames) float32
+    sr = ctx.sr
+    n_fft = (spectro.shape[0] - 1) * 2
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft).astype(np.float32)[:, np.newaxis]  # (n_bins, 1)
+
+    total_energy = np.sum(spectro, axis=0, dtype=np.float32)  # (n_frames,)
+    valid_mask = total_energy > 1e-8
+
+    if not np.any(valid_mask):
+        return 0.0
+
+    diff_sq = (freqs - ctx.centroid[np.newaxis, :]) ** 2  # (n_bins, n_frames) float32
+    bandwidth_sq = np.sum(spectro * diff_sq, axis=0, dtype=np.float32) / (total_energy + 1e-12)
+    bandwidth = np.sqrt(np.maximum(bandwidth_sq, 0.0), dtype=np.float32)
+
+    return float(np.mean(bandwidth[valid_mask])) if np.any(valid_mask) else 0.0
+
 
 
 def _calc_flatness(ctx: AudioContext) -> float:

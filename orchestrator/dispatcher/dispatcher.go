@@ -458,9 +458,12 @@ func (d *Dispatcher) worker(id int) {
 					d.LogWarn("[W-%d] Memory check failed: %v", id, err)
 					break 
 				}
-				requiredMem := uint64(estimatedSize) + (4 * 1024 * 1024 * 1024) 
+				// 全ステム合計の共有メモリ割り当て予定容量 (len(stems)) + 作業用余力 2GB を確認
+				totalStemsNeeded := uint64(estimatedSize) * uint64(len(stems))
+				requiredMem := totalStemsNeeded + (2 * 1024 * 1024 * 1024) 
 				if availPhys > requiredMem { break }
-				d.LogInfo("[W-%d] Waiting for memory... (Avail: %d MB)", id, availPhys/1024/1024)
+				d.LogInfo("[W-%d] Waiting for memory for all stems (%d MB total)... (Avail: %d MB)", id, totalStemsNeeded/1024/1024, availPhys/1024/1024)
+
 				d.allocMutex.Unlock()
 				time.Sleep(3 * time.Second)
 				d.allocMutex.Lock()
