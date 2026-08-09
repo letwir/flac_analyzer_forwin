@@ -1,9 +1,11 @@
-# Walkthrough: Physical RAM Lock & Graceful Fallback Implementation
+# Walkthrough: Refactoring analyzer.py into analyzer/ package
 
-- **Summary**: Implemented Win32 `VirtualLock` and `VirtualUnlock` inside Go orchestrator shared memory management (`shm_windows.go`). Added working set expansion (`SetProcessWorkingSetSizeEx`) and ensured a graceful fallback to standard shared memory when memory locking quotas are exceeded.
-
-- Modified Files:
-  - `orchestrator/dispatcher/shm_windows.go`: Added `procVirtualLock`, `procVirtualUnlock`, `procSetProcessWorkingSetSizeEx` bindings.
-  - `orchestrator/dispatcher/shm_windows_test.go`: Added `isLocked` status validation.
-  - `orchestrator/main.go`: Enabled working set expansion upon startup.
-  - `config.toml.example`: Added `enable_virtual_lock` setting documentation.
+- **Summary**: Transformed 2,835-line `analyzer.py` into clean modular package `analyzer/`.
+- **Modules**:
+  - `analyzer/__init__.py`: Backward compatibility facade.
+  - `analyzer/core.py`: AudioContext, StemContext, FeatureExtractor (Reader Applicative).
+  - `analyzer/types.py`: Feature dataclasses (RawFeatures, TonnetzFeatures, etc.).
+  - `analyzer/librosa_dsp.py`: Librosa feature extraction & pipeline.
+  - `analyzer/stats.py`: Scipy, Hilbert, and Peak statistics.
+  - `analyzer/essentia_dsp.py`: Chord sequence & Vocal F0 extraction.
+- **Verification**: Package imports and integration tests passed.

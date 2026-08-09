@@ -1,7 +1,6 @@
-# Implementation Plan: Physical RAM Lock & Graceful Fallback Optimization
+# Implementation Plan: Refactoring analyzer.py into analyzer/ package
 
-- **Goal**: Transition from pagefile-backed shared memory to direct physical RAM locking via Win32 `VirtualLock` API and `SetProcessWorkingSetSizeEx`, while guaranteeing a 100% transparent fallback to standard shared memory management.
-
-- Target: `orchestrator/dispatcher/shm_windows.go`, `main.go`, `config.toml.example`
-- Feature: Win32 `VirtualLock` / `VirtualUnlock` physical RAM pinning, working set extension, and graceful fallback log reporting.
-- Status: Completed
+- **Goal**: Decompose monolithic `analyzer.py` into a structured `analyzer/` package (`core`, `types`, `librosa_dsp`, `stats`, `essentia_dsp`) with full backward-compatibility facade in `__init__.py`.
+- **Target**: `analyzer/` directory, `analyzer/__init__.py`, `analyzer/core.py`, `analyzer/types.py`, `analyzer/librosa_dsp.py`, `analyzer/stats.py`, `analyzer/essentia_dsp.py`.
+- **Feature**: Modular domain separation, Category Theoretical soundness enhancement, and zero-breaking facade export.
+- **Status**: Completed
