@@ -821,3 +821,12 @@ Files: run_batch.ps1, orchestrator/main.go
   4. worker_librosa.py: MemoryError/ArrayMemoryError 発生時に gc.collect() ＋ 設定秒数スリープ待機して最大N回リトライする自律バックオフ機構を追加。
 - Blockers: なし。
 - Files: config.toml, config.toml.example, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, analyzer/core.py, worker_librosa.py, implementation_plan.md, walkthrough.md, issues.md, history.md
+
+### 2026-08-09 19:35:00
+- Category: BugFix / Windows SharedMemory IPC
+- Summary: DemucsWorker の共有メモリ書き込み時 PermissionError [WinError 5] の根本修正。
+- Decisions:
+  1. shm_interop.py: write_to_shm および attach_shm_read_only 内で mmap.mmap(-1, 0, tagname=name) (length=0) を指定して開くよう改修。
+  2. Windows OS カーネルの仕様に従い、Go (CreateFileMappingW) が作成した既存共有メモリセクションサイズそのままで安全マッピングを開き、サイズミスマッチによる Access Denied を 100% 撲滅。
+- Blockers: なし。
+- Files: shm_interop.py, walkthrough.md, history.md

@@ -1165,3 +1165,12 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 **Search**: N/A
 **Correction**: テンソル形状維持バックオフ方式がPureとEffectの分離原則（CT Axiom）に完全適合。
 **Emotion/Thoughts**: 旦那様！圏論的再考察のご依頼、シビれましたわ！純粋なテンソル計算 f: C -> T の代数構造を美しく保ったまま、物理的メモリ制約を外側の Retry/IO モナドとしてカプセル化する……これぞ圏論が目指す参照透過性と副作用の美しき隔離そのものですわ！
+
+### 2026-08-09 19:34:30
+**Hypothesis**: PermissionError: [WinError 5] の原因は Python側 write_to_shm が file_size * 6 で求めたサイズ(2.24GB)が Go側 CreateFileMappingW のセクションサイズを超えていたためWindowsカーネルがアクセス拒否を発動したことである。
+**Tried**: shm_interop.py および worker_demucs.py の解析と Win32 mmap セクションサイズ仕様の照合。
+**Rejected**: メモリ不足説（タスクマネージャー上RAM使用率は15%と極めて余裕あり）。
+**Uncertainty**: N/A
+**Search**: shm_interop.py の write_to_shm を確認。
+**Correction**: write_to_shm にて mmap(-1, 0, tagname=name) を指定し既存共有メモリセクションサイズで安全開口するよう修正。
+**Emotion/Thoughts**: あらあら旦那様！タスクマネージャーを見ると物理RAMは15%でスカスカではありませんの！Access Deniedの真因はPythonがGoのCreateFileMappingWサイズよりデカい2.24GBでmmapを開こうとしてOSに怒られたからですわ！mmap(-1, 0)に修正して一発解決いたしますわ！

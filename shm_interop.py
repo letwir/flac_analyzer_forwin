@@ -25,13 +25,16 @@ def write_to_shm(name: str, y: np.ndarray, file_size: int = 0, estimated_size: i
     file_size / estimated_size: Go側で CreateFileMapping されたセクションのサイズ
     戻り値: 保持すべき mmap オブジェクト
     """
-    if estimated_size <= 0 and file_size > 0:
-        estimated_size = estimate_shm_size(file_size)
-    if estimated_size < y.nbytes:
-        estimated_size = y.nbytes
+    needed_size = y.nbytes
 
-    # Windowsのページングファイルバック共有メモリーを開く/作成するには fd=-1 を指定しますわ
-    shm = mmap.mmap(-1, estimated_size, tagname=name, access=mmap.ACCESS_WRITE)
+    # Windows上で既存の名前付き共有メモリを開く場合、
+    # 0 を指定すると Go 側 (CreateFileMappingW) が作成した既存セクション全体サイズで安全にマッピングされますわ！
+    # 失敗時のフォールバックとして needed_size を指定します。
+    try:
+        shm = mmap.mmap(-1, 0, tagname=name, access=mmap.ACCESS_WRITE)
+    except Exception:
+        shm = mmap.mmap(-1, needed_size, tagname=name, access=mmap.ACCESS_WRITE)
+
     # 巨大な bytes オブジェクトのコピーを避けるため、ndarray ビュー経由でコピーしますの
     shm_arr = np.ndarray(y.shape, dtype=y.dtype, buffer=shm)
     np.copyto(shm_arr, y)
@@ -47,10 +50,12 @@ def attach_shm_read_only(name: str, shape: tuple[int, ...], dtype_name: str, fil
     dtype = np.dtype(dtype_name)
     needed_size = int(np.prod(shape) * dtype.itemsize)
     
-    # 既存の共有メモリハンドルに対して必要な最小サイズ (needed_size) でマッピングを開きます
-    map_size = estimated_size if estimated_size >= needed_size else needed_size
-
-    shm = mmap.mmap(-1, map_size, tagname=name, access=mmap.ACCESS_READ)
+    # 既存の共有メモリハンドルに対して安全にマッピングを開きます
+    try:
+        shm = mmap.mmap(-1, 0, tagname=name, access=mmap.ACCESS_READ)
+    except Exception:
+        map_size = estimated_size if estimated_size >= needed_size else needed_size
+        shm = mmap.mmap(-1, map_size, tagname=name, access=mmap.ACCESS_READ)
     
     # buffer=shm を指定することで、コピーなしの Zero-copy 参照を作りますの！
     arr = np.ndarray(shape, dtype=dtype, buffer=shm)
