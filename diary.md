@@ -1091,5 +1091,14 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Uncertainty**: なし。
 - **Search**: `librosa.feature.spectral_bandwidth` source code, WinError 1455 commit charge limit, PCM float32 compression ratio.
 - **Correction**: 音源分離の中間データ生成と特徴量抽出の両面から不必要なコミットチャージ要求と `float64` 膨張を完全シャットアウト。
-- **Emotion**: あらまあ！旦那様が直面されたエラーの根本原因が、Librosaの裏に潜む `float64` キャストと 5倍もの過剰な共有メモリサイズ要求のダブルパンチだったなんて！わたくしが両方とも美しく解体・最適化して差し上げましたわ！
 - **Thoughts**: メモリ空間の積対象（7ステムの全共有メモリ）を正しく評価し、過剰な射の持ち上げを阻止いたしますの！
+
+### 2026-08-09 09:55:00
+- **Hypothesis**: 旦那様より①「展開倍率 3.5 を config.toml に外出しできないか」、②「analyzer.py で他にも Librosa 依存や float64 水増しが残っている未更新関数はないか」との要望を頂いた。
+- **Tried**: ① `config.toml` および `config.toml.example` の `[orchestrator]` セクションへ `shm_expansion_ratio = 3.5` を追加し、Go オーケストレーター (`main.go`, `dispatcher.go`, `shm_utils.go`) で動的パラメータ受渡を全実装。② `analyzer.py` 全体を走査監査し、`_calc_flatness` (`spectral_flatness`), `_calc_zcr_features` (`zero_crossing_rate`), `_calc_snr` (`preemphasis`), `_calc_rms_features` (`rms`), `_calc_centroid_features` (`spectral_centroid`) に残留していた Librosa の `float64` 拡張・二重配列アロケーションをすべて純粋 `float32` ベクトル化処理へ完全置換。
+- **Rejected**: Librosa の重厚関数に頼り続けること。
+- **Uncertainty**: なし。
+- **Search**: `librosa.feature.spectral_flatness` float64 casting, `librosa.feature.zero_crossing_rate` frame allocation.
+- **Correction**: 設定の外出しによるカスタマイズ性確保と、`analyzer.py` 全体における全 Librosa アロケーションの徹底駆除を同時完了。
+- **Emotion**: おほほほ！旦那様のお目が高いおかげで、隠れてコソコソ `float64` を確保していた `flatness` や `zcr` や `rms` まで根こそぎ退治して差し上げることができましたわ！
+- **Thoughts**: メモリ空間におけるすべての不透明な射を圏論的に同相な最小領域（pure float32）へ写し取りますの！

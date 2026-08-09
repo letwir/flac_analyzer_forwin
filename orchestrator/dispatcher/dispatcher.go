@@ -71,12 +71,14 @@ type Config struct {
 	MinAvailRamGB         float64
 	DemucsConcurrentLimit int
 	ShmAllocationDelaySec int
+	ShmExpansionRatio     float64
 	QueueDir              string
 	PythonEnv             map[string]string
 	LogLevel              LogLevel
 	EventLog              EventLogger
 	SkipDupByHash         bool
 }
+
 
 type Dispatcher struct {
 	config                 Config
@@ -437,7 +439,9 @@ func (d *Dispatcher) worker(id int) {
 				}
 			}
 			
-			estimatedSize := EstimateShmSizeForTask(task)
+			ratio := d.config.ShmExpansionRatio
+			if ratio <= 0 { ratio = 3.5 }
+			estimatedSize := EstimateShmSizeForTaskWithRatio(task, ratio)
 			
 			d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot...", id)
 			d.demucsSemaphore <- struct{}{}

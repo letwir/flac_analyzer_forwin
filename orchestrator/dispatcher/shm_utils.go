@@ -1,11 +1,17 @@
 package dispatcher
 
 // EstimateShmSize calculates the required shared memory size for a single stem
-// based on the original FLAC file size.
+// based on the original FLAC file size and default expansion ratio (3.5).
 func EstimateShmSize(fileSize int64) uint32 {
-	// FLAC 圧縮率 (約50%) に対する float32 PCM の展開比率は約 3.5 倍ですわ。
-	// 不要なコミットチャージ過剰要求 (WinError 1455) を回避するため適正化しますの。
-	estimated := int64(float64(fileSize) * 3.5)
+	return EstimateShmSizeWithRatio(fileSize, 3.5)
+}
+
+// EstimateShmSizeWithRatio calculates the required shared memory size using a configurable expansion ratio.
+func EstimateShmSizeWithRatio(fileSize int64, ratio float64) uint32 {
+	if ratio <= 0 {
+		ratio = 3.5
+	}
+	estimated := int64(float64(fileSize) * ratio)
 	
 	if estimated < 1024*1024 {
 		estimated = 1024 * 1024
@@ -14,9 +20,13 @@ func EstimateShmSize(fileSize int64) uint32 {
 	return uint32(estimated)
 }
 
-// EstimateShmSizeForTask calculates the required shared memory size for a single stem,
-// taking into account whether the task is a sliced CUE track or a full FLAC file.
+// EstimateShmSizeForTask calculates the required shared memory size for a single stem using default ratio.
 func EstimateShmSizeForTask(task TaskPayload) uint32 {
+	return EstimateShmSizeForTaskWithRatio(task, 3.5)
+}
+
+// EstimateShmSizeForTaskWithRatio calculates the required shared memory size using configurable ratio.
+func EstimateShmSizeForTaskWithRatio(task TaskPayload, ratio float64) uint32 {
 	if task.StartSample >= 0 && task.EndSample > task.StartSample {
 		// CUE track calculation: numSamples * 2 (channels) * 4 (float32 bytes) * 1.5 (safety margin)
 		numSamples := uint64(task.EndSample - task.StartSample)
@@ -27,8 +37,9 @@ func EstimateShmSizeForTask(task TaskPayload) uint32 {
 		}
 		return uint32(estimated)
 	}
-	return EstimateShmSize(task.FileSize)
+	return EstimateShmSizeWithRatio(task.FileSize, ratio)
 }
+
 
 // EstimateDemucsTotalRamBytes estimates the total memory (stems + PyTorch buffer + processing margin)
 // required for Demucs and feature extraction based on CUE track samples or FLAC file size.

@@ -34,7 +34,9 @@ type Config struct {
 		MinAvailRamGB         float64 `toml:"min_avail_ram_gb"`
 		DemucsConcurrentLimit int     `toml:"demucs_concurrent_limit"`
 		ShmAllocationDelaySec int     `toml:"shm_allocation_delay_sec"`
+		ShmExpansionRatio     float64 `toml:"shm_expansion_ratio"`
 		QueueDir              string  `toml:"queue_dir"`
+
 		LogLevel              string  `toml:"log_level"`
 		SkipDupByHash         *bool   `toml:"skip_dup_by_hash"`
 	} `toml:"orchestrator"`
@@ -139,6 +141,10 @@ func main() {
 	if cfg.Orchestrator.DemucsConcurrentLimit <= 0 {
 		cfg.Orchestrator.DemucsConcurrentLimit = 1
 	}
+	if cfg.Orchestrator.ShmExpansionRatio <= 0 {
+		cfg.Orchestrator.ShmExpansionRatio = 3.5
+	}
+
 
 	// Query system RAM & CPU for dynamic worker calculation
 	memInfo, memErr := sysinfo.GetMemoryInfo()
@@ -298,7 +304,9 @@ func main() {
 		MinAvailRamGB:         cfg.Orchestrator.MinAvailRamGB,
 		DemucsConcurrentLimit: cfg.Orchestrator.DemucsConcurrentLimit,
 		ShmAllocationDelaySec: cfg.Orchestrator.ShmAllocationDelaySec,
+		ShmExpansionRatio:     cfg.Orchestrator.ShmExpansionRatio,
 		QueueDir:              cfg.Orchestrator.QueueDir,
+
 		PythonEnv:             resolvedPythonEnv,
 		LogLevel:              logLevel,
 		EventLog:              elog,

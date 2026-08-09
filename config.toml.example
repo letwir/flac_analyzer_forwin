@@ -16,6 +16,9 @@ min_avail_ram_gb = 3.5           # 最低保証空きメモリ容量 (GB)
 demucs_concurrent_limit = 1
 # 共有メモリ (SHM) 割り当てインターバル (秒)
 shm_allocation_delay_sec = 2
+# 共有メモリ (SHM) の FLAC ファイルに対する PCM 展開マージン比率 (デフォルト: 3.5)
+shm_expansion_ratio = 3.5
+
 
 # 解析中間 JSON の出力キューディレクトリ (相対パスまたは絶対パス)
 queue_dir = "./queue"

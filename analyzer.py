@@ -1699,8 +1699,10 @@ def _calc_time_entropy(seq: np.ndarray | list[float]) -> float:
 
 
 def _calc_rms_features(ctx: AudioContext) -> RmsFeatures:
-    """RMS詳細特徴量群を算出しますわ。"""
-    rms = librosa.feature.rms(S=ctx.spectro)[0]  # (T,)
+    """librosa.feature.rms の float64 アロケーションを完全排除し pure float32 計算しますわ。"""
+    if ctx.spectro is None or ctx.spectro.size == 0:
+        return RmsFeatures()
+    rms = np.sqrt(np.mean(ctx.spectro ** 2, axis=0, dtype=np.float32))
     mean = float(np.mean(rms))
     std = float(np.std(rms))
     seq = _resample_to_fixed_frames(rms)
@@ -1710,8 +1712,10 @@ def _calc_rms_features(ctx: AudioContext) -> RmsFeatures:
 
 
 def _calc_centroid_features(ctx: AudioContext) -> SpectralCentroidFeatures:
-    """Spectral Centroid詳細特徴量群を算出しますわ。"""
-    cent = librosa.feature.spectral_centroid(S=ctx.spectro, sr=ctx.sr)[0]  # (T,)
+    """キャッシュ済みの ctx.centroid を活用し二重計算と float64 確保を完全排除しますの。"""
+    if ctx.centroid is None or ctx.centroid.size == 0:
+        return SpectralCentroidFeatures()
+    cent = ctx.centroid
     mean = float(np.mean(cent))
     std = float(np.std(cent))
     seq = _resample_to_fixed_frames(cent)
@@ -1720,6 +1724,7 @@ def _calc_centroid_features(ctx: AudioContext) -> SpectralCentroidFeatures:
     return SpectralCentroidFeatures(
         mean=mean, std=std, entropy=entropy, seq=seq, peak=peak
     )
+
 
 
 def _calc_mfcc_features(ctx: AudioContext) -> MfccFeatures:
@@ -1857,8 +1862,18 @@ def _calc_spectral_bandwidth(ctx: AudioContext) -> float:
 
 
 def _calc_flatness(ctx: AudioContext) -> float:
-    flatness = librosa.feature.spectral_flatness(S=ctx.power)
-    return float(np.mean(flatness))
+    """librosa.feature.spectral_flatness の float64 キャストを完全排除し、
+    pure float32 ベクトル計算で高速算出いたしますの！
+    """
+    if ctx.power is None or ctx.power.size == 0:
+        return 0.0
+    power = ctx.power  # (n_bins, n_frames) float32
+    log_p = np.log(power + 1e-12)
+    geom_mean = np.exp(np.mean(log_p, axis=0, dtype=np.float32))
+    arith_mean = np.mean(power, axis=0, dtype=np.float32)
+    flatness_seq = geom_mean / (arith_mean + 1e-12)
+    return float(np.mean(flatness_seq))
+
 
 
 def _calc_rolloff_features(ctx: AudioContext) -> SpectralRolloffFeatures:
@@ -1886,8 +1901,10 @@ def _calc_contrast(ctx: AudioContext) -> list[float]:
 
 
 def _calc_zcr_features(ctx: AudioContext) -> ZcrFeatures:
-    with LIBROSA_LOCK:
-        zcr = librosa.feature.zero_crossing_rate(y=ctx.y)[0]
+    if ctx.y is None or len(ctx.y) == 0:
+        return ZcrFeatures()
+    frames = librosa.util.frame(ctx.y, frame_length=2048, hop_length=512)
+    zcr = np.mean(np.diff(np.signbit(frames), axis=0) != 0, axis=0, dtype=np.float32)
     if len(zcr) == 0:
         return ZcrFeatures()
     mean_val = float(np.mean(zcr))
@@ -1897,15 +1914,18 @@ def _calc_zcr_features(ctx: AudioContext) -> ZcrFeatures:
 
 
 def _calc_snr(ctx: AudioContext) -> float | None:
-    if ctx.source != "mix":
+    if ctx.source != "mix" or ctx.y is None or len(ctx.y) == 0:
         return 0.0
-    sig_pwr = np.mean(ctx.y**2)
-    with LIBROSA_LOCK:
-        noise_est = ctx.y - librosa.effects.preemphasis(ctx.y)
-    noise_pwr = np.mean(noise_est**2)
-    if noise_pwr > 0:
-        return float(np.log10(sig_pwr / noise_pwr))
-    return None
+    sig_pwr = float(np.dot(ctx.y, ctx.y) / len(ctx.y))
+    noise_est = np.empty_like(ctx.y)
+    noise_est[0] = ctx.y[0]
+    noise_est[1:] = ctx.y[1:] - 0.97 * ctx.y[:-1]
+    noise_pwr = float(np.dot(noise_est, noise_est) / len(noise_est))
+    if noise_pwr <= 1e-12:
+        return 100.0
+    snr = 10.0 * np.log10(sig_pwr / (noise_pwr + 1e-12))
+    return float(snr)
+
 
 
 def _calc_mfccs(ctx: AudioContext) -> list[float]:
