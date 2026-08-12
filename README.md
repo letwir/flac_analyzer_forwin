@@ -144,6 +144,21 @@ PostgreSQL 送信失敗により `send_failed.db` へ一時退避（Dead Letter 
 .venv\Scripts\python.exe retry_ingest.py
 ```
 
+#### ステップ 4: 既存楽曲のタグ補完・再焼き込み (独立治具 ./zig/)
+PostgreSQL DB に蓄積された過去の解析結果から、FLAC ファイル本体へ未焼き込みの不足タグ（`LIBROSA_*`, `ESSENTIA_*`, `ESSENTIA_GENRE_DISCOGS400_TOP` 等）を自動検出し、CUE シート有無（`CUE_TRACKxx_` プレフィックス切り替え）を自動判定して安全に焼き込み補完します。
+
+```powershell
+# プレビュー確認 (ドライランモード)
+.venv\Scripts\python.exe ./zig/repair_flac_tags.py --dry-run --limit 10
+
+# 実際に過去楽曲へのタグ焼き込み補完を実行
+.venv\Scripts\python.exe ./zig/repair_flac_tags.py
+
+# 特定ディレクトリ以下のファイルに限定して実行
+.venv\Scripts\python.exe ./zig/repair_flac_tags.py --dir "M:\Music\album"
+```
+
+
 ---
 
 ## 概要詳しく

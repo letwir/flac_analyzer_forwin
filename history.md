@@ -841,3 +841,15 @@ Files: run_batch.ps1, orchestrator/main.go
   4. タスクマネージャー上での orchestrator.exe 配下への Python ワーカーの Chrome 風ツリーぶら下がり表示と、リソース制限非適用によるノーリスク運用を保証。
 - Blockers: なし。
 - Files: orchestrator/dispatcher/job_windows.go, orchestrator/main.go, orchestrator/dispatcher/dispatcher.go, walkthrough.md, issues.md, history.md
+
+### 2026-08-13 08:00:00
+- Category: Feature / Tagging / Refactor
+- Summary: FLAC VorbisComment タグ焼き込み機能 (flac_tagger.py) の復元・統合および一元化。
+- Decisions:
+  1. flac_tagger.py [NEW]: Librosa, Essentia, Tensor JSON から FLAC タグを集成・整形（ESSENTIA 1000倍整数, LIBROSA 浮動小数点数/100倍整数, Discogs400等モデル別最大値クラス文字列挿入）し、ロック回避バックオフリトライおよび Windows ctime/mtime/atime 保護を一元実装。
+  2. config.toml: [python_env] セクションに file_retry_count(5) および file_retry_delay_sec(3) を追加。
+  3. orchestrator/dispatcher/dispatcher.go: 各ワーカーの JSON 書き出し直後に runPythonScript("flac_tagger.py", ...) を自動起動するようパイプラインを拡張。
+  4. orchestrator/orchestrator.exe: 再ビルド完了。
+- Blockers: なし。
+- Files: flac_tagger.py, config.toml, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe, walkthrough.md, history.md, issues.md, diary.md
+

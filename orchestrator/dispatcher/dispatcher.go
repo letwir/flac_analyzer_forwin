@@ -713,8 +713,24 @@ func (d *Dispatcher) worker(id int) {
 				d.failTask(task, fmt.Sprintf("Failed to write Librosa JSON: %v", err))
 				return
 			}
-			
+
+			// 6.4 FLAC Tagger
+			taggerArgs := []string{
+				"--flac-path", task.FlacPath,
+				"--json-path", outPath,
+				"--predictions-json-path", outPathEss,
+				"--tensor-json-path", outPathTensor,
+			}
+			if task.TrackNumber > 0 {
+				taggerArgs = append(taggerArgs, "--prefix", fmt.Sprintf("CUE_TRACK%02d", task.TrackNumber))
+			}
+			_, tagErr := d.runPythonScript("flac_tagger.py", taggerArgs, id, "FlacTagger", ColorCyan, true)
+			if tagErr != nil {
+				d.LogWarn("[W-%d] FLAC tagger warned/failed for %s: %v", id, task.FlacPath, tagErr)
+			}
+
 			// 6.5 Ingester
+
 			// Ingester handles DB upsert and DLQ logic
 			_, err = d.runPythonScript("ingester.py", []string{
 				"--flac-path", task.FlacPath,

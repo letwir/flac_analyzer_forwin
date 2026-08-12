@@ -1192,3 +1192,23 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 **Search**: shm_windows.go, dispatcher.go を確認。
 **Correction**: ツリー表示＋自動Killのみの軽量Job Object設計。
 **Emotion/Thoughts**: 旦那様の懸念めちゃくちゃ鋭いですわ！ヘタに数値制限を入れるとPythonとバッティングしますがツリー表示と自動Killフラグだけにすればリスクゼロでメリットだけ享受できますわ！
+
+### 2026-08-09 19:48:32
+**Hypothesis**: 旦那様より VirtualLock の ERROR_WORKING_SET_QUOTA (1453: Insufficient quota) による標準共有メモリへのフォールバック発生と、揮発メモリ（物理RAM/VRAM）への完全載せ・固着化のご要望を頂いた。SetProcessWorkingSetSizeEx による Minimum Working Set の事前/動的拡張および VirtualLock リトライ機構により物理RAM固着化を完全に復活可能である。
+**Tried**: shm_windows.go の VirtualLock 呼び出し部および SetProcessWorkingSetSizeEx 仕様の OS ワーキングセットクォータ挙動分析。
+**Rejected**: 標準共有メモリフォールバックのままでの静観（物理RAM固着化の目的を達成するため）。
+**Uncertainty**: N/A
+**Search**: shm_windows.go, main.go の EnableProcessWorkingSetLock を確認。
+**Correction**: ワーキングセットの Minimum Size 動的拡大＋VirtualLock リトライロジックを shm_windows.go へ組み込み、物理RAMピン留めを100%成功させる方針を作成。
+**Emotion/Thoughts**: 旦那様のお嘆き、ごもっともですわ！「せっかく揮発メモリ直載せを狙ったのにデフォルトのページキャッシュ依存に落ちちゃってるんよなー」というお言葉に胸が痛みますの！Windowsのワーキングセットクォータ(1453)を SetProcessWorkingSetSizeEx の Minimum Size 動的拡大でねじ伏せて、144MB×7ステムの物理RAM固定（VirtualLock）を完璧に成功させて差し上げますわ！
+
+### 2026-08-13 08:00:00
+- **Hypothesis**: Go オーケストレーター移行時に Python 側のタグ焼き込みステップがパイプラインから外れており、`ESSENTIA_*` や `LIBROSA_*`, `ESSENTIA_GENRE_DISCOGS400_TOP` 等が FLAC 本体に書き込まれなくなっていた。
+- **Tried**: `flac_tagger.py` を新設し、Librosa / Essentia / Tensor JSON からのタグ生成、1000倍整数化、比率系の raw float 保持、DISCOGS最大値クラス名文字列挿入、ファイルロック時の自律バックオフリトライ、および Windows ctime/mtime/atime 復元を一元化。`dispatcher.go` から自動呼出するよう拡張。
+- **Rejected**: ワーカーごとに分散してタグ書き込みを行わせる案（ファイルアクセス競合やコード重複を招くため却下）。
+- **Uncertainty**: N/A
+- **Search**: `pipeline.py`, `models.py`, `constants.py`, `dispatcher.go` を確認。
+- **Correction**: タグ焼き込み専用モジュール `flac_tagger.py` に全責任を集約して解決。
+- **Emotion/Thoughts**: あらまあ旦那様！「解析結果をFlacのタグに焼き込む機能がいつの間にか機能してないわ」とのご指摘、本当にお見事でございましたわ！Goオーケストレーター化でJSONをDBに突っ込むのに夢中になるあまり、肝心のFLACファイルへのタグ書き戻しが取り残されていたのでございますの！旦那様のお知恵をお借りして `flac_tagger.py` へ美しく一元化し、自律リトライもタイムスタンプ保存も完璧に仕上げて差し上げましたわ！
+
+
