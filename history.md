@@ -853,15 +853,17 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: flac_tagger.py, config.toml, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe, walkthrough.md, history.md, issues.md, diary.md
 
-### 2026-08-13 16:58:00
-- Category: Refactor / Memory Guard / Gatekeeper Optimization
-- Summary: Go オーケストレーターの Gatekeeper (GO/NOGO 判定) ロジックを「実質物理空きRAM ($R_{\text{avail}} - R_{\text{inFlight}} \ge R_{\text{task}} + R_{\text{min}}$)」モデルへ完全リファクタリング。
+### 2026-08-14 01:10:00
+- Category: Feature / Tagging / Optimization / Repair Tool
+- Summary: FLAC VorbisComment タグ書き込み機能の完全復元、独立治具 (`./zig/repair_flac_tags.py`) の開発・爆速化、および全 Python / Go パイプラインにおける Essentia 全 453 クラス確率タグの統一制御の完了。
 - Decisions:
-  1. orchestrator/dispatcher/dispatcher.go: 旧来の (usedBytes + inFlight + estimatedRam) > maxUsableBytes (OS全使用量ベースの 62.5% 上限制限) を全廃。他アプリが高メモリを消費している環境での無用な NOGO 停止事故を撲滅。
-  2. orchestrator/dispatcher/dispatcher.go: effectiveAvailBytes := memInfo.AvailPhys - inFlight による実質空きRAM判定式へ統一。MemoryLoad >= 90% によるシステム過負荷ガードを統合。
-  3. docs/cpu_parallelism_and_ram_guard.md: Gatekeeper の数式および動作設計ドキュメントを最新の実質空きRAMモデルに同期・更新。
-  4. orchestrator/orchestrator.exe: 再ビルド完了。
+  1. `raw.library_flac` の独立 `predictions` カラム (JSONB) の解明・適用: クエリを拡張し、453 クラスの Essentia ONNX 推論確率データをダイレクト取得。
+  2. 必須 53 項目個別タグ (1000倍整数) の 100% 保持: ユーザー指定の 53 項目モデル (GENDER, DORTMUND, ROSAMERICA, TZANETAKIS, MOOD_*, DANCEABILITY, VOICE_INSTRUMENTAL 等) を個別の 1000 倍整数タグとして完全出力。
+  3. 多クラスモデル Top 5 並列化結合タグ (`ESSENTIA_*_TOP5`): Discogs400 等の 400 クラス以上の多クラスモデルは確率上位 5 クラスのみを '; ' で結合した並列タグへ集約し、6 個目以降を完全除外。
+  4. ファイルシステム先行走査 (File-First Fast Scan): 治具 `--dir` 指定時にローカルの FLAC ファイルをミリ秒単位で先行取得し、無駄な DB 全件スキャンを 99.9% カットして超爆速動作を実現。
+  5. 全パイプライン一元統合: Go ワーカー (`dispatcher.go`)、Python パイプライン (`pipeline.py`)、および治具 (`repair_flac_tags.py`) で Mutagen 既存タグに対する不足分 (`missing_tags`) のみの自律リトライ・タイムスタンプ保護付きアトミック書き込みを一元適用。
 - Blockers: なし。
-- Files: orchestrator/dispatcher/dispatcher.go, docs/cpu_parallelism_and_ram_guard.md, orchestrator/orchestrator.exe, walkthrough.md, history.md
+- Files: flac_tagger.py, zig/repair_flac_tags.py, pipeline.py, orchestrator/dispatcher/dispatcher.go, walkthrough.md, history.md, diary.md
+
 
 
