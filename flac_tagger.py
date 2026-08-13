@@ -3,10 +3,10 @@ flac_tagger.py
 ==============
 解析結果 (Librosa, Essentia 453クラス確率, Tensor JSON) および DB meta タグから
 FLAC VorbisComment タグ辞書を統合生成し、
+Essentia ジャンル等の各種分類モデルにおいて確率上位 5 クラス (Top 5) を '; ' で結合した複数タグを作成！
 mutagen で既存の FLAC タグに対する不足分 (missing_tags) のみを検出して、
 アトミック書き込みおよび Windows タイムスタンプ保護（mtime, atime, ctime）を行って
 FLAC 本体へ安全に焼き込むモジュールですわ！
-ファイル使用中（ロック）の場合のバックオフリトライ機構を完備しておりますの。
 """
 
 import argparse
@@ -136,7 +136,7 @@ def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
             clean_k = raw_tag.upper()
             tag_key = f"{prefix + '_' if prefix else ''}{clean_k}"
 
-            if clean_k.endswith("_TOP"):
+            if clean_k.endswith("_TOP") or clean_k.endswith("_TOP5"):
                 tags[tag_key] = val_str
                 continue
 
@@ -171,11 +171,19 @@ def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
             tag_key = f"{prefix + '_' if prefix else ''}{clean_k}"
             tags[tag_key] = val_str
 
+    # TOP および TOP5 結合タグの生成
     for mkey, items in model_groups.items():
-        top_tag = f"{prefix + '_' if prefix else ''}ESSENTIA_{mkey}_TOP"
-        if top_tag not in tags and items:
-            top_class, _ = max(items, key=lambda x: x[1])
-            tags[top_tag] = top_class
+        sorted_items = sorted(items, key=lambda x: x[1], reverse=True)
+        if sorted_items:
+            # 1. TOP タグ (最大値 1 クラス)
+            top_tag = f"{prefix + '_' if prefix else ''}ESSENTIA_{mkey}_TOP"
+            if top_tag not in tags:
+                tags[top_tag] = sorted_items[0][0]
+
+            # 2. TOP5 タグ (上位 5 クラスを '; ' で結合、6個目以降は完全除外)
+            top5_tag = f"{prefix + '_' if prefix else ''}ESSENTIA_{mkey}_TOP5"
+            top5_classes = [it[0] for it in sorted_items[:5]]
+            tags[top5_tag] = "; ".join(top5_classes)
 
     return tags
 
@@ -232,7 +240,7 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
         for i, val in enumerate(mfccs):
             tags[f"{p}LIBROSA_MFCC{i:02d}"] = str(_safe_int(val, 100))
 
-    # 2. Essentia 特徴量 (全453モデル確率1000倍整数化 ＆ TOP文字タグ生成)
+    # 2. Essentia 特徴量 (全453モデル確率1000倍整数化, TOP タグ ＆ TOP5 結合タグ)
     predictions = essentia_data.get("predictions", {})
     if predictions:
         model_groups: dict[str, list[tuple[str, float]]] = {}
@@ -256,10 +264,16 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
                     model_groups[matched_model] = []
                 model_groups[matched_model].append((class_name, prob))
 
+        # TOP タグおよび Top 5 (6個目以降除外) 結合タグの生成
         for mkey, items in model_groups.items():
-            if items:
-                top_class, top_prob = max(items, key=lambda x: x[1])
-                tags[f"{p}ESSENTIA_{mkey}_TOP"] = top_class
+            sorted_items = sorted(items, key=lambda x: x[1], reverse=True)
+            if sorted_items:
+                # Top 1 (最大値)
+                tags[f"{p}ESSENTIA_{mkey}_TOP"] = sorted_items[0][0]
+                
+                # Top 5 (; で結合、6個目以降完全除外)
+                top5_classes = [it[0] for it in sorted_items[:5]]
+                tags[f"{p}ESSENTIA_{mkey}_TOP5"] = "; ".join(top5_classes)
 
     # 3. Tensor 特徴量
     if tensor_data:
@@ -374,7 +388,6 @@ def main():
         logger.warning("書き込むべきタグ情報が生成されませんでした。")
         sys.exit(0)
 
-    # Mutagen で既存の FLAC タグを読み込み、未書き込み / 不足しているタグ (missing_tags) のみを抽出
     missing_tags = expected_tags
     if not args.force and os.path.exists(args.flac_path):
         try:
