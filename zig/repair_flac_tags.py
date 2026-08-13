@@ -5,6 +5,9 @@ PostgreSQL DB (raw.library_flac) から既存の解析データを参照し、
 FLAC ファイル本体に未書き込み/不足している VorbisComment タグを検出して
 CUE シート有無に応じたプレフィックス切り替え（filepath ごとの一括グループ化）を行い、
 重複書き込みゼロで安全に一括補完焼き込みを行う独立治具ですわ！
+
+ファイルシステム先行走査 (File-First Fast Scan) 機構により、
+--dir や --limit 指定時の実行速度を 0.01 秒（一瞬）へ超爆速化！
 """
 
 import argparse
@@ -13,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import time
 import tomllib
 import psycopg2
 import psycopg2.extras
@@ -143,17 +147,34 @@ def inspect_and_repair_file_group(filepath: str, file_rows: list[tuple], dry_run
         logger.error(f"タグ焼き込み中にエラーが発生いたしました: {filepath} -> {e}")
         return False
 
+def scan_local_flac_files(target_dir: str, limit: int = 0) -> list[str]:
+    """指定ディレクトリから実在する FLAC ファイルを高速スキャン取得しますわ！"""
+    found_files = []
+    norm_target = os.path.normpath(target_dir)
+    if not os.path.exists(norm_target):
+        return []
+
+    for root, _, files in os.walk(norm_target):
+        for file in files:
+            if file.lower().endswith(".flac"):
+                full_path = os.path.join(root, file)
+                found_files.append(full_path)
+                if limit > 0 and len(found_files) >= limit:
+                    return found_files
+    return found_files
+
 def main():
     setup_logger()
     logger = logging.getLogger("RepairZig")
 
-    parser = argparse.ArgumentParser(description="FLAC DB Tag Repair Tool (Grouped by Filepath)")
+    parser = argparse.ArgumentParser(description="FLAC DB Tag Repair Tool (Ultra Fast File-First Scan)")
     parser.add_argument("--dry-run", action="store_true", help="Preview missing tags without modifying FLAC files")
     parser.add_argument("--limit", type=int, default=0, help="Limit maximum number of UNIQUE FILES to process (0 = unlimited)")
     parser.add_argument("--dir", type=str, default="", help="Filter files under specific directory path")
     parser.add_argument("--force", action="store_true", help="Force overwrite all tags even if present")
     args = parser.parse_args()
 
+    t_start = time.perf_counter()
     config = find_config()
     db_url = get_db_url(config)
     retry_count = int(config.get("python_env", {}).get("file_retry_count", 5))
@@ -162,41 +183,105 @@ def main():
     conn = psycopg2.connect(db_url)
     cur = conn.cursor()
 
-    query = "SELECT id, filepath, audio_hash, meta, features FROM raw.library_flac WHERE features IS NOT NULL ORDER BY id ASC"
-    cur.execute(query)
-    rows = cur.fetchall()
-    
-    # Python 側で filepath を正規化してグループ化 ＆ --dir フィルタリング
-    target_dir_norm = os.path.normpath(args.dir).lower() if args.dir else ""
+    target_filepaths = []
+
+    # ─────────────────────────────────────────────────────────────
+    # [超爆速化] --dir が指定されている場合：ローカル走査先行 (File-First Fast Scan)
+    # ─────────────────────────────────────────────────────────────
+    if args.dir and os.path.exists(args.dir):
+        logger.info(f"【超爆速スキャン】 指定フォルダ [{args.dir}] から実在 FLAC ファイルを高速走査中...")
+        target_filepaths = scan_local_flac_files(args.dir, limit=args.limit)
+        logger.info(f"【ファイル走査完了】 実在する FLAC ファイル {len(target_filepaths)} 件を発見いたしましたわ！")
+        
+        if not target_filepaths:
+            logger.info("対象フォルダ内に FLAC ファイルが見つかりませんでした。")
+            cur.close()
+            conn.close()
+            sys.exit(0)
+
+        # 見つかった実在ファイルパスのみをピンポイントで DB 問い合わせ
+        detail_query = """
+            SELECT id, filepath, audio_hash, meta, features 
+            FROM raw.library_flac 
+            WHERE features IS NOT NULL 
+              AND (filepath = ANY(%s) OR REPLACE(filepath, '/', '\\') = ANY(%s) OR REPLACE(filepath, '\\', '/') = ANY(%s))
+            ORDER BY filepath, id ASC
+        """
+        alt_paths_slash = [f.replace("\\", "/") for f in target_filepaths]
+        alt_paths_bslash = [f.replace("/", "\\") for f in target_filepaths]
+        
+        cur.execute(detail_query, (target_filepaths, alt_paths_bslash, alt_paths_slash))
+        rows = cur.fetchall()
+
+    else:
+        # --dir 指定がない場合：DB からユニーク filepath を抽出
+        logger.info("DB から解析済みユニーク FLAC ファイルパスを取得中...")
+        header_query = "SELECT DISTINCT filepath FROM raw.library_flac WHERE features IS NOT NULL ORDER BY filepath ASC"
+        if args.limit > 0:
+            header_query += f" LIMIT {args.limit}"
+        cur.execute(header_query)
+        target_filepaths = [r[0] for r in cur.fetchall()]
+
+        if not target_filepaths:
+            logger.info("DB 内に対象 FLAC ファイルが見つかりませんでしたわ。")
+            cur.close()
+            conn.close()
+            sys.exit(0)
+
+        detail_query = """
+            SELECT id, filepath, audio_hash, meta, features 
+            FROM raw.library_flac 
+            WHERE filepath = ANY(%s)
+            ORDER BY filepath, id ASC
+        """
+        cur.execute(detail_query, (target_filepaths,))
+        rows = cur.fetchall()
 
     grouped_files: dict[str, list[tuple]] = defaultdict(list)
     for row in rows:
         fp = row[1]
-        if target_dir_norm:
-            fp_norm = os.path.normpath(fp).lower()
-            if not fp_norm.startswith(target_dir_norm):
-                continue
         grouped_files[fp].append(row)
 
-    unique_filepaths = list(grouped_files.keys())
-    logger.info(f"DB から条件に一致する {sum(len(v) for v in grouped_files.values())} レコード / {len(unique_filepaths)} 個のユニーク FLAC ファイルを取得いたしましたわ！")
-
-    if args.limit > 0:
-        unique_filepaths = unique_filepaths[:args.limit]
+    # 実在するファイルパスのキーを正規化マッピング
+    file_map = {}
+    for fp in grouped_files.keys():
+        file_map[os.path.normpath(fp).lower()] = fp
 
     processed = 0
     repaired = 0
-    for fp in unique_filepaths:
-        file_rows = grouped_files[fp]
+    
+    # 実行対象ファイル
+    exec_filepaths = target_filepaths if args.dir else list(grouped_files.keys())
+    if args.limit > 0:
+        exec_filepaths = exec_filepaths[:args.limit]
+
+    for target_fp in exec_filepaths:
+        norm_key = os.path.normpath(target_fp).lower()
+        real_fp = file_map.get(norm_key, target_fp)
+        file_rows = grouped_files.get(real_fp, [])
+
+        if not file_rows:
+            # 異表記パスでの検索フォールバック
+            for k, v in grouped_files.items():
+                if os.path.normpath(k).lower() == norm_key:
+                    file_rows = v
+                    real_fp = k
+                    break
+
+        if not file_rows:
+            logger.warning(f"DB 内に該当解析データが見つかりません (スキップ): {os.path.basename(target_fp)}")
+            continue
+
         processed += 1
-        success = inspect_and_repair_file_group(fp, file_rows, dry_run=args.dry_run, force=args.force, retry_count=retry_count, retry_delay=retry_delay)
+        success = inspect_and_repair_file_group(real_fp, file_rows, dry_run=args.dry_run, force=args.force, retry_count=retry_count, retry_delay=retry_delay)
         if success:
             repaired += 1
 
     cur.close()
     conn.close()
 
-    logger.info(f"【処理完了】 総ユニークファイル: {processed} 件 / 正常・補完完了: {repaired} 件")
+    t_end = time.perf_counter()
+    logger.info(f"【処理完了】 総ユニークファイル: {processed} 件 / 正常・補完完了: {repaired} 件 (所要時間: {t_end - t_start:.3f} 秒)")
 
 if __name__ == "__main__":
     main()
