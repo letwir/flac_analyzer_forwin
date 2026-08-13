@@ -2,11 +2,13 @@
 flac_tagger.py
 ==============
 解析結果 (Librosa, Essentia 453クラス確率, Tensor JSON) および DB meta タグから
-FLAC VorbisComment タグ辞書を統合生成し、
-Essentia ジャンル等の各種分類モデルにおいて確率上位 5 クラス (Top 5) を '; ' で結合した複数タグを作成！
-mutagen で既存の FLAC タグに対する不足分 (missing_tags) のみを検出して、
-アトミック書き込みおよび Windows タイムスタンプ保護（mtime, atime, ctime）を行って
-FLAC 本体へ安全に焼き込むモジュールですわ！
+FLAC VorbisComment タグ辞書を統合生成しますわ！
+
+【ルール】
+1. ユーザー指定の必須モデル 53 項目 (GENDER, DORTMUND, ROSAMERICA, TZANETAKIS, MOOD_*, DANCEABILITY, VOICE_INSTRUMENTAL 等)
+   は、各クラス確率を 1000 倍整数値の個別タグとして 100% 必須出力いたします！
+2. Discogs400 などの多クラス巨大モデルは、個別全タグ出力ではなく確率 Top 5 を '; ' で結合した
+   並列タグ (ESSENTIA_GENRE_DISCOGS400_TOP5 等) として集約出力し、6個目以降を除外いたしますわ！
 """
 
 import argparse
@@ -95,6 +97,15 @@ def _safe_float_str(val: Any) -> str:
     except (ValueError, TypeError):
         return "0.0"
 
+# 必須個別タグとして 1000倍整数出力するモデル群 (全 53 項目対象)
+EXPLICIT_INDIVIDUAL_MODELS = {
+    "APPROACHABILITY_3C", "DANCEABILITY", "ENGAGEMENT_3C",
+    "GENDER", "GENRE_DORTMUND", "GENRE_ELECTRONIC",
+    "GENRE_ROSAMERICA", "GENRE_TZANETAKIS", "MOOD_ACOUSTIC",
+    "MOOD_AGGRESSIVE", "MOOD_ELECTRONIC", "MOOD_HAPPY",
+    "MOOD_PARTY", "MOOD_RELAXED", "MOOD_SAD", "VOICE_INSTRUMENTAL"
+}
+
 MODEL_KEYS = [
     "APPROACHABILITY_3C", "DANCEABILITY", "ENGAGEMENT_3C", "FS_LOOP_DS",
     "GENDER", "GENRE_DISCOGS400", "GENRE_DORTMUND", "GENRE_ELECTRONIC",
@@ -140,47 +151,44 @@ def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
                 tags[tag_key] = val_str
                 continue
 
-            try:
-                fval = float(val_str)
-                if 0.0 <= fval <= 1.0 and "." in val_str:
-                    int_val_str = str(_safe_int(fval, 1000))
-                else:
-                    int_val_str = str(int(round(fval)))
-            except ValueError:
-                int_val_str = val_str
-
-            tags[tag_key] = int_val_str
-
             raw_name = clean_k[9:]
+            matched_model = None
+            class_name = ""
             for mkey in sorted(MODEL_KEYS, key=len, reverse=True):
                 if raw_name.startswith(mkey + "_"):
+                    matched_model = mkey
                     class_name = raw_name[len(mkey) + 1:]
-                    try:
-                        prob = float(val_str)
-                        if prob > 1.0:
-                            prob /= 1000.0
-                        if mkey not in model_groups:
-                            model_groups[mkey] = []
-                        model_groups[mkey].append((class_name, prob))
-                    except ValueError:
-                        pass
                     break
+
+            try:
+                fval = float(val_str)
+                prob = fval if (0.0 <= fval <= 1.0 and "." in val_str) else fval / 1000.0
+                int_val_str = str(_safe_int(prob, 1000))
+            except ValueError:
+                prob = 0.0
+                int_val_str = val_str
+
+            # 必須 53 項目モデルなら個別タグ出力！
+            if matched_model in EXPLICIT_INDIVIDUAL_MODELS:
+                tags[tag_key] = int_val_str
+
+            if matched_model and class_name:
+                if matched_model not in model_groups:
+                    model_groups[matched_model] = []
+                model_groups[matched_model].append((class_name, prob))
 
         elif raw_tag.startswith("librosa_") or raw_tag.startswith("tensor_"):
             clean_k = raw_tag.upper()
             tag_key = f"{prefix + '_' if prefix else ''}{clean_k}"
             tags[tag_key] = val_str
 
-    # TOP および TOP5 結合タグの生成
     for mkey, items in model_groups.items():
         sorted_items = sorted(items, key=lambda x: x[1], reverse=True)
         if sorted_items:
-            # 1. TOP タグ (最大値 1 クラス)
             top_tag = f"{prefix + '_' if prefix else ''}ESSENTIA_{mkey}_TOP"
             if top_tag not in tags:
                 tags[top_tag] = sorted_items[0][0]
 
-            # 2. TOP5 タグ (上位 5 クラスを '; ' で結合、6個目以降は完全除外)
             top5_tag = f"{prefix + '_' if prefix else ''}ESSENTIA_{mkey}_TOP5"
             top5_classes = [it[0] for it in sorted_items[:5]]
             tags[top5_tag] = "; ".join(top5_classes)
@@ -240,15 +248,13 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
         for i, val in enumerate(mfccs):
             tags[f"{p}LIBROSA_MFCC{i:02d}"] = str(_safe_int(val, 100))
 
-    # 2. Essentia 特徴量 (全453モデル確率1000倍整数化, TOP タグ ＆ TOP5 結合タグ)
+    # 2. Essentia 特徴量
     predictions = essentia_data.get("predictions", {})
     if predictions:
         model_groups: dict[str, list[tuple[str, float]]] = {}
 
         for k, v in predictions.items():
             prob = float(v)
-            tags[f"{p}{k}"] = str(_safe_int(prob, 1000))
-
             raw_key = k[9:] if k.startswith("ESSENTIA_") else k
             matched_model = None
             class_name = ""
@@ -259,19 +265,21 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
                     class_name = raw_key[len(mkey) + 1:]
                     break
 
+            # ユーザー指定の必須 53 項目モデルなら個別に 1000倍整数タグを出力！
+            if matched_model in EXPLICIT_INDIVIDUAL_MODELS:
+                tags[f"{p}{k}"] = str(_safe_int(prob, 1000))
+
             if matched_model and class_name:
                 if matched_model not in model_groups:
                     model_groups[matched_model] = []
                 model_groups[matched_model].append((class_name, prob))
 
-        # TOP タグおよび Top 5 (6個目以降除外) 結合タグの生成
+        # Top 1 および Top 5 (; で結合、6個目以降完全除外) 結合タグの生成
         for mkey, items in model_groups.items():
             sorted_items = sorted(items, key=lambda x: x[1], reverse=True)
             if sorted_items:
-                # Top 1 (最大値)
                 tags[f"{p}ESSENTIA_{mkey}_TOP"] = sorted_items[0][0]
                 
-                # Top 5 (; で結合、6個目以降完全除外)
                 top5_classes = [it[0] for it in sorted_items[:5]]
                 tags[f"{p}ESSENTIA_{mkey}_TOP5"] = "; ".join(top5_classes)
 
