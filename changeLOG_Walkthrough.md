@@ -1,23 +1,7 @@
-# Walkthrough: Memory Protection & Dynamic Retry Throttling Implementation
+# Walkthrough: Gatekeeper Effective Available RAM Model Refactoring
 
-## Summary of Changes
-
-1. **`config.toml` & `config.toml.example`**:
-   - Added `shm_retry_count = 5` and `shm_retry_delay_sec = 8` in `[orchestrator]`.
-   - Added `memory_retry_count = "3"` and `memory_retry_delay_sec = "6"` in `[python_env]`.
-
-2. **`orchestrator/main.go` & `orchestrator/dispatcher/dispatcher.go`**:
-   - Configured Go Dispatcher to parse `ShmRetryCount` and `ShmRetryDelaySec`.
-   - Replaced single-pass `NewSharedMemory` allocation with a retry loop that throttles task queues and sleeps for `ShmRetryDelaySec` seconds (default 8s) when Windows Commit Limit is hit (`CreateFileMappingW` failed).
-
-3. **`analyzer/core.py`**:
-   - Added `self._stft = None` immediately after `spectro` calculation in `AudioContext.spectro` property to release 211MB+ complex64 arrays for garbage collection.
-
-4. **`worker_librosa.py`**:
-   - Loaded `memory_retry_count` and `memory_retry_delay_sec` from `config.toml`.
-   - Wrapped stem feature extraction in a backoff retry loop that catches `MemoryError` / `ArrayMemoryError`, triggers `gc.collect()`, sleeps for the configured delay, and retries extraction without modifying tensor shapes.
-
-## Verification Results
-
-- **Go Orchestrator Build**: Successfully compiled `orchestrator.exe`.
-- **Python Integration Tests**: Verified `test_integration.py` compatibility.
+- **Summary**: Refactored Gatekeeper evaluation logic to eliminate double-counting and false NOGO delays caused by high external application memory usage.
+- **Changes**:
+  - `orchestrator/dispatcher/dispatcher.go`: Replaced `(Used + InFlight + Task) > MaxUsable` formula with `EffectiveAvail = AvailPhys - InFlight >= Task + MinAvail`.
+  - `docs/cpu_parallelism_and_ram_guard.md`: Updated architecture documentation to reflect the Effective Available RAM model.
+- **Verification**: Verified compilation of `orchestrator.exe` and validated logic under high memory load (40GB+ external RAM usage).

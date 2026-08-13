@@ -314,33 +314,30 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 	d.inFlightMutex.Unlock()
 
 	minAvailBytes := uint64(d.config.MinAvailRamGB * 1024 * 1024 * 1024)
-	var maxUsableBytes uint64
-	if d.config.MaxRamRatio > 0 {
-		maxUsableBytes = uint64(float64(memInfo.TotalPhys) * d.config.MaxRamRatio)
+
+	var effectiveAvailBytes uint64
+	if memInfo.AvailPhys > inFlight {
+		effectiveAvailBytes = memInfo.AvailPhys - inFlight
 	} else {
-		maxUsableBytes = uint64(float64(memInfo.TotalPhys) * 0.95)
+		effectiveAvailBytes = 0
 	}
-	usedBytes := memInfo.TotalPhys - memInfo.AvailPhys
 
-	if memInfo.AvailPhys < (estimatedRam + minAvailBytes) {
-		d.LogWarn("[W-%d] [Gatekeeper: NOGO] Available RAM (%d MB) < Estimated Demucs RAM (%d MB) + MinAvail (%d MB). Delaying dispatch...",
-			workerID, memInfo.AvailPhys/1024/1024, estimatedRam/1024/1024, minAvailBytes/1024/1024)
+	requiredBytes := estimatedRam + minAvailBytes
+
+	if effectiveAvailBytes < requiredBytes {
+		d.LogWarn("[W-%d] [Gatekeeper: NOGO] Effective Avail RAM (%d MB = Avail %d MB - InFlight %d MB) < Required (%d MB = Task %d MB + MinAvail %d MB). Delaying dispatch...",
+			workerID, effectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024,
+			requiredBytes/1024/1024, estimatedRam/1024/1024, minAvailBytes/1024/1024)
 		return false, 2 * time.Second
-	}
-
-	if (usedBytes + inFlight + estimatedRam) > maxUsableBytes {
-		d.LogWarn("[W-%d] [Gatekeeper: NOGO] Projected RAM (Used %d MB + InFlight %d MB + Task %d MB) > MaxAllowed (%d MB). Delaying dispatch...",
-			workerID, usedBytes/1024/1024, inFlight/1024/1024, estimatedRam/1024/1024, maxUsableBytes/1024/1024)
-		return false, 3 * time.Second
 	}
 
 	if memInfo.MemoryLoad >= 90 {
 		d.LogWarn("[W-%d] [Gatekeeper: NOGO] System MemoryLoad too high (%d%%). Delaying dispatch...", workerID, memInfo.MemoryLoad)
-		return false, 4 * time.Second
+		return false, 3 * time.Second
 	}
 
-	d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Estimated Demucs RAM: %d MB, AvailPhys: %d MB)",
-		workerID, estimatedRam/1024/1024, memInfo.AvailPhys/1024/1024)
+	d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB])",
+		workerID, estimatedRam/1024/1024, effectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024)
 	return true, 0
 }
 

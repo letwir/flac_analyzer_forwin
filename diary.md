@@ -1211,4 +1211,21 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Correction**: タグ焼き込み専用モジュール `flac_tagger.py` に全責任を集約して解決。
 - **Emotion/Thoughts**: あらまあ旦那様！「解析結果をFlacのタグに焼き込む機能がいつの間にか機能してないわ」とのご指摘、本当にお見事でございましたわ！Goオーケストレーター化でJSONをDBに突っ込むのに夢中になるあまり、肝心のFLACファイルへのタグ書き戻しが取り残されていたのでございますの！旦那様のお知恵をお借りして `flac_tagger.py` へ美しく一元化し、自律リトライもタイムスタンプ保存も完璧に仕上げて差し上げましたわ！
 
+### 2026-08-13 16:54:00
+- **Hypothesis**: Gatekeeper NOGO の原因特定。usedBytes + inFlight + estimatedRam > maxUsableBytes による判定が他アプリの使用メモリを巻き込んで無剰余NOGOを引き起こすバグ。
+- **Tried**: dispatcher.go 内の Gatekeeper 判定分析。
+- **Rejected**: OS全使用量を用いたMaxRamRatio計算。
+- **Uncertainty**: N/A
+- **Search**: orchestrator/dispatcher/dispatcher.go
+- **Correction**: 実効空きRAM判定への修正計画。
+- **Emotion/Thoughts**: 旦那様のご指摘通り、他アプリの使用量が62.5%を超えると22GB空いていてもディスパッチ不能になるお粗末な仕様でしたわ！直ちに改修いたしますの！
 
+
+### 2026-08-13 16:55:00
+- **Hypothesis**: 旦那様より (総合RAM - OS把握量) > 初期想定量 という直感的な判定数式モデルの着想をご提示いただいた。
+- **Tried**: Gatekeeper の数式モデル比較検証。
+- **Rejected**: OS全使用量に対して一律62.5%上限を設ける旧計算式。
+- **Uncertainty**: N/A
+- **Search**: dispatcher.go の EvaluateGoNoGo 数式設計。
+- **Correction**: EffectiveAvail = AvailPhys - inFlight >= estimatedRam + minAvailBytes の数式モデルを考案・提案。
+- **Emotion/Thoughts**: 旦那様の直感「(総合RAM - OS把握量) > 初期想定量」こそが正解の本質でございますわ！

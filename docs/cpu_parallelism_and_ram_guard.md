@@ -39,18 +39,18 @@ Flac_Analyzer は、各処理ステップを**厳格な射（Morphism）**およ
 - 各 Python ワーカー内部で OpenMP / OpenBLAS / MKL のスレッド数を無闇に引き上げると（例: 22ワーカー × 4スレッド ＝ 88スレッド）、OS の CPU スケジューラキューで過剰なコンテキストスイッチ爆発が発生し、スループットが低下します。
 - ワーカープロセス自体の並列度を高め、`OMP_NUM_THREADS = 1` を維持することで、無駄なスレッド競合と隠蔽された可変状態 (Hidden Shared State) を回避しています。
 
-### ④ Waveform長ベース Demucs RAM予測 ＆ GO/NOGO ゲートキーパー (Gatekeeper Decision)
-- CUEシート分割およびスタンドアロン FLAC の波形長 (PCM サンプリング長) から Demucs 音源分離に必要な RAM 容量をタスク投入前に動的算定。
-- ホストのリアルタイム利用可能物理メモリ (`AvailPhys`) と想定必要 RAM を比較し、メモリが不足している場合はタスク投入を自動一時停止 (NOGO Gatekeeper Decision)。
-- これにより、大長尺トラックや複数ステム処理時における Windows ページファイル容量上限 (`WinError 1455`) および Out-Of-Memory (OOM) クラッシュを完全防御します。
+### ④ Waveform長ベース Demucs RAM予測 ＆ 実質空きRAM GO/NOGO ゲートキーパー (Gatekeeper Decision)
+- CUEシート分割およびスタンドアロン FLAC の波形長 (PCM サンプリング長) から Demucs 音源分離に必要な RAM 容量 ($R_{\text{task}}$) をタスク投入前に動的算定。
+- ホストのリアルタイム物理空きメモリ ($R_{\text{avail}}$ / `AvailPhys`) から、Goが投下済みでプロセス起動途中のインフライト中予約RAM ($R_{\text{inFlight}}$) を差し引いた **実質空き物理RAM (Effective Available RAM)** を導出。
+- 実質空きRAMが「タスク推定RAM ($R_{\text{task}}$) ＋ システム最小安全保護容量 ($R_{\text{min}}$ / `MinAvailRamGB`)」を下回る場合は自動的にタスク投入を一時停止 (NOGO Gatekeeper Decision)。他アプリのメモリ消費による影響を防ぎつつ OOM クラッシュを 100% 防御します。
 
 ### ⑤ `tensorSemaphore` ＆ VRAM 逐次解放 (`torch.cuda.empty_cache`)
 - Go ディスパッチャ内に PyTorch 用の `tensorSemaphore` を個別に配置し、複数ワーカー間での VRAM 競合・フラグメンテーションを防止。
 - 各 `worker_tensor.py` 完了直後に `torch.cuda.empty_cache()` を自律呼び出しし、VRAM キャッシュを即座に解放して後続タスクへ引き継ぎます。
 
-### ⑥ `MaxRamRatio` ＆ リアルタイム空き RAM バックプレッシャー Guard
-- タスク投入直前、Windows API (`GetMemoryInfo`) を呼び出し、リアルタイムのシステム使用中メモリ量 (`TotalPhys - AvailPhys`) を監視します。
-- 使用量が目標上限（例: `max_ram_ratio = 0.625` ≒ **40GB上限**）に達している場合、Worker は自動的に 2 秒間スリープ（バックプレッシャー）し、既存タスクのメモリ解放を安全に待ちます。
+### ⑥ リアルタイム実質空き RAM バックプレッシャー ＆ `MemoryLoad >= 90%` Emergency Guard
+- タスク投入直前、Windows API (`GetMemoryInfo`) を呼び出し、実質空きRAM（$R_{\text{avail}} - R_{\text{inFlight}}$）を監視します。
+- 実質空きRAMが不足している場合や、システム全体の物理メモリ使用率が緊急警戒レベル (`MemoryLoad >= 90%`) に達している場合、Worker は自動的に 2〜3 秒間スリープ（バックプレッシャー）し、既存タスクのメモリ解放やシステム安定化を安全に待ちます。
 
 ### ⑦ Python ワーカー内の `float32` 保持 ＆ 一元プロパティキャッシュ化
 - Librosa による音響特徴量算出（`spectral_centroid`, `spectral_rolloff` 等）において、`AudioContext.centroid` の一元キャッシュ化および `spectro` (float32) からの直接演算を適用。
@@ -67,7 +67,7 @@ Flac_Analyzer は、各処理ステップを**厳格な射（Morphism）**およ
 | パラメータ | 設定値 | 説明 |
 | :--- | :--- | :--- |
 | `orchestrator.num_workers` | `0` (自動) または `22` | システム RAM / CPU コア数から最大安全並列ワーカー数を自動決定。 |
-| `orchestrator.max_ram_ratio` | `0.625` | 全体物理メモリの 62.5%（64GB 環境で約 40GB）を上限としてリアルタイム制御。 |
+| `orchestrator.min_avail_ram_gb` | `4.0` | OS/他アプリの安定運用のために確保する最小空き物理RAM容量(GB)。 |
 | `orchestrator.estimated_worker_ram_gb` | `3.5` | 1ワーカーあたりの想定メモリ要件（GB）。長尺トラック多重処理のコミット制限（WinError 1455）を安全防護。 |
 | `orchestrator.demucs_concurrent_limit` | `1` | SegFault 防止のための Demucs 推論排他実行制限。 |
 | `python_env.omp_num_threads` | `"1"` (または `"0"`) | スレッド競合を防ぎ、プロセス並列性を最大化。 |

@@ -853,3 +853,15 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: flac_tagger.py, config.toml, orchestrator/dispatcher/dispatcher.go, orchestrator/orchestrator.exe, walkthrough.md, history.md, issues.md, diary.md
 
+### 2026-08-13 16:58:00
+- Category: Refactor / Memory Guard / Gatekeeper Optimization
+- Summary: Go オーケストレーターの Gatekeeper (GO/NOGO 判定) ロジックを「実質物理空きRAM ($R_{\text{avail}} - R_{\text{inFlight}} \ge R_{\text{task}} + R_{\text{min}}$)」モデルへ完全リファクタリング。
+- Decisions:
+  1. orchestrator/dispatcher/dispatcher.go: 旧来の (usedBytes + inFlight + estimatedRam) > maxUsableBytes (OS全使用量ベースの 62.5% 上限制限) を全廃。他アプリが高メモリを消費している環境での無用な NOGO 停止事故を撲滅。
+  2. orchestrator/dispatcher/dispatcher.go: effectiveAvailBytes := memInfo.AvailPhys - inFlight による実質空きRAM判定式へ統一。MemoryLoad >= 90% によるシステム過負荷ガードを統合。
+  3. docs/cpu_parallelism_and_ram_guard.md: Gatekeeper の数式および動作設計ドキュメントを最新の実質空きRAMモデルに同期・更新。
+  4. orchestrator/orchestrator.exe: 再ビルド完了。
+- Blockers: なし。
+- Files: orchestrator/dispatcher/dispatcher.go, docs/cpu_parallelism_and_ram_guard.md, orchestrator/orchestrator.exe, walkthrough.md, history.md
+
+
