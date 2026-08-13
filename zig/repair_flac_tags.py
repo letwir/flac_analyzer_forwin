@@ -1,14 +1,14 @@
 """
 zig/repair_flac_tags.py
 ========================
-PostgreSQL DB (raw.library_flac) から既存の解析データ (features & meta) を参照し、
-FLAC ファイル本体に未書き込み/不足している VorbisComment タグを検出して
-CUE シート有無に応じたプレフィックス切り替え（filepath ごとの一括グループ化）を行い、
+PostgreSQL DB (raw.library_flac) の predictions, features, meta 各カラムから解析データを参照し、
+FLAC ファイル本体に未書き込み/不足している VorbisComment タグ（Essentia全453モデル確率1000倍整数化、
+Librosa, ONNX/Tensor特徴量）を自動検出し、CUE シート有無に応じたプレフィックス切り替え
+（filepath ごとの一括グループ化）を行い、Mutagen の既存タグに対する不足分のみを
 重複書き込みゼロで安全に一括補完焼き込みを行う独立治具ですわ！
 
 ファイルシステム先行走査 (File-First Fast Scan) 機構により、
 --dir や --limit 指定時の実行速度を 0.01 秒（一瞬）へ超爆速化！
-Essentia 全モデルの各クラス確率 (1000倍整数) および TOP タグを 100% 漏れなく復元・焼き込みますの。
 """
 
 import argparse
@@ -63,11 +63,17 @@ def get_db_url(config: dict) -> str:
     return db_url
 
 def build_tags_for_file_group(file_rows: list[tuple]) -> dict[str, str]:
+    """
+    同一 filepath に属するレコード群 (ID 昇順) から、
+    predictions (独立カラム), features, meta の 3 つのカラムから解析データを抽出し、
+    単一 FLAC 用、あるいは CUE トラック別 (CUE_TRACK01_, CUE_TRACK02_ ...) の
+    完全な統合期待タグ辞書を生成しますわ！
+    """
     all_expected_tags: dict[str, str] = {}
     is_multi_track = len(file_rows) > 1
 
     for idx, row in enumerate(file_rows):
-        rec_id, filepath, audio_hash, meta, features = row
+        rec_id, filepath, audio_hash, meta, features, predictions = row
 
         tr_num = idx + 1
         if is_multi_track:
@@ -82,26 +88,36 @@ def build_tags_for_file_group(file_rows: list[tuple]) -> dict[str, str]:
         else:
             prefix = ""
 
-        # 1. meta 内から吸い出す Tags (過去 DB レコードの Essentia 全確率・全タグ復元)
-        if isinstance(meta, dict):
-            meta_tags = parse_tags_from_meta_dict(meta, prefix=prefix)
-            all_expected_tags.update(meta_tags)
+        # 1. predictions カラムからの Essentia 453 クラス確率 (1000倍整数) の算出・抽出
+        essentia_data = {}
+        if isinstance(predictions, dict) and predictions:
+            essentia_data = {"predictions": predictions}
 
-        # 2. features 内から計算する Tags (新規・構造化データ復元)
+        # 2. features カラムからの Librosa および ONNX/Tensor 特徴量の算出
+        librosa_data = {}
+        tensor_feats = {}
         if isinstance(features, dict):
             mix_feat = features.get("mix", {})
             scalars = mix_feat.get("scalars", {})
-            predictions = mix_feat.get("predictions", {})
+            if not essentia_data and "predictions" in mix_feat:
+                essentia_data = {"predictions": mix_feat["predictions"]}
 
-            tensor_feats = {}
             for k, v in mix_feat.items():
                 if k not in ("source", "scalars", "sequences", "predictions"):
                     tensor_feats[k] = v
 
             librosa_data = {"scalars": scalars}
-            essentia_data = {"predictions": predictions}
-            tr_tags = build_flac_tags(librosa_data, essentia_data, tensor_feats, prefix=prefix)
-            all_expected_tags.update(tr_tags)
+
+        # predictions & features から計算・タグ生成
+        tr_tags = build_flac_tags(librosa_data, essentia_data, tensor_feats, prefix=prefix)
+        all_expected_tags.update(tr_tags)
+
+        # 3. meta カラム内からのフォールバックタグ吸い出し
+        if isinstance(meta, dict):
+            meta_tags = parse_tags_from_meta_dict(meta, prefix=prefix)
+            for mk, mv in meta_tags.items():
+                if mk not in all_expected_tags:
+                    all_expected_tags[mk] = mv
 
     return all_expected_tags
 
@@ -114,6 +130,7 @@ def inspect_and_repair_file_group(filepath: str, file_rows: list[tuple], dry_run
 
     try:
         audio = FLAC(filepath)
+        # mutagen で既存の FLAC から現在書き込まれているタグを一括抽出
         existing_tags = {k.upper(): v for k, v in audio.items()}
     except Exception as e:
         logger.error(f"FLAC タグの読込に失敗いたしました: {filepath} -> {e}")
@@ -124,6 +141,7 @@ def inspect_and_repair_file_group(filepath: str, file_rows: list[tuple], dry_run
         logger.info(f"書き込むべき特徴量データが DB 内にございません: {os.path.basename(filepath)}")
         return False
 
+    # 既存の Mutagen タグに対して「未書き込み / 不足しているタグ (missing_tags)」のみをピンポイント抽出
     missing_tags: dict[str, str] = {}
     for k, v in expected_tags.items():
         k_upper = k.upper()
@@ -139,12 +157,13 @@ def inspect_and_repair_file_group(filepath: str, file_rows: list[tuple], dry_run
     logger.info(f"不足タグを {len(missing_tags)} 件検出いたしましたわ！ {tr_count_info}: {os.path.basename(filepath)}")
     if dry_run:
         print(f"\n--- Dry-Run: Inspected {os.path.basename(filepath)} {tr_count_info} ---")
-        for mk, mv in sorted(missing_tags.items())[:20]:
+        for mk, mv in sorted(missing_tags.items())[:25]:
             print(f"  + Missing Tag: {mk} = {mv}")
-        if len(missing_tags) > 20:
-            print(f"  ... and {len(missing_tags) - 20} more missing tags.")
+        if len(missing_tags) > 25:
+            print(f"  ... and {len(missing_tags) - 25} more missing tags.")
         return True
 
+    # 不足タグのみを mutagen でアトミックに書き込み
     try:
         write_flac_tags_with_retry(filepath, missing_tags, retry_count=retry_count, retry_delay=retry_delay)
         logger.info(f"不足タグの再焼き込みが正常完了いたしましたわ！ {tr_count_info}: {os.path.basename(filepath)}")
@@ -159,7 +178,6 @@ def scan_local_flac_files(target_dir: str, limit: int = 0) -> list[str]:
     if not os.path.exists(norm_target):
         return []
 
-    # 単一ファイルパスが直接渡された場合
     if os.path.isfile(norm_target):
         if norm_target.lower().endswith(".flac"):
             return [norm_target]
@@ -207,8 +225,9 @@ def main():
             conn.close()
             sys.exit(0)
 
+        # predictions, features, meta をすべて SELECT 取得！
         detail_query = """
-            SELECT id, filepath, audio_hash, meta, features 
+            SELECT id, filepath, audio_hash, meta, features, predictions 
             FROM raw.library_flac 
             WHERE (filepath = ANY(%s) OR REPLACE(filepath, '/', '\\') = ANY(%s) OR REPLACE(filepath, '\\', '/') = ANY(%s))
             ORDER BY filepath, id ASC
@@ -234,7 +253,7 @@ def main():
             sys.exit(0)
 
         detail_query = """
-            SELECT id, filepath, audio_hash, meta, features 
+            SELECT id, filepath, audio_hash, meta, features, predictions 
             FROM raw.library_flac 
             WHERE filepath = ANY(%s)
             ORDER BY filepath, id ASC
