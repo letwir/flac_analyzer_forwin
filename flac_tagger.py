@@ -2,13 +2,10 @@
 flac_tagger.py
 ==============
 解析結果 (Librosa, Essentia 453クラス確率, Tensor JSON) および DB meta タグから
-FLAC VorbisComment タグ辞書を統合生成しますわ！
-
-【ルール】
-1. ユーザー指定の必須モデル 53 項目 (GENDER, DORTMUND, ROSAMERICA, TZANETAKIS, MOOD_*, DANCEABILITY, VOICE_INSTRUMENTAL 等)
-   は、各クラス確率を 1000 倍整数値の個別タグとして 100% 必須出力いたします！
-2. Discogs400 などの多クラス巨大モデルは、個別全タグ出力ではなく確率 Top 5 を '; ' で結合した
-   並列タグ (ESSENTIA_GENRE_DISCOGS400_TOP5 等) として集約出力し、6個目以降を除外いたしますわ！
+FLAC VorbisComment タグ辞書を統合生成し、
+圏論的 UPSERT 射 (Idempotent Morphism) として mutagen 既存タグの不足分 (missing_tags) のみを補完検出し、
+緑色ログ表示、アトミック書き込みおよび Windows タイムスタンプ保護（mtime, atime, ctime）を行って
+FLAC 本体へ安全に焼き込むモジュールですわ！
 """
 
 import argparse
@@ -26,10 +23,15 @@ import tomllib
 from typing import Any
 from mutagen.flac import FLAC
 
+# ANSI カラー定数 (緑色 Log 用)
+GREEN = "\033[32m"
+RESET = "\033[0m"
+BOLD_GREEN = "\033[1;32m"
+
 def setup_logger():
     logging.basicConfig(
         level=logging.INFO,
-        format="[%(levelname)s] [FlacTagger] %(message)s",
+        format=f"{GREEN}[%(levelname)s] [FlacTagger] %(message)s{RESET}",
         handlers=[logging.StreamHandler(sys.stderr)]
     )
 
@@ -97,7 +99,7 @@ def _safe_float_str(val: Any) -> str:
     except (ValueError, TypeError):
         return "0.0"
 
-# 必須個別タグとして 1000倍整数出力するモデル群 (全 53 項目対象)
+# 必須個別タグとして 1000倍整数出力するモデル群
 EXPLICIT_INDIVIDUAL_MODELS = {
     "APPROACHABILITY_3C", "DANCEABILITY", "ENGAGEMENT_3C",
     "GENDER", "GENRE_DORTMUND", "GENRE_ELECTRONIC",
@@ -168,7 +170,6 @@ def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
                 prob = 0.0
                 int_val_str = val_str
 
-            # 必須 53 項目モデルなら個別タグ出力！
             if matched_model in EXPLICIT_INDIVIDUAL_MODELS:
                 tags[tag_key] = int_val_str
 
@@ -199,7 +200,6 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
     p = f"{prefix}_" if prefix else ""
     tags: dict[str, str] = {}
 
-    # 1. Librosa 特徴量
     scalars = librosa_data.get("scalars", {})
     if not scalars and "features" in librosa_data:
         scalars = librosa_data["features"].get("scalars", {})
@@ -248,7 +248,6 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
         for i, val in enumerate(mfccs):
             tags[f"{p}LIBROSA_MFCC{i:02d}"] = str(_safe_int(val, 100))
 
-    # 2. Essentia 特徴量
     predictions = essentia_data.get("predictions", {})
     if predictions:
         model_groups: dict[str, list[tuple[str, float]]] = {}
@@ -265,7 +264,6 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
                     class_name = raw_key[len(mkey) + 1:]
                     break
 
-            # ユーザー指定の必須 53 項目モデルなら個別に 1000倍整数タグを出力！
             if matched_model in EXPLICIT_INDIVIDUAL_MODELS:
                 tags[f"{p}{k}"] = str(_safe_int(prob, 1000))
 
@@ -274,16 +272,13 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
                     model_groups[matched_model] = []
                 model_groups[matched_model].append((class_name, prob))
 
-        # Top 1 および Top 5 (; で結合、6個目以降完全除外) 結合タグの生成
         for mkey, items in model_groups.items():
             sorted_items = sorted(items, key=lambda x: x[1], reverse=True)
             if sorted_items:
                 tags[f"{p}ESSENTIA_{mkey}_TOP"] = sorted_items[0][0]
-                
                 top5_classes = [it[0] for it in sorted_items[:5]]
                 tags[f"{p}ESSENTIA_{mkey}_TOP5"] = "; ".join(top5_classes)
 
-    # 3. Tensor 特徴量
     if tensor_data:
         tensor_feats = tensor_data.get("features", tensor_data)
         if isinstance(tensor_feats, dict):
@@ -331,7 +326,7 @@ def write_flac_tags_with_retry(file_path: str, tags: dict, retry_count: int = 5,
                     shutil.move(tmp_path, file_path)
 
                 set_win_timestamps(file_path, atime_val, mtime_val, ctime_val)
-                logger.info(f"FLAC タグを成功裏に書き込みましたわ！ ({len(tags)} タグ) -> {os.path.basename(file_path)}")
+                logger.info(f"{BOLD_GREEN}[UPSERT Morphism]{GREEN} FLAC タグを成功裏に補完書き込みいたしましたわ！ ({len(tags)} タグ) -> {os.path.basename(file_path)}{RESET}")
                 break
 
             finally:
@@ -354,7 +349,7 @@ def main():
     setup_logger()
     logger = logging.getLogger("FlacTagger")
 
-    parser = argparse.ArgumentParser(description="FLAC VorbisComment Tagger")
+    parser = argparse.ArgumentParser(description="FLAC VorbisComment Tagger (UPSERT Morphism)")
     parser.add_argument("--flac-path", required=True, help="Target FLAC file path")
     parser.add_argument("--json-path", required=True, help="Librosa JSON path")
     parser.add_argument("--predictions-json-path", required=False, default="", help="Essentia JSON path")
@@ -410,7 +405,7 @@ def main():
             logger.warning(f"既存 FLAC タグの読込中に警告が発生いたしました (全上書きへフォールバック): {e}")
 
     if not missing_tags:
-        logger.info(f"すべてのタグが既に書き込み済みです: {os.path.basename(args.flac_path)}")
+        logger.info(f"{GREEN}[UPSERT Morphism]{RESET} すべてのタグが既に書き込み済みです: {os.path.basename(args.flac_path)}")
         sys.exit(0)
 
     try:

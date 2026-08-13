@@ -721,7 +721,7 @@ func (d *Dispatcher) worker(id int) {
 			if task.TrackNumber > 0 {
 				taggerArgs = append(taggerArgs, "--prefix", fmt.Sprintf("CUE_TRACK%02d", task.TrackNumber))
 			}
-			_, tagErr := d.runPythonScript("flac_tagger.py", taggerArgs, id, "FlacTagger", ColorCyan, true)
+			_, tagErr := d.runPythonScript("flac_tagger.py", taggerArgs, id, "FlacTagger", ColorGreen, true)
 			if tagErr != nil {
 				d.LogWarn("[W-%d] FLAC tagger warned/failed for %s: %v", id, task.FlacPath, tagErr)
 			}
