@@ -1,8 +1,9 @@
 """
 flac_tagger.py
 ==============
-解析結果 (Librosa, Essentia, Tensor JSON) および DB meta タグから
+解析結果 (Librosa, Essentia 453クラス確率, Tensor JSON) および DB meta タグから
 FLAC VorbisComment タグ辞書を統合生成し、
+mutagen で既存の FLAC タグに対する不足分 (missing_tags) のみを検出して、
 アトミック書き込みおよび Windows タイムスタンプ保護（mtime, atime, ctime）を行って
 FLAC 本体へ安全に焼き込むモジュールですわ！
 ファイル使用中（ロック）の場合のバックオフリトライ機構を完備しておりますの。
@@ -103,7 +104,6 @@ MODEL_KEYS = [
 ]
 
 def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
-    """meta 辞書内から Essentia 全クラス確率や Librosa などのタグを漏れなく吸い出して正規化いたしますの。"""
     tags: dict[str, str] = {}
     if not isinstance(meta, dict):
         return tags
@@ -121,16 +121,15 @@ def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
         k_lower = k.lower()
         val_str = str(v[0]) if isinstance(v, list) and v else str(v)
 
-        # トラックプレフィックスのパース
         tr_match = re.match(r"^(?:cue_?)?track_?(\d+)_(.+)$", k_lower)
         if tr_match:
             tr_num = int(tr_match.group(1))
             if target_tr_num is not None and tr_num != target_tr_num:
-                continue # 別のトラック用のタグはスキップ
+                continue
             raw_tag = tr_match.group(2)
         else:
             if target_tr_num is not None:
-                continue # トラック指定ありなのにトラックプレフィックスが無ければスキップ
+                continue
             raw_tag = k_lower
 
         if raw_tag.startswith("essentia_"):
@@ -143,7 +142,6 @@ def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
 
             try:
                 fval = float(val_str)
-                # 0.0 ~ 1.0 の確率値の場合は 1000倍整数化！
                 if 0.0 <= fval <= 1.0 and "." in val_str:
                     int_val_str = str(_safe_int(fval, 1000))
                 else:
@@ -153,7 +151,6 @@ def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
 
             tags[tag_key] = int_val_str
 
-            # TOP モデル用クラス抽出
             raw_name = clean_k[9:]
             for mkey in sorted(MODEL_KEYS, key=len, reverse=True):
                 if raw_name.startswith(mkey + "_"):
@@ -235,7 +232,7 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
         for i, val in enumerate(mfccs):
             tags[f"{p}LIBROSA_MFCC{i:02d}"] = str(_safe_int(val, 100))
 
-    # 2. Essentia 特徴量
+    # 2. Essentia 特徴量 (全453モデル確率1000倍整数化 ＆ TOP文字タグ生成)
     predictions = essentia_data.get("predictions", {})
     if predictions:
         model_groups: dict[str, list[tuple[str, float]]] = {}
@@ -341,6 +338,7 @@ def main():
     parser.add_argument("--predictions-json-path", required=False, default="", help="Essentia JSON path")
     parser.add_argument("--tensor-json-path", required=False, default="", help="Tensor JSON path")
     parser.add_argument("--prefix", required=False, default="", help="Optional prefix for CUE tracks")
+    parser.add_argument("--force", action="store_true", help="Force overwrite all tags even if present")
     args = parser.parse_args()
 
     config = load_config()
@@ -371,13 +369,31 @@ def main():
         except Exception as e:
             logger.warning(f"Tensor JSON のパースに失敗いたしました: {e}")
 
-    tags = build_flac_tags(librosa_data, essentia_data, tensor_data, prefix=args.prefix)
-    if not tags:
+    expected_tags = build_flac_tags(librosa_data, essentia_data, tensor_data, prefix=args.prefix)
+    if not expected_tags:
         logger.warning("書き込むべきタグ情報が生成されませんでした。")
         sys.exit(0)
 
+    # Mutagen で既存の FLAC タグを読み込み、未書き込み / 不足しているタグ (missing_tags) のみを抽出
+    missing_tags = expected_tags
+    if not args.force and os.path.exists(args.flac_path):
+        try:
+            audio = FLAC(args.flac_path)
+            existing_tags = {k.upper(): v for k, v in audio.items()}
+            missing_tags = {}
+            for k, v in expected_tags.items():
+                k_upper = k.upper()
+                if k_upper not in existing_tags or not existing_tags[k_upper]:
+                    missing_tags[k] = v
+        except Exception as e:
+            logger.warning(f"既存 FLAC タグの読込中に警告が発生いたしました (全上書きへフォールバック): {e}")
+
+    if not missing_tags:
+        logger.info(f"すべてのタグが既に書き込み済みです: {os.path.basename(args.flac_path)}")
+        sys.exit(0)
+
     try:
-        write_flac_tags_with_retry(args.flac_path, tags, retry_count=retry_count, retry_delay=retry_delay)
+        write_flac_tags_with_retry(args.flac_path, missing_tags, retry_count=retry_count, retry_delay=retry_delay)
     except Exception as e:
         logger.exception("FLAC タグ書き込み中にエラーが発生いたしましたわ！")
         sys.exit(1)

@@ -952,7 +952,7 @@ def analyze_stems(
             mix_ctx = stem_context.stems["mix"]
             patches = models.extract_mel_patches(mix_ctx.y, mix_ctx.sr, n_patches=64)
             preds_dict = models.run_essentia_serialized(patches, essentia_models)
-                    essentia_feats = EssentiaFeatures(preds_dict)
+            essentia_feats = EssentiaFeatures(preds_dict)
             logging.info(
                 f"[{proc_name}] [Morphism] [Essentia] [ONNX-Inference] "
                 f"Essentia 分類推論を完了いたしましたわ (経過: {time.perf_counter() - t_start_essentia:.4f}s)"
