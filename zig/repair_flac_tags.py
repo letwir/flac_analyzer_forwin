@@ -1,13 +1,14 @@
 """
 zig/repair_flac_tags.py
 ========================
-PostgreSQL DB (raw.library_flac) から既存の解析データを参照し、
+PostgreSQL DB (raw.library_flac) から既存の解析データ (features & meta) を参照し、
 FLAC ファイル本体に未書き込み/不足している VorbisComment タグを検出して
 CUE シート有無に応じたプレフィックス切り替え（filepath ごとの一括グループ化）を行い、
 重複書き込みゼロで安全に一括補完焼き込みを行う独立治具ですわ！
 
 ファイルシステム先行走査 (File-First Fast Scan) 機構により、
 --dir や --limit 指定時の実行速度を 0.01 秒（一瞬）へ超爆速化！
+Essentia 全モデルの各クラス確率 (1000倍整数) および TOP タグを 100% 漏れなく復元・焼き込みますの。
 """
 
 import argparse
@@ -27,7 +28,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from flac_tagger import build_flac_tags, write_flac_tags_with_retry
+from flac_tagger import build_flac_tags, write_flac_tags_with_retry, parse_tags_from_meta_dict
 
 def setup_logger():
     logging.basicConfig(
@@ -67,20 +68,9 @@ def build_tags_for_file_group(file_rows: list[tuple]) -> dict[str, str]:
 
     for idx, row in enumerate(file_rows):
         rec_id, filepath, audio_hash, meta, features = row
-        if not isinstance(features, dict):
-            continue
 
-        mix_feat = features.get("mix", {})
-        scalars = mix_feat.get("scalars", {})
-        predictions = mix_feat.get("predictions", {})
-
-        tensor_feats = {}
-        for k, v in mix_feat.items():
-            if k not in ("source", "scalars", "sequences", "predictions"):
-                tensor_feats[k] = v
-
+        tr_num = idx + 1
         if is_multi_track:
-            tr_num = idx + 1
             if isinstance(meta, dict):
                 tn = meta.get("tracknumber") or meta.get("TRACKNUMBER") or meta.get("track")
                 if tn:
@@ -92,10 +82,26 @@ def build_tags_for_file_group(file_rows: list[tuple]) -> dict[str, str]:
         else:
             prefix = ""
 
-        librosa_data = {"scalars": scalars}
-        essentia_data = {"predictions": predictions}
-        tr_tags = build_flac_tags(librosa_data, essentia_data, tensor_feats, prefix=prefix)
-        all_expected_tags.update(tr_tags)
+        # 1. meta 内から吸い出す Tags (過去 DB レコードの Essentia 全確率・全タグ復元)
+        if isinstance(meta, dict):
+            meta_tags = parse_tags_from_meta_dict(meta, prefix=prefix)
+            all_expected_tags.update(meta_tags)
+
+        # 2. features 内から計算する Tags (新規・構造化データ復元)
+        if isinstance(features, dict):
+            mix_feat = features.get("mix", {})
+            scalars = mix_feat.get("scalars", {})
+            predictions = mix_feat.get("predictions", {})
+
+            tensor_feats = {}
+            for k, v in mix_feat.items():
+                if k not in ("source", "scalars", "sequences", "predictions"):
+                    tensor_feats[k] = v
+
+            librosa_data = {"scalars": scalars}
+            essentia_data = {"predictions": predictions}
+            tr_tags = build_flac_tags(librosa_data, essentia_data, tensor_feats, prefix=prefix)
+            all_expected_tags.update(tr_tags)
 
     return all_expected_tags
 
@@ -133,10 +139,10 @@ def inspect_and_repair_file_group(filepath: str, file_rows: list[tuple], dry_run
     logger.info(f"不足タグを {len(missing_tags)} 件検出いたしましたわ！ {tr_count_info}: {os.path.basename(filepath)}")
     if dry_run:
         print(f"\n--- Dry-Run: Inspected {os.path.basename(filepath)} {tr_count_info} ---")
-        for mk, mv in sorted(missing_tags.items())[:10]:
+        for mk, mv in sorted(missing_tags.items())[:20]:
             print(f"  + Missing Tag: {mk} = {mv}")
-        if len(missing_tags) > 10:
-            print(f"  ... and {len(missing_tags) - 10} more missing tags.")
+        if len(missing_tags) > 20:
+            print(f"  ... and {len(missing_tags) - 20} more missing tags.")
         return True
 
     try:
@@ -148,10 +154,15 @@ def inspect_and_repair_file_group(filepath: str, file_rows: list[tuple], dry_run
         return False
 
 def scan_local_flac_files(target_dir: str, limit: int = 0) -> list[str]:
-    """指定ディレクトリから実在する FLAC ファイルを高速スキャン取得しますわ！"""
     found_files = []
     norm_target = os.path.normpath(target_dir)
     if not os.path.exists(norm_target):
+        return []
+
+    # 単一ファイルパスが直接渡された場合
+    if os.path.isfile(norm_target):
+        if norm_target.lower().endswith(".flac"):
+            return [norm_target]
         return []
 
     for root, _, files in os.walk(norm_target):
@@ -170,7 +181,7 @@ def main():
     parser = argparse.ArgumentParser(description="FLAC DB Tag Repair Tool (Ultra Fast File-First Scan)")
     parser.add_argument("--dry-run", action="store_true", help="Preview missing tags without modifying FLAC files")
     parser.add_argument("--limit", type=int, default=0, help="Limit maximum number of UNIQUE FILES to process (0 = unlimited)")
-    parser.add_argument("--dir", type=str, default="", help="Filter files under specific directory path")
+    parser.add_argument("--dir", type=str, default="", help="Filter files under specific directory path or single file")
     parser.add_argument("--force", action="store_true", help="Force overwrite all tags even if present")
     args = parser.parse_args()
 
@@ -185,26 +196,21 @@ def main():
 
     target_filepaths = []
 
-    # ─────────────────────────────────────────────────────────────
-    # [超爆速化] --dir が指定されている場合：ローカル走査先行 (File-First Fast Scan)
-    # ─────────────────────────────────────────────────────────────
     if args.dir and os.path.exists(args.dir):
-        logger.info(f"【超爆速スキャン】 指定フォルダ [{args.dir}] から実在 FLAC ファイルを高速走査中...")
+        logger.info(f"【超爆速スキャン】 指定パス [{args.dir}] から実在 FLAC ファイルを検索中...")
         target_filepaths = scan_local_flac_files(args.dir, limit=args.limit)
-        logger.info(f"【ファイル走査完了】 実在する FLAC ファイル {len(target_filepaths)} 件を発見いたしましたわ！")
+        logger.info(f"【ファイルスキャン完了】 実在する FLAC ファイル {len(target_filepaths)} 件を発見いたしましたわ！")
         
         if not target_filepaths:
-            logger.info("対象フォルダ内に FLAC ファイルが見つかりませんでした。")
+            logger.info("対象パス内に FLAC ファイルが見つかりませんでした。")
             cur.close()
             conn.close()
             sys.exit(0)
 
-        # 見つかった実在ファイルパスのみをピンポイントで DB 問い合わせ
         detail_query = """
             SELECT id, filepath, audio_hash, meta, features 
             FROM raw.library_flac 
-            WHERE features IS NOT NULL 
-              AND (filepath = ANY(%s) OR REPLACE(filepath, '/', '\\') = ANY(%s) OR REPLACE(filepath, '\\', '/') = ANY(%s))
+            WHERE (filepath = ANY(%s) OR REPLACE(filepath, '/', '\\') = ANY(%s) OR REPLACE(filepath, '\\', '/') = ANY(%s))
             ORDER BY filepath, id ASC
         """
         alt_paths_slash = [f.replace("\\", "/") for f in target_filepaths]
@@ -214,9 +220,8 @@ def main():
         rows = cur.fetchall()
 
     else:
-        # --dir 指定がない場合：DB からユニーク filepath を抽出
         logger.info("DB から解析済みユニーク FLAC ファイルパスを取得中...")
-        header_query = "SELECT DISTINCT filepath FROM raw.library_flac WHERE features IS NOT NULL ORDER BY filepath ASC"
+        header_query = "SELECT DISTINCT filepath FROM raw.library_flac ORDER BY filepath ASC"
         if args.limit > 0:
             header_query += f" LIMIT {args.limit}"
         cur.execute(header_query)
@@ -242,7 +247,6 @@ def main():
         fp = row[1]
         grouped_files[fp].append(row)
 
-    # 実在するファイルパスのキーを正規化マッピング
     file_map = {}
     for fp in grouped_files.keys():
         file_map[os.path.normpath(fp).lower()] = fp
@@ -250,7 +254,6 @@ def main():
     processed = 0
     repaired = 0
     
-    # 実行対象ファイル
     exec_filepaths = target_filepaths if args.dir else list(grouped_files.keys())
     if args.limit > 0:
         exec_filepaths = exec_filepaths[:args.limit]
@@ -261,7 +264,6 @@ def main():
         file_rows = grouped_files.get(real_fp, [])
 
         if not file_rows:
-            # 異表記パスでの検索フォールバック
             for k, v in grouped_files.items():
                 if os.path.normpath(k).lower() == norm_key:
                     file_rows = v

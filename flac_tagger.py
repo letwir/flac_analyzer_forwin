@@ -1,7 +1,8 @@
 """
 flac_tagger.py
 ==============
-解析結果 (Librosa, Essentia, Tensor JSON) から FLAC VorbisComment タグ辞書を統合生成し、
+解析結果 (Librosa, Essentia, Tensor JSON) および DB meta タグから
+FLAC VorbisComment タグ辞書を統合生成し、
 アトミック書き込みおよび Windows タイムスタンプ保護（mtime, atime, ctime）を行って
 FLAC 本体へ安全に焼き込むモジュールですわ！
 ファイル使用中（ロック）の場合のバックオフリトライ機構を完備しておりますの。
@@ -22,7 +23,6 @@ import tomllib
 from typing import Any
 from mutagen.flac import FLAC
 
-
 def setup_logger():
     logging.basicConfig(
         level=logging.INFO,
@@ -41,7 +41,6 @@ def load_config() -> dict:
     return {}
 
 def set_win_timestamps(filepath: str, atime: float, mtime: float, ctime: float | None = None):
-    """Windows タイムスタンプ（作成日時 ctime, 更新日時 mtime, アクセス日時 atime）を保護・復元いたしますの。"""
     try:
         os.utime(filepath, (atime, mtime))
     except Exception as e:
@@ -103,6 +102,86 @@ MODEL_KEYS = [
     "MOOD_RELAXED", "MOOD_SAD", "VOICE_INSTRUMENTAL"
 ]
 
+def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
+    """meta 辞書内から Essentia 全クラス確率や Librosa などのタグを漏れなく吸い出して正規化いたしますの。"""
+    tags: dict[str, str] = {}
+    if not isinstance(meta, dict):
+        return tags
+
+    target_tr_num = None
+    if prefix and prefix.upper().startswith("CUE_TRACK"):
+        try:
+            target_tr_num = int(prefix.upper().replace("CUE_TRACK", ""))
+        except ValueError:
+            pass
+
+    model_groups: dict[str, list[tuple[str, float]]] = {}
+
+    for k, v in meta.items():
+        k_lower = k.lower()
+        val_str = str(v[0]) if isinstance(v, list) and v else str(v)
+
+        # トラックプレフィックスのパース
+        tr_match = re.match(r"^(?:cue_?)?track_?(\d+)_(.+)$", k_lower)
+        if tr_match:
+            tr_num = int(tr_match.group(1))
+            if target_tr_num is not None and tr_num != target_tr_num:
+                continue # 別のトラック用のタグはスキップ
+            raw_tag = tr_match.group(2)
+        else:
+            if target_tr_num is not None:
+                continue # トラック指定ありなのにトラックプレフィックスが無ければスキップ
+            raw_tag = k_lower
+
+        if raw_tag.startswith("essentia_"):
+            clean_k = raw_tag.upper()
+            tag_key = f"{prefix + '_' if prefix else ''}{clean_k}"
+
+            if clean_k.endswith("_TOP"):
+                tags[tag_key] = val_str
+                continue
+
+            try:
+                fval = float(val_str)
+                # 0.0 ~ 1.0 の確率値の場合は 1000倍整数化！
+                if 0.0 <= fval <= 1.0 and "." in val_str:
+                    int_val_str = str(_safe_int(fval, 1000))
+                else:
+                    int_val_str = str(int(round(fval)))
+            except ValueError:
+                int_val_str = val_str
+
+            tags[tag_key] = int_val_str
+
+            # TOP モデル用クラス抽出
+            raw_name = clean_k[9:]
+            for mkey in sorted(MODEL_KEYS, key=len, reverse=True):
+                if raw_name.startswith(mkey + "_"):
+                    class_name = raw_name[len(mkey) + 1:]
+                    try:
+                        prob = float(val_str)
+                        if prob > 1.0:
+                            prob /= 1000.0
+                        if mkey not in model_groups:
+                            model_groups[mkey] = []
+                        model_groups[mkey].append((class_name, prob))
+                    except ValueError:
+                        pass
+                    break
+
+        elif raw_tag.startswith("librosa_") or raw_tag.startswith("tensor_"):
+            clean_k = raw_tag.upper()
+            tag_key = f"{prefix + '_' if prefix else ''}{clean_k}"
+            tags[tag_key] = val_str
+
+    for mkey, items in model_groups.items():
+        top_tag = f"{prefix + '_' if prefix else ''}ESSENTIA_{mkey}_TOP"
+        if top_tag not in tags and items:
+            top_class, _ = max(items, key=lambda x: x[1])
+            tags[top_tag] = top_class
+
+    return tags
+
 def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, prefix: str = "") -> dict[str, str]:
     p = f"{prefix}_" if prefix else ""
     tags: dict[str, str] = {}
@@ -120,7 +199,6 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
         if "dominant_pitch" in scalars:
             tags[f"{p}LIBROSA_DOMINANT_PITCH"] = str(scalars["dominant_pitch"])
         
-        # 浮動小数点数 (raw float) 指標
         if "zcr_mean" in scalars:
             tags[f"{p}LIBROSA_ZCR"] = _safe_float_str(scalars["zcr_mean"])
         elif "zcr" in scalars:
@@ -133,7 +211,6 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
         if "hnr" in scalars:
             tags[f"{p}LIBROSA_HNR"] = _safe_float_str(scalars["hnr"])
 
-        # 整数・スケール整数指標
         if "spectral_bandwidth" in scalars:
             tags[f"{p}LIBROSA_SPECTRAL_BANDWIDTH"] = str(_safe_int(scalars["spectral_bandwidth"]))
         if "centroid_mean" in scalars:
@@ -150,7 +227,6 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
         if "flatness" in scalars:
             tags[f"{p}LIBROSA_FLATNESS"] = str(_safe_int(scalars["flatness"], 100))
 
-        # 配列型指標 (Contrast, MFCC)
         contrast_bands = scalars.get("contrast_bands", [])
         for i, val in enumerate(contrast_bands):
             tags[f"{p}LIBROSA_CONTRAST_B{i}"] = str(_safe_int(val, 100))
@@ -183,13 +259,12 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
                     model_groups[matched_model] = []
                 model_groups[matched_model].append((class_name, prob))
 
-        # 各モデルの Top (最高確率) クラスを文字列タグ挿入
         for mkey, items in model_groups.items():
             if items:
                 top_class, top_prob = max(items, key=lambda x: x[1])
                 tags[f"{p}ESSENTIA_{mkey}_TOP"] = top_class
 
-    # 3. Tensor 特徴量 (存在する場合)
+    # 3. Tensor 特徴量
     if tensor_data:
         tensor_feats = tensor_data.get("features", tensor_data)
         if isinstance(tensor_feats, dict):
@@ -212,8 +287,6 @@ def write_flac_tags_with_retry(file_path: str, tags: dict, retry_count: int = 5,
     mtime_val = stat_info.st_mtime
 
     attempt = 0
-    success = False
-
     while attempt < retry_count:
         attempt += 1
         try:
@@ -238,9 +311,7 @@ def write_flac_tags_with_retry(file_path: str, tags: dict, retry_count: int = 5,
                 except OSError:
                     shutil.move(tmp_path, file_path)
 
-                # タイムスタンプ復元
                 set_win_timestamps(file_path, atime_val, mtime_val, ctime_val)
-                success = True
                 logger.info(f"FLAC タグを成功裏に書き込みましたわ！ ({len(tags)} タグ) -> {os.path.basename(file_path)}")
                 break
 
