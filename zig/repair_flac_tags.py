@@ -3,10 +3,12 @@ zig/repair_flac_tags.py
 ========================
 PostgreSQL DB (raw.library_flac) から既存の解析データを参照し、
 FLAC ファイル本体に未書き込み/不足している VorbisComment タグを検出して
-CUE シート有無に応じたプレフィックス切り替えを行いつつ自動補完焼き込みを行う独立治具ですわ！
+CUE シート有無に応じたプレフィックス切り替え（filepath ごとの一括グループ化）を行い、
+重複書き込みゼロで安全に一括補完焼き込みを行う独立治具ですわ！
 """
 
 import argparse
+from collections import defaultdict
 import json
 import logging
 import os
@@ -55,95 +57,67 @@ def get_db_url(config: dict) -> str:
         sys.exit(1)
     return db_url
 
-def parse_cue_track_count(meta: dict) -> int:
-    """meta データ内から CUE トラック数・CUE の有無を判定・抽出します。"""
-    if not isinstance(meta, dict):
-        return 0
-    cuesheet = meta.get("cuesheet") or meta.get("CUESHEET") or ""
-    if cuesheet:
-        # TRACK 01, TRACK 02 などの出現回数をカウント
-        import re
-        matches = re.findall(r"TRACK\s+(\d+)\s+AUDIO", cuesheet, re.IGNORECASE)
-        if matches:
-            return len(matches)
-    
-    # 既存タグキーから cue_trackXX_ を探す
-    max_track = 0
-    import re
-    for k in meta.keys():
-        m = re.match(r"^cue_track(\d+)_", k.lower())
-        if m:
-            tr_num = int(m.group(1))
-            if tr_num > max_track:
-                max_track = tr_num
-    return max_track
+def build_tags_for_file_group(file_rows: list[tuple]) -> dict[str, str]:
+    """
+    同一 filepath に属するレコード群 (ID 昇順) から、
+    単一 FLAC 用、あるいは CUE トラック別 (CUE_TRACK01_, CUE_TRACK02_ ...) の
+    完全な統合期待タグ辞書を生成しますわ！
+    """
+    all_expected_tags: dict[str, str] = {}
+    is_multi_track = len(file_rows) > 1
 
-def build_tags_for_record(meta: dict, features: dict) -> dict[str, str]:
-    """DB の meta および features データから、FLAC に書き込むべき期待タグ辞書を統合算出しますわ。"""
-    expected_tags: dict[str, str] = {}
-    if not isinstance(features, dict):
-        return expected_tags
+    for idx, row in enumerate(file_rows):
+        rec_id, filepath, audio_hash, meta, features = row
+        if not isinstance(features, dict):
+            continue
 
-    mix_feat = features.get("mix", {})
-    scalars = mix_feat.get("scalars", {})
-    predictions = mix_feat.get("predictions", {})
+        mix_feat = features.get("mix", {})
+        scalars = mix_feat.get("scalars", {})
+        predictions = mix_feat.get("predictions", {})
 
-    # ONNX/Tensor 特徴量
-    tensor_feats = {}
-    for k, v in mix_feat.items():
-        if k not in ("source", "scalars", "sequences", "predictions"):
-            tensor_feats[k] = v
+        # ONNX/Tensor 特徴量
+        tensor_feats = {}
+        for k, v in mix_feat.items():
+            if k not in ("source", "scalars", "sequences", "predictions"):
+                tensor_feats[k] = v
 
-    cue_track_count = parse_cue_track_count(meta)
+        if is_multi_track:
+            tr_num = idx + 1
+            if isinstance(meta, dict):
+                tn = meta.get("tracknumber") or meta.get("TRACKNUMBER") or meta.get("track")
+                if tn:
+                    try:
+                        tr_num = int(str(tn).split("/")[0])
+                    except ValueError:
+                        pass
+            prefix = f"CUE_TRACK{tr_num:02d}"
+        else:
+            prefix = ""
 
-    if cue_track_count > 0:
-        # CUE ありの場合: トラックごとの CUE_TRACKXX_ タグ、または全体タグを生成
-        for tr_idx in range(1, cue_track_count + 1):
-            prefix = f"CUE_TRACK{tr_idx:02d}"
-            
-            # CUE トラックごとの個別 scalars / predictions が存在するかチェック
-            tr_librosa = {"scalars": scalars}
-            tr_essentia = {"predictions": predictions}
-            
-            # meta 内の cue_track01_* 個別情報を吸い出す
-            track_prefix = f"cue_track{tr_idx:02d}_"
-            for mk, mv in meta.items():
-                if mk.lower().startswith(track_prefix):
-                    raw_sub_key = mk[len(track_prefix):]
-                    if raw_sub_key.lower() == "bpm":
-                        try:
-                            tr_librosa["scalars"]["bpm"] = float(mv)
-                        except (ValueError, TypeError):
-                            pass
-
-            tr_tags = build_flac_tags(tr_librosa, tr_essentia, tensor_feats, prefix=prefix)
-            expected_tags.update(tr_tags)
-    else:
-        # CUE なし（単体 FLAC）の場合: プレフィックスなし
         librosa_data = {"scalars": scalars}
         essentia_data = {"predictions": predictions}
-        expected_tags = build_flac_tags(librosa_data, essentia_data, tensor_feats, prefix="")
+        tr_tags = build_flac_tags(librosa_data, essentia_data, tensor_feats, prefix=prefix)
+        all_expected_tags.update(tr_tags)
 
-    return expected_tags
+    return all_expected_tags
 
-def inspect_and_repair_record(row: tuple, dry_run: bool = False, force: bool = False, retry_count: int = 5, retry_delay: float = 3.0) -> bool:
-    rec_id, filepath, audio_hash, meta, features = row
+def inspect_and_repair_file_group(filepath: str, file_rows: list[tuple], dry_run: bool = False, force: bool = False, retry_count: int = 5, retry_delay: float = 3.0) -> bool:
     logger = logging.getLogger("RepairZig")
 
     if not os.path.exists(filepath):
-        logger.warning(f"[ID: {rec_id}] ファイルが見つかりません (スキップ): {filepath}")
+        logger.warning(f"ファイルが見つかりません (スキップ): {filepath}")
         return False
 
     try:
         audio = FLAC(filepath)
         existing_tags = {k.upper(): v for k, v in audio.items()}
     except Exception as e:
-        logger.error(f"[ID: {rec_id}] FLAC タグの読込に失敗いたしました: {filepath} -> {e}")
+        logger.error(f"FLAC タグの読込に失敗いたしました: {filepath} -> {e}")
         return False
 
-    expected_tags = build_tags_for_record(meta, features)
+    expected_tags = build_tags_for_file_group(file_rows)
     if not expected_tags:
-        logger.info(f"[ID: {rec_id}] 書き込むべき特徴量データが DB 内にございません。")
+        logger.info(f"書き込むべき特徴量データが DB 内にございません: {os.path.basename(filepath)}")
         return False
 
     missing_tags: dict[str, str] = {}
@@ -152,35 +126,37 @@ def inspect_and_repair_record(row: tuple, dry_run: bool = False, force: bool = F
         if force or k_upper not in existing_tags or not existing_tags[k_upper]:
             missing_tags[k] = v
 
+    tr_count_info = f"({len(file_rows)} トラック)" if len(file_rows) > 1 else "(単体 FLAC)"
+
     if not missing_tags:
-        logger.info(f"[ID: {rec_id}] すべてのタグが既に完璧に焼き込まれておりますわ！: {os.path.basename(filepath)}")
+        logger.info(f"すべてのタグが既に完璧に焼き込まれておりますわ！ {tr_count_info}: {os.path.basename(filepath)}")
         return True
 
-    logger.info(f"[ID: {rec_id}] 不足タグを {len(missing_tags)} 件検出いたしましたわ！ (ファイル: {os.path.basename(filepath)})")
+    logger.info(f"不足タグを {len(missing_tags)} 件検出いたしましたわ！ {tr_count_info}: {os.path.basename(filepath)}")
     if dry_run:
-        print(f"\n--- Dry-Run: Inspected {os.path.basename(filepath)} ---")
+        print(f"\n--- Dry-Run: Inspected {os.path.basename(filepath)} {tr_count_info} ---")
         for mk, mv in sorted(missing_tags.items())[:10]:
             print(f"  + Missing Tag: {mk} = {mv}")
         if len(missing_tags) > 10:
             print(f"  ... and {len(missing_tags) - 10} more missing tags.")
         return True
 
-    # 実際の焼き込み実行
+    # 1 ファイルにつき 1 回だけアトミック焼き込みを実行
     try:
         write_flac_tags_with_retry(filepath, missing_tags, retry_count=retry_count, retry_delay=retry_delay)
-        logger.info(f"[ID: {rec_id}] 不足タグの再焼き込みが正常完了いたしましたわ！")
+        logger.info(f"不足タグの再焼き込みが正常完了いたしましたわ！ {tr_count_info}: {os.path.basename(filepath)}")
         return True
     except Exception as e:
-        logger.error(f"[ID: {rec_id}] タグ焼き込み中にエラーが発生いたしました: {e}")
+        logger.error(f"タグ焼き込み中にエラーが発生いたしました: {filepath} -> {e}")
         return False
 
 def main():
     setup_logger()
     logger = logging.getLogger("RepairZig")
 
-    parser = argparse.ArgumentParser(description="FLAC DB Tag Repair Tool")
+    parser = argparse.ArgumentParser(description="FLAC DB Tag Repair Tool (Grouped by Filepath)")
     parser.add_argument("--dry-run", action="store_true", help="Preview missing tags without modifying FLAC files")
-    parser.add_argument("--limit", type=int, default=0, help="Limit maximum number of records to process (0 = unlimited)")
+    parser.add_argument("--limit", type=int, default=0, help="Limit maximum number of UNIQUE FILES to process (0 = unlimited)")
     parser.add_argument("--dir", type=str, default="", help="Filter files under specific directory path")
     parser.add_argument("--force", action="store_true", help="Force overwrite all tags even if present")
     args = parser.parse_args()
@@ -198,27 +174,36 @@ def main():
     if args.dir:
         query += " AND filepath LIKE %s"
         params.append(f"{args.dir}%")
-    query += " ORDER BY id DESC"
-    if args.limit > 0:
-        query += " LIMIT %s"
-        params.append(args.limit)
+    query += " ORDER BY id ASC"
 
     cur.execute(query, params)
     rows = cur.fetchall()
-    logger.info(f"DB から処理対象レコードを {len(rows)} 件取得いたしましたわ！")
+    
+    # filepath ごとにレコードをグループ化 (ID 昇順)
+    grouped_files: dict[str, list[tuple]] = defaultdict(list)
+    for row in rows:
+        fp = row[1]
+        grouped_files[fp].append(row)
+
+    unique_filepaths = list(grouped_files.keys())
+    logger.info(f"DB から {len(rows)} レコード / {len(unique_filepaths)} 個のユニーク FLAC ファイルを取得いたしましたわ！")
+
+    if args.limit > 0:
+        unique_filepaths = unique_filepaths[:args.limit]
 
     processed = 0
     repaired = 0
-    for row in rows:
+    for fp in unique_filepaths:
+        file_rows = grouped_files[fp]
         processed += 1
-        success = inspect_and_repair_record(row, dry_run=args.dry_run, force=args.force, retry_count=retry_count, retry_delay=retry_delay)
+        success = inspect_and_repair_file_group(fp, file_rows, dry_run=args.dry_run, force=args.force, retry_count=retry_count, retry_delay=retry_delay)
         if success:
             repaired += 1
 
     cur.close()
     conn.close()
 
-    logger.info(f"【処理完了】 総処理対象: {processed} 件 / 正常・補完完了: {repaired} 件")
+    logger.info(f"【処理完了】 総ユニークファイル: {processed} 件 / 正常・補完完了: {repaired} 件")
 
 if __name__ == "__main__":
     main()
