@@ -23,113 +23,78 @@ os.environ["INGESTER_DATABASE_URL"] = (
 
 
 class ColorFormatter(logging.Formatter):
-    """圏論的役割別 24bit ANSI カラーフォーマッタですわ。
-    タグ種別で色相を、プロセス階層で彩度を変化させますの。"""
+    """圏論的役割別 ANSI 8色フォーマッタですわ。
+    黄・赤・橙は WARN/ERROR 専用とし、正常進行は暗→明のグラデーションで視認性を確保しますの。"""
 
     fmt = "%(asctime)s [%(levelname)s] %(message)s"
     RESET = "\033[0m"
 
     # ──────────────────────────────────────────────
-    # タグ → (hue°, saturation, lightness)
+    # タグ → ANSI 8色 (黄・赤・橙は完全排除)
+    # 暗 (Level 1: Dim Gray) → 明 (Level 6: Bold Bright White)
     # ──────────────────────────────────────────────
-    # [Morphism] サブタグは青系で色相を段階的にずらしますわ
-    _TAG_HSL: dict[str, tuple[float, float, float]] = {
-        # --- Morphism サブタグ (青系グラデーション) ---
-        "[SHM]": (180.0, 0.80, 0.58),  # シアン
-        "[Demucs]": (195.0, 0.80, 0.58),  # シアン青
-        "[Librosa]": (213.0, 0.80, 0.58),  # 青
-        "[Morphism]": (210.0, 0.80, 0.58),  # 青 (fallback)
-        "[Essentia]": (228.0, 0.78, 0.60),  # 青紫
-        # --- プロセスライフサイクル ---
-        "[Initial Object]": (120.0, 0.80, 0.55),  # 緑
-        "[Terminal Object]": (0.0, 0.80, 0.55),  # 赤
-        # --- 自己射 ---
-        "[Endomorphism]": (270.0, 0.72, 0.62),  # 紫
-        # --- 副作用モナド ---
-        "[IO Monad]": (45.0, 0.88, 0.58),  # 黄
-        "[Effect]": (28.0, 0.88, 0.58),  # 橙
+    _TAG_ANSI: dict[str, str] = {
+        "[Initial Object]": "\033[2;37m",   # Level 1: Dim Gray (最暗)
+        "[HASH]": "\033[2;37m",             # Level 1: Dim Gray
+        "[SHM]": "\033[34m",                # Level 2: Blue (暗め)
+        "[Demucs]": "\033[35m",             # Level 3: Magenta (中暗)
+        "[Librosa]": "\033[36m",            # Level 4: Cyan (中明)
+        "[Essentia]": "\033[36m",           # Level 4: Cyan
+        "[Morphism]": "\033[36m",           # Level 4: Cyan (fallback)
+        "[IO Monad]": "\033[32m",           # Level 5: Green (明)
+        "[Effect]": "\033[32m",             # Level 5: Green
+        "[Terminal Object]": "\033[1;97m", # Level 6: Bold Bright White (最光/完成)
+        "[TAG]": "\033[1;97m",              # Level 6: Bold Bright White
     }
 
-    # 優先順位: Morphism サブタグを先に評価しますわ
     _TAG_PRIORITY: tuple[str, ...] = (
         "[SHM]",
         "[Demucs]",
         "[Librosa]",
-        "[Essentia]",  # Morphism サブタグ (高優先)
-        "[Initial Object]",
-        "[Terminal Object]",
-        "[Morphism]",  # Morphism fallback
-        "[Endomorphism]",
+        "[Essentia]",
         "[IO Monad]",
         "[Effect]",
+        "[TAG]",
+        "[Initial Object]",
+        "[Terminal Object]",
+        "[HASH]",
+        "[Morphism]",
     )
 
-    # デフォルト: 明るい灰色 (彩度ゼロ)
-    _DEFAULT_HSL: tuple[float, float, float] = (0.0, 0.0, 0.78)
+    # デフォルト
+    _DEFAULT_ANSI: str = "\033[37m"
 
-    # WARNING / ERROR / CRITICAL の上書き色
-    _WARN_HSL: tuple[float, float, float] = (48.0, 1.00, 0.62)
-    _ERROR_HSL: tuple[float, float, float] = (0.0, 0.95, 0.58)
-    _CRIT_HSL: tuple[float, float, float] = (0.0, 1.00, 0.45)
-
-    # ──────────────────────────────────────────────
-    # プロセス名 → 彩度乗数 (親=1.0、子=0.70)
-    # ──────────────────────────────────────────────
-    _PROC_SAT: dict[str, float] = {
-        "main": 1.00,
-        "MainProcess": 1.00,
-        "Producer": 0.70,
-    }
-    _CONSUMER_SAT: float = 0.70
-    _UNKNOWN_SAT: float = 0.55
+    # WARNING / ERROR / CRITICAL 専用色 (黄 / 赤)
+    _WARN_ANSI: str = "\033[1;33m"   # Bold Yellow (WARN専用)
+    _ERROR_ANSI: str = "\033[1;31m"  # Bold Red (ERROR専用)
+    _CRIT_ANSI: str = "\033[1;31m"   # Bold Red
 
     def __init__(self, use_color: bool = True):
         super().__init__()
         self.use_color = use_color
 
-    # ──────────────────────────────────────────────
-    # 内部ユーティリティ
-    # ──────────────────────────────────────────────
-    @staticmethod
-    def _hsl_to_ansi(h: float, s: float, l: float) -> str:
-        """HSL (h:0-360, s:0-1, l:0-1) → 24bit 前景色 ANSI エスケープ"""
-        import colorsys
-
-        r, g, b = colorsys.hls_to_rgb(h / 360.0, l, s)
-        return f"\033[38;2;{int(r * 255)};{int(g * 255)};{int(b * 255)}m"
-
-    def _pick_hsl(self, record: logging.LogRecord) -> tuple[float, float, float]:
-        """レコードの levelno とメッセージタグから HSL を決定しますわ"""
+    def _pick_ansi(self, record: logging.LogRecord) -> str:
+        """レコードの levelno とメッセージタグから ANSI コードを決定しますわ"""
         if record.levelno >= logging.CRITICAL:
-            return self._CRIT_HSL
+            return self._CRIT_ANSI
         if record.levelno >= logging.ERROR:
-            return self._ERROR_HSL
+            return self._ERROR_ANSI
         if record.levelno >= logging.WARNING:
-            return self._WARN_HSL
+            return self._WARN_ANSI
 
         msg = record.getMessage()
         for tag in self._TAG_PRIORITY:
             if tag in msg:
-                return self._TAG_HSL[tag]
-        return self._DEFAULT_HSL
-
-    def _sat_mult(self, record: logging.LogRecord) -> float:
-        """プロセス名から彩度乗数を返しますわ"""
-        proc = record.processName or ""
-        if proc in self._PROC_SAT:
-            return self._PROC_SAT[proc]
-        if proc.startswith("Consumer"):
-            return self._CONSUMER_SAT
-        return self._UNKNOWN_SAT
+                return self._TAG_ANSI[tag]
+        return self._DEFAULT_ANSI
 
     def format(self, record: logging.LogRecord) -> str:
         base = logging.Formatter(self.fmt).format(record)
         if not self.use_color:
             return base
 
-        h, s, l = self._pick_hsl(record)
-        s_adj = min(1.0, s * self._sat_mult(record))
-        return self._hsl_to_ansi(h, s_adj, l) + base + self.RESET
+        ansi = self._pick_ansi(record)
+        return ansi + base + self.RESET
 
 
 def setup_logging(log_file_path: str = None):

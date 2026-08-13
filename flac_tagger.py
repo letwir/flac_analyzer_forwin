@@ -394,8 +394,9 @@ def main():
     missing_tags = expected_tags
     if not args.force and os.path.exists(args.flac_path):
         try:
-            audio = FLAC(args.flac_path)
-            existing_tags = {k.upper(): v for k, v in audio.items()}
+            from flac_getinfo import get_flac_info
+            flac_info = get_flac_info(args.flac_path)
+            existing_tags = flac_info.vorbis_comments
             missing_tags = {}
             for k, v in expected_tags.items():
                 k_upper = k.upper()

@@ -172,7 +172,8 @@ PostgreSQL DB に蓄積された過去の解析結果から、FLAC ファイル�
 - **ONNX SegFault 防止 ＆ 3段ワーカー並列実行**: Demucs 音源分離は `demucs_concurrent_limit = 1` セマフォで排他実行し ONNX SegFault を予防。完了後は Freeze された共有メモリから `Librosa`・`Tensor`・`Essentia` ワーカーを `sync.WaitGroup` により **3本同時並列実行**。
 - **Windows共有メモリ（Shared Memory）WORM転送**: 書き込み不可 (`PAGE_READONLY`) に保護した共有メモリ領域で巨大波形データを共有し、プロセス間コピーやメモリ断片化を絶滅。
 - **float32 精度最適化 ＆ 64-bit 暗黙キャスト抑止**: Librosa や Scipy 特徴量抽出において `float32` 直計算および中間精度のハイブリッド保護を適用。25分超の長尺トラックでも Windows ページファイル超過 (WinError 1455) を根絶。
-- **事前ハッシュ比較による高速スキップ**: デコード音源の波形 MD5 ハッシュにより、PostgreSQL 問い合わせで重複楽曲の音源分離・特徴量抽出を 100% スキップ。
+- **`flac_getinfo.py` による読取専有射 (Reader Morphism) 一元化**: FLAC ファイルからの VorbisComment、CUEシート、音声形式情報（SampleRate, Channels, Duration等）の読み取りを単一の純粋モジュールへ分離独立させ、特徴抽出・音源分離処理からのファイルIO副作用依存を完全排除。
+- **標準 ANSI 8 色による進捗暗明グラデーション**: ログ出力を「灰 (Dim Gray: 最暗) $\to$ 青 (Blue) $\to$ 紫 (Magenta) $\to$ シアン (Cyan) $\to$ 緑 (Green) $\to$ ボールドブライトホワイト (Bold Bright White: 最光)」へと収束させ、黄・赤・橙を WARN/ERROR 専用に厳格分離して視認性を最大化。
 - **CUE自動パース ＆ CUE無しFLACフォールバック**: CUEシート境界を自動パースしてトラック単位に展開。通常 FLAC ファイルへの自動安全フォールバックに対応。
 - **VorbisComment 複数値タグの JSONB リスト保存**: `ARTIST` 等のマルチバリュータグを配列 (`["...", "..."]`) として PostgreSQL `meta` (JSONB) カラムへ保持。
 - **タイムスタンプ保護（Timestamp Preservation）**: タグ書き戻し時にファイルの作成・更新日時を取得し寸分違わず完全復元。

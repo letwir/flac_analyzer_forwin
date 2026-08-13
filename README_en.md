@@ -156,6 +156,8 @@ Re-transmit and synchronize payloads that failed database insertion and were sav
 - **ONNX SegFault Prevention & 3-Tier Parallel Workers**: Enforces `demucs_concurrent_limit = 1` semaphore for Demucs. Once completed, launches `Librosa`, `Tensor`, and `Essentia` workers **in 3 parallel threads** from Freeze-protected shared memory using `sync.WaitGroup`.
 - **Windows Shared Memory (SHM) WORM Transfer**: Shared memory is mapped as Read-Only (`PAGE_READONLY`) after Demucs, preventing inter-process memory duplication and fragmentation.
 - **float32 Precision Optimization**: Enforces `float32` calculation and hybrid precision protection in Librosa and Scipy feature extractions, preventing Windows pagefile overflow (WinError 1455) even on 25+ minute long tracks.
+- **`flac_getinfo.py` Reader Morphism Integration**: Unified FLAC metadata, CUE sheet, and audio stream property reading into an isolated reader morphism module (`flac_getinfo.py`), eliminating file I/O side-effect dependencies from feature extraction and isolation stages.
+- **ANSI 8-Color Dark-to-Bright Progress Palette**: Standardized log formatting to progress from Dim Gray (darkest) $\to$ Blue $\to$ Magenta $\to$ Cyan $\to$ Green $\to$ Bold Bright White (brightest/completion), while strictly reserving Yellow and Red for WARN and ERROR alerts.
 - **MD5 Waveform Hash Skipping**: Calculates PCM MD5 hash to bypass Demucs and extraction by 100% for existing PostgreSQL tracks.
 - **CUE Auto-Parsing & FLAC Fallback**: Auto-parses embedded or sidecar CUE sheets into track segments with automatic fallback for standard FLAC files.
 - **Multi-value VorbisComment Tags in JSONB**: Preserves multi-value tags (e.g. `ARTIST`) as JSON arrays (`["...", "..."]`) inside PostgreSQL `meta` JSONB column.

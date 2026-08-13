@@ -964,19 +964,10 @@ def analyze_stems(
 
 
 def _build_metadata_tags(filepath: str) -> dict:
-    """FLAC から最低限の Vorbis comment タグを抽出（Consumer 用簡易版）"""
-    from mutagen.flac import FLAC
-    meta = FLAC(filepath)
-    tags = {}
-    for k, v in meta.items():
-        val_list = [str(x) for x in v]
-        key_lower = k.lower()
-        if len(val_list) == 1:
-            tags[key_lower] = val_list[0]
-        elif val_list:
-            tags[key_lower] = val_list
-        else:
-            tags[key_lower] = ""
+    """FLAC から Vorbis comment タグを抽出（flac_getinfo 経由）"""
+    from flac_getinfo import get_flac_info
+    flac_info = get_flac_info(filepath)
+    tags = {k.lower(): v for k, v in flac_info.vorbis_comments.items()}
     tags.setdefault("title", "Unknown")
     tags.setdefault("artist", "Unknown")
     tags.setdefault("album", "Unknown")
