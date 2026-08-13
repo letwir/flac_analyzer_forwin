@@ -58,11 +58,6 @@ def get_db_url(config: dict) -> str:
     return db_url
 
 def build_tags_for_file_group(file_rows: list[tuple]) -> dict[str, str]:
-    """
-    同一 filepath に属するレコード群 (ID 昇順) から、
-    単一 FLAC 用、あるいは CUE トラック別 (CUE_TRACK01_, CUE_TRACK02_ ...) の
-    完全な統合期待タグ辞書を生成しますわ！
-    """
     all_expected_tags: dict[str, str] = {}
     is_multi_track = len(file_rows) > 1
 
@@ -75,7 +70,6 @@ def build_tags_for_file_group(file_rows: list[tuple]) -> dict[str, str]:
         scalars = mix_feat.get("scalars", {})
         predictions = mix_feat.get("predictions", {})
 
-        # ONNX/Tensor 特徴量
         tensor_feats = {}
         for k, v in mix_feat.items():
             if k not in ("source", "scalars", "sequences", "predictions"):
@@ -141,7 +135,6 @@ def inspect_and_repair_file_group(filepath: str, file_rows: list[tuple], dry_run
             print(f"  ... and {len(missing_tags) - 10} more missing tags.")
         return True
 
-    # 1 ファイルにつき 1 回だけアトミック焼き込みを実行
     try:
         write_flac_tags_with_retry(filepath, missing_tags, retry_count=retry_count, retry_delay=retry_delay)
         logger.info(f"不足タグの再焼き込みが正常完了いたしましたわ！ {tr_count_info}: {os.path.basename(filepath)}")
@@ -169,24 +162,24 @@ def main():
     conn = psycopg2.connect(db_url)
     cur = conn.cursor()
 
-    query = "SELECT id, filepath, audio_hash, meta, features FROM raw.library_flac WHERE features IS NOT NULL"
-    params = []
-    if args.dir:
-        query += " AND filepath LIKE %s"
-        params.append(f"{args.dir}%")
-    query += " ORDER BY id ASC"
-
-    cur.execute(query, params)
+    query = "SELECT id, filepath, audio_hash, meta, features FROM raw.library_flac WHERE features IS NOT NULL ORDER BY id ASC"
+    cur.execute(query)
     rows = cur.fetchall()
     
-    # filepath ごとにレコードをグループ化 (ID 昇順)
+    # Python 側で filepath を正規化してグループ化 ＆ --dir フィルタリング
+    target_dir_norm = os.path.normpath(args.dir).lower() if args.dir else ""
+
     grouped_files: dict[str, list[tuple]] = defaultdict(list)
     for row in rows:
         fp = row[1]
+        if target_dir_norm:
+            fp_norm = os.path.normpath(fp).lower()
+            if not fp_norm.startswith(target_dir_norm):
+                continue
         grouped_files[fp].append(row)
 
     unique_filepaths = list(grouped_files.keys())
-    logger.info(f"DB から {len(rows)} レコード / {len(unique_filepaths)} 個のユニーク FLAC ファイルを取得いたしましたわ！")
+    logger.info(f"DB から条件に一致する {sum(len(v) for v in grouped_files.values())} レコード / {len(unique_filepaths)} 個のユニーク FLAC ファイルを取得いたしましたわ！")
 
     if args.limit > 0:
         unique_filepaths = unique_filepaths[:args.limit]
