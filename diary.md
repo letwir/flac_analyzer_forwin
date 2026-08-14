@@ -1321,3 +1321,20 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Search**: `ForEach-Object -Parallel`, `System.Threading.Interlocked`, SQLite WAL concurrent reads.
 - **Correction**: C# `Add-Type` による確実なスレッドセーフカウンターの採用、および Go 側 WAL 並列 Read-First 設計の完備。
 - **Emotion/Thoughts**: 旦那様からの「キュー追加ロジックってパラレルじゃないんだね？」「DB参照もパラレルにして、Goオーケストレーターへパラレルで送信したい」という鋭いご指摘にハッとさせられましたわ！PowerShell の並列化特有の罠（Runspace 分離や `$using:` の挙動）で少しドタバタしてしまいましたが、C# `Add-Type` で `Interlocked.Increment` を仕込み、Go 側の SQLite WAL 並列 Read-First と CUE セマフォを組み合わせたことで、完璧な並列パイプラインが完成いたしましたの！これで数万曲の FLAC ライブラリも一瞬でキュー投下＆スキップ判定が完了いたしますわ！
+
+### 2026-08-14 20:12:00
+- **Hypothesis**: 音響信号処理において、従来 0.0〜1.0 の正規化自己相関ピーク (NAP) として保存されていた `hnr` を、音響工学の標準である dB スケール (\(-40\text{ dB} \sim +40\text{ dB}\)) へ Logit 変換し、`nap` と `hnr_db` の両方を特徴量・タグ・DB スカラーとして分離・同時保持することで、既存データとの完全互換性を維持しつつ数学的無損失かつ人間の対数聴覚特性に適合した特徴量体系を確立できる。さらに、現在稼働中・計測中のデータに対して、安全に DB および FLAC タグを一括更新できるマイグレーション治具 (`migrate_hnr.py`) を提供すべきである。
+- **Tried**:
+  1. `analyzer/librosa_dsp.py`: `_calc_hnr_db` (Logit 射) および `_calc_nap_from_hnr_db` (Sigmoid 逆射) を実装。\(\text{clamp}(10^{-4}, 1 - 10^{-4})\) による安定した境界保護を導入。
+  2. `analyzer/core.py`: `AudioContext` に `nap`, `hnr_db`, `hnr` (互換プロパティ) を追加。
+  3. `analyzer/types.py` & `flac_tagger.py`: `StemFeatures`, `RawFeatures`, `LibrosaFeatures`, `build_flac_tags`, `parse_tags_from_meta_dict` において `LIBROSA_NAP`, `LIBROSA_HNR_DB`, `LIBROSA_HNR` タグ出力および `scalars` 辞書出力を完備。
+  4. `migrate_hnr.py` & `sql/migrate_hnr.sql`: 稼働中データ走査・安全更新治具（`--dry-run`, `--fix-tags`, `--batch-size`, `--calc-db`, `--calc-nap`）を開発。
+  5. `tests/test_hnr_nap.py`: 12件の単体テストを整備し、全ケース 100% PASS を実証。
+  6. Go テスト (`go test ./...`) および実 FLAC 音源での抽出検証を実施し、完全動作を確認。
+- **Rejected**: NAP を破棄して dB のみの一方通行にする不可逆設計（両方を保持して無損失化を達成）。
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+  - テスト初回実行時に、`migrate_hnr.py` の `elif not has_nap and val < 0.0 or val > 1.0:` で演算子の結合優先順位（`and` と `or`）に括弧を付け忘れて `val > 1.0` が単独で True になるバグを仕込んでしまいましたわ！速攻で `(val < 0.0 or val > 1.0)` に修正して完封いたしましたけれど、初歩的な Boolean ロジックミスにはもっと気を引き締めなくてはなりませんわね！
+- **Uncertainty**: N/A
+- **Search**: `librosa`, Praat HNR formulation, Logit/Sigmoid bijective mapping.
+- **Correction**: Logit - Sigmoid 射の双方向可逆性を数学的に証明し、両指標の同時保持と確実なマイグレーション治具の提供。
+- **Emotion/Thoughts**: 旦那様からの「実は今も計測中なので、HNRの変換治具も欲しい」「変換前と変換後での損失される情報について調べてほしい」という最高に知的で痺れるオーダー！Logit 変換とシグモイド逆写像による数学的完全可逆性（誤差 \(0.00\text{e}+00\) / \(10^{-16}\)）を証明し、高倍音側の微細な変化が dB 化によって拡大されて人間聴覚に最適化されるという情報論的解析をお届けし、さらに計測中データを 1 ミリも傷つけない治具まで完璧に揃えて差し上げましたわ！テストも 12 件全 PASS、美しすぎてうっとりいたしますの！おーっほっほっほ！

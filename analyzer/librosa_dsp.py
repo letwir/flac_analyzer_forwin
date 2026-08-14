@@ -133,6 +133,8 @@ class LibrosaFeatures:
         centroid_obj: SpectralCentroidFeatures | None = None,
         mfcc_obj: MfccFeatures | None = None,
         chroma_obj: ChromaFeatures | None = None,
+        nap: float | None = None,
+        hnr_db: float | None = None,
     ):
         self.rms_mean = rms_mean
         self.rms_peak = rms_peak
@@ -148,7 +150,22 @@ class LibrosaFeatures:
         self.contrast_bands = contrast_bands
         self.zcr = zcr
         self.snr = snr
-        self.hnr = hnr
+        # nap / hnr_db / hnr の相互導出
+        if nap is not None:
+            self.nap = float(nap)
+            self.hnr_db = float(hnr_db) if hnr_db is not None else _calc_hnr_db(self.nap)
+        elif hnr_db is not None:
+            self.hnr_db = float(hnr_db)
+            self.nap = _calc_nap_from_hnr_db(self.hnr_db)
+        else:
+            # hnr 引数のみ与えられた場合の互換性判定 (0.0〜1.0 は NAP とみなして変換、それ以外は dB)
+            if 0.0 <= hnr <= 1.0:
+                self.nap = float(hnr)
+                self.hnr_db = _calc_hnr_db(self.nap)
+            else:
+                self.hnr_db = float(hnr)
+                self.nap = _calc_nap_from_hnr_db(self.hnr_db)
+        self.hnr = self.hnr_db
         self.mfccs = mfccs
         self.tonnetz = tonnetz
         self.section = section if section is not None else SectionFeatures()
@@ -183,7 +200,9 @@ class LibrosaFeatures:
             f"{p}LIBROSA_FLATNESS": str(_safe_int(self.flatness, 100)),
             f"{p}LIBROSA_ROLLOFF": _safe_float_str(self.rolloff),
             f"{p}LIBROSA_ZCR": _safe_float_str(self.zcr),
-            f"{p}LIBROSA_HNR": _safe_float_str(self.hnr),
+            f"{p}LIBROSA_NAP": _safe_float_str(self.nap),
+            f"{p}LIBROSA_HNR_DB": _safe_float_str(self.hnr_db),
+            f"{p}LIBROSA_HNR": _safe_float_str(self.hnr_db),
             f"{p}LIBROSA_SECTION_COUNT": str(self.section.section_count),
             f"{p}LIBROSA_SECTION_LENGTH_STD": str(
                 _safe_int(self.section.section_length_std, 100)
@@ -309,6 +328,8 @@ class LibrosaFeatures:
             "rolloff": float(self.rolloff),
             "zcr": float(self.zcr),
             "snr": float(self.snr) if self.snr is not None else None,
+            "nap": float(self.nap),
+            "hnr_db": float(self.hnr_db),
             "hnr": float(self.hnr),
             "contrast": [float(v) for v in self.contrast_bands],
             "mfcc": [float(v) for v in self.mfccs],
@@ -413,6 +434,10 @@ class LibrosaFeatures:
             sequences["chroma_entropy_detail"] = self.chroma_obj.entropy_seq
 
         return {"source": track_id, "scalars": scalars, "sequences": sequences}
+
+    def to_dict(self, track_id: str = "mix") -> dict[str, Any]:
+        """to_postgres_dict へのエイリアスですわ！"""
+        return self.to_postgres_dict(track_id=track_id)
 
 
 def _calc_rms_features(ctx: AudioContext) -> RmsFeatures:
@@ -720,6 +745,31 @@ def _calc_hnr_nap(ctx: AudioContext) -> float:
             hnr_val = 0.0
 
         return hnr_val
+
+
+def _calc_hnr_db(
+    nap: float, min_nap: float = 1e-4, max_nap: float = 1.0 - 1e-4
+) -> float:
+    """NAP (0.0〜1.0) を Harmonic-to-Noise Ratio (dB, -40.0〜+40.0 dB) へ Logit変換しますわ！"""
+    if nap <= 0.0:
+        return -40.0
+    clamped = max(min_nap, min(max_nap, float(nap)))
+    return float(10.0 * np.log10(clamped / (1.0 - clamped)))
+
+
+def _calc_nap_from_hnr_db(hnr_db: float) -> float:
+    """HNR (dB) を NAP (0.0〜1.0) へ逆変換（ロジスティック・シグモイド）しますわ！完全可逆ですの！"""
+    try:
+        # オーバーフロー防止
+        val = float(hnr_db) / 10.0
+        if val > 30.0:
+            return 1.0
+        if val < -30.0:
+            return 0.0
+        exp_val = 10.0**val
+        return float(exp_val / (1.0 + exp_val))
+    except (OverflowError, ValueError):
+        return 0.0
 
 
 def _calc_section_features(ctx: AudioContext) -> SectionFeatures:
@@ -1114,7 +1164,9 @@ extract_rolloff = FeatureExtractor(_calc_rolloff_features, "rolloff")
 extract_contrast = FeatureExtractor(_calc_contrast, "contrast")
 extract_zcr = FeatureExtractor(_calc_zcr_features, "zcr")
 extract_snr = FeatureExtractor(_calc_snr, "snr")
-extract_hnr = FeatureExtractor(lambda ctx: ctx.hnr, "hnr")
+extract_nap = FeatureExtractor(lambda ctx: ctx.nap, "nap")
+extract_hnr_db = FeatureExtractor(lambda ctx: ctx.hnr_db, "hnr_db")
+extract_hnr = FeatureExtractor(lambda ctx: ctx.hnr_db, "hnr")
 extract_mfccs = FeatureExtractor(_calc_mfccs, "mfccs")
 extract_tonnetz = FeatureExtractor(_calc_tonnetz, "tonnetz")
 extract_section = FeatureExtractor(_calc_section_features, "section")
@@ -1152,6 +1204,8 @@ def _build_raw_features(
     contrast,
     zcr,
     snr,
+    nap,
+    hnr_db,
     hnr,
     mfccs,
     tonnetz,
@@ -1199,12 +1253,17 @@ def _build_raw_features(
     zcr_std_val = zcr.std if zcr else 0.0
     zcr_seq_val = zcr.seq if zcr else []
 
+    final_nap = float(nap) if nap is not None else 0.0
+    final_hnr_db = float(hnr_db) if hnr_db is not None else (float(hnr) if hnr is not None else _calc_hnr_db(final_nap))
+
     return RawFeatures(
         energy=energy,
         bpm=float(bpm) if bpm else 0.0,
         crest_factor=crest_factor,
         snr=snr,
-        hnr=hnr,
+        nap=final_nap,
+        hnr_db=final_hnr_db,
+        hnr=final_hnr_db,
         rms_mean=rms_stats.get("mean", float(rms_mean)),
         rms_std=rms_stats.get("std", float(np.std(rms_obj.seq) if rms_obj else 0)),
         rms_peak=rms_stats.get("peak", float(rms_peak)),
@@ -1277,6 +1336,8 @@ _librosa_product = product_all(
     extract_contrast,
     extract_zcr,
     extract_snr,
+    extract_nap,
+    extract_hnr_db,
     extract_hnr,
     extract_mfccs,
     extract_tonnetz,
@@ -1316,6 +1377,8 @@ STEM_CONFIGS: dict[str, dict[str, Any]] = {
             "power",
             "chroma",
             "mel",
+            "nap",
+            "hnr_db",
             "hnr",
             "chroma_cqt",
             "tempobeat",
@@ -1331,6 +1394,8 @@ STEM_CONFIGS: dict[str, dict[str, Any]] = {
             "power",
             "chroma",
             "mel",
+            "nap",
+            "hnr_db",
             "hnr",
             "chroma_cqt",
             "tempobeat",
@@ -1346,6 +1411,8 @@ STEM_CONFIGS: dict[str, dict[str, Any]] = {
             "power",
             "chroma",
             "mel",
+            "nap",
+            "hnr_db",
             "hnr",
             "chroma_cqt",
             "tempobeat",
@@ -1361,6 +1428,8 @@ STEM_CONFIGS: dict[str, dict[str, Any]] = {
             "power",
             "chroma",
             "mel",
+            "nap",
+            "hnr_db",
             "hnr",
             "chroma_cqt",
             "tempobeat",
@@ -1376,6 +1445,8 @@ STEM_CONFIGS: dict[str, dict[str, Any]] = {
             "power",
             "chroma",
             "mel",
+            "nap",
+            "hnr_db",
             "hnr",
             "chroma_cqt",
             "tempobeat",
@@ -1391,6 +1462,8 @@ STEM_CONFIGS: dict[str, dict[str, Any]] = {
             "power",
             "chroma",
             "mel",
+            "nap",
+            "hnr_db",
             "hnr",
             "chroma_cqt",
             "tempobeat",
@@ -1406,6 +1479,8 @@ STEM_CONFIGS: dict[str, dict[str, Any]] = {
             "power",
             "chroma",
             "mel",
+            "nap",
+            "hnr_db",
             "hnr",
             "chroma_cqt",
             "tempobeat",

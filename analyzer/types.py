@@ -304,6 +304,8 @@ class StemFeatures:
 
     energy: float = 0.0
     zcr: float = 0.0
+    nap: float = 0.0
+    hnr_db: float = 0.0
     hnr: float = 0.0
     spectral_centroid_mean: float = 0.0
     rms_mean: float = 0.0
@@ -321,6 +323,8 @@ class RawFeatures:
     bpm: float = 0.0
     crest_factor: float = 0.0
     snr: float | None = None
+    nap: float = 0.0
+    hnr_db: float = 0.0
     hnr: float = 0.0
 
     # RMS
@@ -407,7 +411,9 @@ class RawFeatures:
             f"{p}LIBROSA_ZCR_MEAN": _safe_float_str(self.zcr_mean),
             f"{p}LIBROSA_ZCR_STD": _safe_float_str(self.zcr_std),
             f"{p}LIBROSA_ZCR": _safe_float_str(self.zcr_mean),
-            f"{p}LIBROSA_HNR": _safe_float_str(self.hnr),
+            f"{p}LIBROSA_NAP": _safe_float_str(self.nap),
+            f"{p}LIBROSA_HNR_DB": _safe_float_str(self.hnr_db),
+            f"{p}LIBROSA_HNR": _safe_float_str(self.hnr_db),
             f"{p}LIBROSA_SECTION_COUNT": str(self.section.section_count)
             if self.section
             else "0",
@@ -532,6 +538,8 @@ def _stem_filter_scalars(raw: RawFeatures, track_id: str) -> dict[str, Any]:
         "bpm": float(raw.bpm),
         "crest_factor": float(raw.crest_factor),
         "snr": float(raw.snr) if raw.snr is not None else None,
+        "nap": float(raw.nap),
+        "hnr_db": float(raw.hnr_db),
         "hnr": float(raw.hnr),
         "rms_mean": float(raw.rms_mean),
         "rms_std": float(raw.rms_std),

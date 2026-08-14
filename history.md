@@ -927,6 +927,19 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: run_batch.ps1, orchestrator/state/db.go, orchestrator/main.go, orchestrator.exe, history.md, diary.md, walkthrough.md
 
+## 2026-08-14 20:10:00
+- Goal: Issue #5 解決（HNR の dB スケール変換・LIBROSA_NAP / LIBROSA_HNR_DB 特徴量＆タグ分離 ＋ 稼働中データ対応 HNR 変換治具の提供）
+- Actions:
+  1. `analyzer/librosa_dsp.py`: `_calc_hnr_db(nap)` および `_calc_nap_from_hnr_db(hnr_db)` の双方向完全可逆変換関数（Logit - Sigmoid 射）を実装。\(\text{NAP} \in [10^{-4}, 1 - 10^{-4}]\) による \(-40.0\text{ dB} \sim +40.0\text{ dB}\) ガードを導入。
+  2. `analyzer/core.py`: `AudioContext` に `nap` および `hnr_db` の遅延キャッシュプロパティを追加し、`hnr` を後方互換プロパティ（dB値を返却）として定義。
+  3. `analyzer/types.py` & `librosa_dsp.py`: `StemFeatures`, `RawFeatures`, `LibrosaFeatures` に `nap`, `hnr_db`, `hnr` を追加。FLAC タグに `LIBROSA_NAP`, `LIBROSA_HNR_DB`, `LIBROSA_HNR` を出力。`to_postgres_dict` / `_stem_filter_scalars` に `nap`, `hnr_db`, `hnr` を登録。
+  4. `flac_tagger.py`: `build_flac_tags` および `parse_tags_from_meta_dict` において `LIBROSA_NAP`, `LIBROSA_HNR_DB`, `LIBROSA_HNR` タグの生成・フォールバックを完備。
+  5. `migrate_hnr.py` [NEW] & `sql/migrate_hnr.sql` [NEW]: 稼働中・計測中データに対応した PostgreSQL `raw.library_flac` / FLAC VorbisComment タグの一括変換・マイグレーション治具および単体双方向計算 CLI を提供。
+  6. `tests/test_hnr_nap.py` [NEW]: 数学変換の完全可逆性（誤差 \(< 10^{-6}\)）、純音（NAP \(\approx 1.0\), HNR > 20dB）、ホワイトノイズ、無音、タグ生成、マイグレーションロジックの単体テスト（12ケース）を作成し 100% PASS を実証。
+  7. `issues.md`, `method.md`: Issue #5 を完了 (`[x]DONE`) に更新。
+- Blockers: なし。
+- Files: analyzer/core.py, analyzer/librosa_dsp.py, analyzer/types.py, analyzer/__init__.py, flac_tagger.py, migrate_hnr.py, sql/migrate_hnr.sql, tests/test_hnr_nap.py, issues.md, method.md, walkthrough.md, history.md, diary.md
+
 
 
 

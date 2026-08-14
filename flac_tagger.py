@@ -221,8 +221,17 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
             tags[f"{p}LIBROSA_SNR"] = _safe_float_str(scalars["snr"])
         if "rolloff_mean" in scalars:
             tags[f"{p}LIBROSA_ROLLOFF"] = _safe_float_str(scalars["rolloff_mean"])
+        
+        # NAP & HNR (dB) タグ生成
+        if "nap" in scalars:
+            tags[f"{p}LIBROSA_NAP"] = _safe_float_str(scalars["nap"])
+        if "hnr_db" in scalars:
+            tags[f"{p}LIBROSA_HNR_DB"] = _safe_float_str(scalars["hnr_db"])
+            
         if "hnr" in scalars:
             tags[f"{p}LIBROSA_HNR"] = _safe_float_str(scalars["hnr"])
+        elif "hnr_db" in scalars:
+            tags[f"{p}LIBROSA_HNR"] = _safe_float_str(scalars["hnr_db"])
 
         if "spectral_bandwidth" in scalars:
             tags[f"{p}LIBROSA_SPECTRAL_BANDWIDTH"] = str(_safe_int(scalars["spectral_bandwidth"]))

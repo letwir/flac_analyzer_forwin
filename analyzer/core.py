@@ -79,6 +79,8 @@ class AudioContext:
         self._chroma: np.ndarray | None = None
         self._tempobeat: tuple[float, np.ndarray] | None = None
         self._hnr: float | None = None
+        self._nap: float | None = None
+        self._hnr_db: float | None = None
         self._audio_hash: str | None = audio_hash
         self._chroma_cqt: np.ndarray | None = None
         self._onset_env: np.ndarray | None = None  # onset strength envelope
@@ -262,14 +264,31 @@ class AudioContext:
         return self._tempogram
 
     @property
-    def hnr(self) -> float:
-        if self._hnr is None:
-            logging.debug(f"    [CSE Cache Miss] hnr 計算開始 (source: {self.source})")
+    def nap(self) -> float:
+        """Wiener-Khinchin 定理に基づく正規化自己相関ピーク (NAP, 0.0〜1.0) を算出・キャッシュしますわ！"""
+        if self._nap is None:
+            logging.debug(f"    [CSE Cache Miss] nap 計算開始 (source: {self.source})")
             from .librosa_dsp import _calc_hnr_nap
-            self._hnr = _calc_hnr_nap(self)
+            self._nap = _calc_hnr_nap(self)
         else:
-            logging.debug(f"    [CSE Cache Hit] hnr 再利用 (source: {self.source})")
-        return self._hnr
+            logging.debug(f"    [CSE Cache Hit] nap 再利用 (source: {self.source})")
+        return self._nap
+
+    @property
+    def hnr_db(self) -> float:
+        """調波対雑音比 (HNR) をデシベル (dB) スケール (-40.0〜+40.0 dB) で算出・キャッシュしますわ！"""
+        if self._hnr_db is None:
+            logging.debug(f"    [CSE Cache Miss] hnr_db 計算開始 (source: {self.source})")
+            from .librosa_dsp import _calc_hnr_db
+            self._hnr_db = _calc_hnr_db(self.nap)
+        else:
+            logging.debug(f"    [CSE Cache Hit] hnr_db 再利用 (source: {self.source})")
+        return self._hnr_db
+
+    @property
+    def hnr(self) -> float:
+        """後方互換性のためのプロパティですわ (真の dB 値 hnr_db を返却します)"""
+        return self.hnr_db
 
     def clear(self):
         """メモリを早期解放するために、保持している配列の参照をすべて破棄しますわ！"""
@@ -281,6 +300,8 @@ class AudioContext:
         self._chroma = None
         self._tempobeat = None
         self._hnr = None
+        self._nap = None
+        self._hnr_db = None
         self._chroma_cqt = None
         self._onset_env = None
         self._tempogram = None

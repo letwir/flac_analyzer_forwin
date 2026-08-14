@@ -32,7 +32,7 @@
 
 ### 2. 音響特徴量の品質・正確性向上 (`goal:features`)
 - [ ] 🔥 `[Priority: High]` [#7 [Verify] Blackwell GPU (requirements-blackwell.txt) での Essentia/ONNX 動作検証](https://github.com/letwir/flac_analyzer_forwin/issues/7)
-- [ ] [#5 [Spec] HNR を dB スケールへ変換・LIBROSA_NAP / LIBROSA_HNR_DB タグ分離](https://github.com/letwir/flac_analyzer_forwin/issues/5)
+- [x]DONE [#5 [Spec] HNR を dB スケールへ変換・LIBROSA_NAP / LIBROSA_HNR_DB タグ分離](https://github.com/letwir/flac_analyzer_forwin/issues/5)
 - [x]CLOSED [#6 [Spec] Guitar / Piano ステムの特徴量抽出対応方針を決定 (予定なしのためクローズ)](https://github.com/letwir/flac_analyzer_forwin/issues/6)
 
 ### 3. パイプライン堅牢化・ETL改善 (`goal:pipeline`)

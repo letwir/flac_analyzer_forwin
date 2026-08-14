@@ -15,7 +15,8 @@
     <why>Decouple 100x rounded FLAC tags from pure float Postgres JSONB to avoid DDL changes on new features.</why>
   </target>
   <target id="LIBROSA_HNR">
-    <why>Need quantitative metric (0.0-1.0) for harmonic purity (instrument sparseness/vocal clarity) using Autocorrelation Peak.</why>
+    <why>Need both linear correlation metric (NAP: 0.0-1.0) and true logarithmic Harmonic-to-Noise Ratio (HNR: -40.0 to +40.0 dB) for acoustic purity and vocal clarity using Wiener-Khinchin autocorrelation peak.</why>
+    <how>Extract Normalized Autocorrelation Peak (NAP) using FFT, convert to dB via Logit transform HNR_dB = 10 * log10(clamp(NAP)/(1 - clamp(NAP))), and export LIBROSA_NAP / LIBROSA_HNR_DB tags and Postgres scalars while preserving full reversibility.</how>
   </target>
   <target id="STEM_RELATIVE_SNR">
     <why>Replace primitive pre-emphasis SNR with true musical SDR/SNR using Demucs stems for mix analysis. Preserve categorical purity by calculating SNR in a Post-processing phase.</why>
