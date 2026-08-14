@@ -95,6 +95,7 @@ type Dispatcher struct {
 	skipDupByHash          bool
 	activeInFlightRamBytes uint64
 	inFlightMutex          sync.Mutex
+	arenaPool              *ShmArenaPool
 }
 
 const (
@@ -128,6 +129,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		eventLog:               cfg.EventLog,
 		skipDupByHash:          cfg.SkipDupByHash,
 		activeInFlightRamBytes: 0,
+		arenaPool:              NewShmArenaPool(),
 	}
 }
 
@@ -180,6 +182,9 @@ func (d *Dispatcher) Enqueue(task TaskPayload) error {
 func (d *Dispatcher) Stop() {
 	close(d.taskQueue)
 	d.wg.Wait()
+	if d.arenaPool != nil {
+		d.arenaPool.Close()
+	}
 }
 
 func (d *Dispatcher) streamColoredLog(pipe io.ReadCloser, workerID int, role string, color string) {
@@ -466,8 +471,7 @@ func (d *Dispatcher) worker(id int) {
 			if delaySec <= 0 { delaySec = 2 }
 			time.Sleep(time.Duration(delaySec) * time.Second)
 			
-			shmMap := make(map[string]*SharedMemory)
-			tagsMap := make(map[string]string)
+			arenaSet := d.arenaPool.GetWorkerArenaSet(id)
 			var allocError error
 			
 			d.allocMutex.Lock()
@@ -499,31 +503,19 @@ func (d *Dispatcher) worker(id int) {
 
 			for attempt := 1; attempt <= retryCount; attempt++ {
 				allocError = nil
-				shmMap = make(map[string]*SharedMemory)
-				tagsMap = make(map[string]string)
-
-				baseTag := fmt.Sprintf("Local\\FlacShm_W%d_%d_a%d", id, task.FileSize, attempt)
 				for _, stem := range stems {
-					tagName := fmt.Sprintf("%s_%s", baseTag, stem)
-					tagsMap[stem] = tagName
-					shm, err := NewSharedMemory(tagName, estimatedSize)
+					_, err := arenaSet.GetOrCreateArena(stem, estimatedSize)
 					if err != nil {
-						allocError = fmt.Errorf("Failed to allocate SHM for %s (attempt %d/%d): %v", stem, attempt, retryCount, err)
+						allocError = fmt.Errorf("Failed to allocate/reuse SHM arena for %s (attempt %d/%d): %v", stem, attempt, retryCount, err)
 						break
 					}
-					shmMap[stem] = shm
 				}
 				if allocError == nil {
 					break
 				}
 
-				for _, shm := range shmMap {
-					shm.Close()
-				}
-				shmMap = make(map[string]*SharedMemory)
-
 				if attempt < retryCount {
-					d.LogWarn("[W-%d] SHM allocation limit hit (attempt %d/%d): %v. Throttling queue & sleeping %d seconds...", id, attempt, retryCount, allocError, retryDelaySec)
+					d.LogWarn("[W-%d] SHM arena allocation limit hit (attempt %d/%d): %v. Throttling queue & sleeping %d seconds...", id, attempt, retryCount, allocError, retryDelaySec)
 					d.allocMutex.Unlock()
 					time.Sleep(time.Duration(retryDelaySec) * time.Second)
 					d.allocMutex.Lock()
@@ -535,19 +527,18 @@ func (d *Dispatcher) worker(id int) {
 			if allocError != nil {
 				<-d.demucsSemaphore
 				metrics.AnalyzerDemucsSlotsInUse.Dec()
-				for _, shm := range shmMap {
-					shm.Close()
-				}
+				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, allocError.Error())
 				metrics.AnalyzerTasksTotal.WithLabelValues("oom_failed").Inc()
 				return
 			}
 			
+			tagsMap := arenaSet.GetTagsMap()
 			tagsJson, err := json.Marshal(tagsMap)
 			if err != nil {
 				<-d.demucsSemaphore
 				metrics.AnalyzerDemucsSlotsInUse.Dec()
-				for _, shm := range shmMap { shm.Close() }
+				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, fmt.Sprintf("Failed to marshal tagsMap: %v", err))
 				return
 			}
@@ -568,7 +559,7 @@ func (d *Dispatcher) worker(id int) {
 			metrics.AnalyzerDemucsSlotsInUse.Dec()
 			
 			if err != nil {
-				for _, shm := range shmMap { shm.Close() }
+				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, err.Error())
 				return
 			}
@@ -578,17 +569,15 @@ func (d *Dispatcher) worker(id int) {
 				AudioHash string `json:"audio_hash"`
 			}
 			if err := json.Unmarshal([]byte(demucsOut), &demucsMeta); err != nil || demucsMeta.Status != "success" || demucsMeta.AudioHash == "" {
-				for _, shm := range shmMap { shm.Close() }
+				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, "Demucs metadata invalid")
 				return
 			}
 			trackHash = demucsMeta.AudioHash
 			
-			// 4. Freeze Shared Memory
-			for stem, shm := range shmMap {
-				if err := shm.Freeze(); err != nil {
-					d.LogWarn("[Worker %d] Failed to freeze SHM %s: %v", id, stem, err)
-				}
+			// 4. Freeze Shared Memory (PAGE_READONLY)
+			if err := arenaSet.FreezeAll(); err != nil {
+				d.LogWarn("[Worker %d] Failed to freeze SHM arenas: %v", id, err)
 			}
 
 			// 4.5 Precache Functor
@@ -598,7 +587,7 @@ func (d *Dispatcher) worker(id int) {
 			}, id, "Precache", ColorCyan, true)
 			
 			if err != nil {
-				for _, shm := range shmMap { shm.Close() }
+				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, err.Error())
 				return
 			}
@@ -667,12 +656,13 @@ func (d *Dispatcher) worker(id int) {
 			wg.Wait()
 
 			if workerErr != nil {
-				for _, shm := range shmMap { shm.Close() }
+				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, workerErr.Error())
 				return
 			}
 			
-			for _, shm := range shmMap { shm.Close() }
+			// 共有メモリアリーナを次回タスクのために Unfreeze (PAGE_READWRITE 復元) してプールへ維持しますわ！
+			_ = arenaSet.UnfreezeAll()
 			
 			// 6. Write Output and Run Ingester
 			baseName := filepath.Base(task.FlacPath)

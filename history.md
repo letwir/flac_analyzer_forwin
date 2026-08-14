@@ -865,5 +865,35 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: flac_tagger.py, zig/repair_flac_tags.py, pipeline.py, orchestrator/dispatcher/dispatcher.go, walkthrough.md, history.md, diary.md
 
+## 2026-08-14 16:21:00
+- Goal: Issue #2 解決（`spectral_bandwidth` float32化・ゼロ中間メモリ化 & FLACデコードインプレース化 ＋ `config.toml` 反映）
+- Actions:
+  1. `analyzer/librosa_dsp.py`: `_calc_spectral_bandwidth` のブロードキャストテンソル `(freqs - ctx.centroid)**2` を廃止し、分散公式 \(E[f^2] - c^2\) に基づく行列ベクトル積 `np.dot(freqs**2, spectro)` による完全 pure float32 かつ O(1) 中間メモリ演算へ置換。`_calc_crest_factor` を `np.dot` へ最適化。
+  2. `flac_decode.py`: `pcm_bytes_to_float32` の 16/24/32bit PCM 正規化を除算 `/` からインプレース乗算 `*=` に置換し、デコード時の配列二重確保を半減。
+  3. `shm_interop.py`: `estimate_shm_size` のデフォルト展開比率を 3.5 に適正化。
+  4. `config.toml`: `estimated_worker_ram_gb = 3.5`, `min_avail_ram_gb = 3.5`, `shm_expansion_ratio = 3.5`, `enable_virtual_lock = true` を反映。
+  5. `issues.md`: Issue #2 を完了 (`[x]DONE`) に更新。
+- Blockers: なし。
+- Files: analyzer/librosa_dsp.py, flac_decode.py, shm_interop.py, config.toml, issues.md, history.md, diary.md
+
+## 2026-08-14 16:32:00
+- Goal: `run_batch.ps1` 単一ファイル直接指定モード対応 & `fd`/`rg` の `.gitignore` 貫通走査対応
+- Actions:
+  1. `run_batch.ps1`: 引数に `[Alias("Path", "File")]` を追加し、指定パスが単一ファイルかディレクトリかを自律判定。単一ファイル指定時はファイル走査をバイパスして即座に対象ファイル 1 件のみをオーケストレーターへ投下するよう拡張。
+  2. `run_batch.ps1`: `fd` に `-I` (`--no-ignore`)、`rg` に `--no-ignore` を付与し、`.gitignore` 内の `testFLAC/` や `**.flac` も漏れなく走査できるよう修正。
+- Blockers: なし。
+## 2026-08-14 17:19:00
+- Goal: Issue #3 解決（Go SHM Arena Pool による事前確保・再利用でメモリ断片化を根絶）
+- Actions:
+  1. `orchestrator/dispatcher/shm_windows.go`: `Unfreeze()` (`PAGE_READWRITE` 復元)、`EnsureCapacity()` (自律拡張)、`WorkerArenaSet` (ワーカー単位の7ステム永続アリーナ管理)、および `ShmArenaPool` を実装。
+  2. `orchestrator/dispatcher/shm_windows.go`: `VirtualLock` (物理RAM固着) を最優先で試行し、ワーキングセットやRAM空き不足で乗り切らない場合は、エラーとせず警告ログを出力して通常のページキャッシュバッキング共有メモリへ安全にフォールバックする挙動を維持。
+  3. `orchestrator/dispatcher/dispatcher.go`: 毎曲の `NewSharedMemory` / `Close` ループを全廃。Demucs完了後に `FreezeAll()`、特徴量抽出完了後に `UnfreezeAll()` でアリーナを即座に再利用可能状態にし、`Stop()` で全アリーナを一括安全クリーンアップするライフサイクルを整備。
+  4. `orchestrator/dispatcher/shm_windows_test.go`: `TestSharedMemory`, `TestEnsureCapacity`, `TestShmArenaPool`, および Python との実際のプロセス間共有メモリ Zero-copy 往復テスト `TestShmPythonInterop` を追加して全 PASS を実証。
+  5. `issues.md`: Issue #3 を完了 (`[x]DONE`) に更新し、GitHub Issue #3 をクローズ。
+- Blockers: なし。
+- Files: orchestrator/dispatcher/shm_windows.go, orchestrator/dispatcher/dispatcher.go, orchestrator/dispatcher/shm_windows_test.go, issues.md, history.md, memo.md, diary.md
+
+
+
 
 

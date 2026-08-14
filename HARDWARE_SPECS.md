@@ -1,12 +1,12 @@
 # System & Environment Specifications
 
 <dev_specs id="DEV_SPECS">
-## 開発マシンスペック (Development Host Machine Specifications) [Auto-Detected]
-- **CPU**: AMD Ryzen 7 7735HS with Radeon Graphics        
-- **RAM**: 32.0 GB Physical DDR4
+## 開発マシンスペック (Development Host Machine Specifications) [Auto-Detected by Go Orchestrator]
+- **CPU**: AMD Ryzen 7 7735HS with Radeon Graphics
+- **RAM**: 31.0 GB Physical DDR4
 - **GPU**: AMD Radeon(TM) Graphics
-- **OS**: Microsoft Windows 11 Pro / PowerShell 7 (`pwsh.exe`)
-- **Pagefile**: C:\pagefile.sys (18.5 GB)
+- **OS**: Microsoft Windows 11 Pro / PowerShell 7
+- **Pagefile**: C:\pagefile.sys (59.2 GB)
 </dev_specs>
 
 <exec_specs id="EXEC_SPECS">

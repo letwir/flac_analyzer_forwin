@@ -26,8 +26,8 @@
 ## 🎯 中期目標・小目標 Issues (GitHub Issues)
 
 ### 1. メモリ安定化・コミットチャージ最適化 (`goal:memory`)
-- [-]WIP [#2 [WIP] spectral_bandwidth float64 抹殺 & FLACデコードインプレース化 ＋ config.toml 反映](https://github.com/letwir/flac_analyzer_forwin/issues/2)
-- [-]WIP [#3 [Feat] Go SHM Arena Pool による事前確保・再利用でメモリ断片化を根絶 (保留)](https://github.com/letwir/flac_analyzer_forwin/issues/3)
+- [x]DONE [#2 spectral_bandwidth float64 抹殺 & FLACデコードインプレース化 ＋ config.toml 反映](https://github.com/letwir/flac_analyzer_forwin/issues/2)
+- [x]DONE [#3 [Feat] Go SHM Arena Pool による事前確保・再利用でメモリ断片化を根絶](https://github.com/letwir/flac_analyzer_forwin/issues/3)
 - [ ] [#4 [Feat] VirtualLock / SetProcessWorkingSetSizeEx 完全実装（物理RAM固着化）](https://github.com/letwir/flac_analyzer_forwin/issues/4)
 
 ### 2. 音響特徴量の品質・正確性向上 (`goal:features`)

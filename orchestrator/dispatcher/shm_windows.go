@@ -148,8 +148,40 @@ func (shm *SharedMemory) Freeze() error {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return fmt.Errorf("VirtualProtect failed: %v", errStr)
+		return fmt.Errorf("VirtualProtect(PAGE_READONLY) failed: %v", errStr)
 	}
+	return nil
+}
+
+func (shm *SharedMemory) Unfreeze() error {
+	var oldProtect uint32
+	ret, _, errStr := procVirtualProtect.Call(
+		shm.addr,
+		uintptr(shm.Size),
+		PAGE_READWRITE,
+		uintptr(unsafe.Pointer(&oldProtect)),
+	)
+	if ret == 0 {
+		return fmt.Errorf("VirtualProtect(PAGE_READWRITE) failed: %v", errStr)
+	}
+	return nil
+}
+
+func (shm *SharedMemory) EnsureCapacity(requiredSize uint32) error {
+	if shm.Size >= requiredSize && shm.handle != 0 && shm.addr != 0 {
+		// 既存の領域で十分収まる場合、Unfreeze (PAGE_READWRITE) のみ確実に適用して即座に再利用しますわ！
+		return shm.Unfreeze()
+	}
+
+	name := shm.Name
+	_ = shm.Close()
+
+	newShm, err := NewSharedMemory(name, requiredSize)
+	if err != nil {
+		return err
+	}
+
+	*shm = *newShm
 	return nil
 }
 
@@ -176,4 +208,94 @@ func (shm *SharedMemory) Close() error {
 	}
 	return lastErr
 }
+
+type WorkerArenaSet struct {
+	WorkerID int
+	arenas   map[string]*SharedMemory
+}
+
+func NewWorkerArenaSet(workerID int) *WorkerArenaSet {
+	return &WorkerArenaSet{
+		WorkerID: workerID,
+		arenas:   make(map[string]*SharedMemory),
+	}
+}
+
+func (w *WorkerArenaSet) GetOrCreateArena(stem string, requiredSize uint32) (*SharedMemory, error) {
+	shm, exists := w.arenas[stem]
+	if !exists {
+		tagName := fmt.Sprintf("Local\\FlacShm_W%d_%s", w.WorkerID, stem)
+		newShm, err := NewSharedMemory(tagName, requiredSize)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create initial SHM arena for stem %s (size %d): %w", stem, requiredSize, err)
+		}
+		w.arenas[stem] = newShm
+		return newShm, nil
+	}
+
+	if err := shm.EnsureCapacity(requiredSize); err != nil {
+		return nil, fmt.Errorf("failed to ensure capacity for stem %s (size %d): %w", stem, requiredSize, err)
+	}
+	return shm, nil
+}
+
+func (w *WorkerArenaSet) FreezeAll() error {
+	for stem, shm := range w.arenas {
+		if err := shm.Freeze(); err != nil {
+			log.Printf("[WARN] [Worker %d] Failed to freeze SHM %s: %v", w.WorkerID, stem, err)
+		}
+	}
+	return nil
+}
+
+func (w *WorkerArenaSet) UnfreezeAll() error {
+	for stem, shm := range w.arenas {
+		if err := shm.Unfreeze(); err != nil {
+			log.Printf("[WARN] [Worker %d] Failed to unfreeze SHM %s: %v", w.WorkerID, stem, err)
+		}
+	}
+	return nil
+}
+
+func (w *WorkerArenaSet) GetTagsMap() map[string]string {
+	tags := make(map[string]string, len(w.arenas))
+	for stem, shm := range w.arenas {
+		tags[stem] = shm.Name
+	}
+	return tags
+}
+
+func (w *WorkerArenaSet) Close() {
+	for stem, shm := range w.arenas {
+		_ = shm.Close()
+		delete(w.arenas, stem)
+	}
+}
+
+type ShmArenaPool struct {
+	workers map[int]*WorkerArenaSet
+}
+
+func NewShmArenaPool() *ShmArenaPool {
+	return &ShmArenaPool{
+		workers: make(map[int]*WorkerArenaSet),
+	}
+}
+
+func (p *ShmArenaPool) GetWorkerArenaSet(workerID int) *WorkerArenaSet {
+	set, exists := p.workers[workerID]
+	if !exists {
+		set = NewWorkerArenaSet(workerID)
+		p.workers[workerID] = set
+	}
+	return set
+}
+
+func (p *ShmArenaPool) Close() {
+	for id, set := range p.workers {
+		set.Close()
+		delete(p.workers, id)
+	}
+}
+
 

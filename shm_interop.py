@@ -8,11 +8,11 @@ Go (orchestrator) と Python 間での Zero-copy 共有メモリパイプライ�
 import mmap
 import numpy as np
 
-def estimate_shm_size(file_size: int) -> int:
+def estimate_shm_size(file_size: int, ratio: float = 3.5) -> int:
     """
     Go (shm_utils.go) の EstimateShmSize と同一の共有メモリ割り当てサイズを計算しますわ！
     """
-    estimated = file_size * 6
+    estimated = int(file_size * ratio)
     if estimated < 1024 * 1024:
         estimated = 1024 * 1024
     return estimated

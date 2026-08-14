@@ -300,11 +300,12 @@ def pcm_bytes_to_float32(
     bits_per_sample: int, 
     channels: int
 ) -> np.ndarray:
-    """生PCMバイト列を float32 [-1.0, 1.0] 配列へ正規化変換しますわ"""
+    """生PCMバイト列を float32 [-1.0, 1.0] 配列へインプレース正規化変換しますわ"""
     if wFormatTag == 1:  # PCM Signed Integer
         if bits_per_sample == 16:
             samples = np.frombuffer(pcm_bytes, dtype=np.int16)
-            float_audio = samples.astype(np.float32) / 32768.0
+            float_audio = samples.astype(np.float32)
+            float_audio *= (1.0 / 32768.0)
         elif bits_per_sample == 24:
             # 24bit: 3 bytes/sample -> uint8 を reshape して手動 int32 組み立て
             raw = np.frombuffer(pcm_bytes, dtype=np.uint8).reshape(-1, 3)
@@ -313,10 +314,12 @@ def pcm_bytes_to_float32(
                  | (raw[:, 2].astype(np.int32) << 16))
             # 符号拡張 (24bit signed -> 32bit signed)
             i32[i32 >= 0x800000] -= 0x1000000
-            float_audio = i32.astype(np.float32) / 8388608.0
+            float_audio = i32.astype(np.float32)
+            float_audio *= (1.0 / 8388608.0)
         elif bits_per_sample == 32:
             samples = np.frombuffer(pcm_bytes, dtype=np.int32)
-            float_audio = samples.astype(np.float32) / 2147483648.0
+            float_audio = samples.astype(np.float32)
+            float_audio *= (1.0 / 2147483648.0)
         else:
             raise ValueError(f"Unsupported integer bits_per_sample: {bits_per_sample}")
             

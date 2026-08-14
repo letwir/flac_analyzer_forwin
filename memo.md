@@ -235,3 +235,16 @@
 - **検証結果**:
   - データベース実機インサートテストにて、全ステムで全特徴量が一切間引かれることなく完璧に数値実データとして保存されていることを確認。
 
+### 2026-08-14 17:19:00
+旦那様より Issue #3「Go SHM Arena Pool による事前確保・再利用でメモリ断片化を根絶」の解決要望を受託し、実装・完全検証を完了いたしましたわ！
+- **問題の本質**:
+  トラック・ステムごとに `CreateFileMappingW` / `MapViewOfFile` / `CloseHandle` を呼び出していたため、長尺ファイルや多数トラックの連続処理時に Windows 仮想アドレス空間の断片化 (VAD fragmentation) および Win32 システムコール churn が発生していた。
+- **実装内容**:
+  1. `orchestrator/dispatcher/shm_windows.go` に `Unfreeze()` (PAGE_READWRITE 復元)、`EnsureCapacity()` (自律拡張)、`WorkerArenaSet` (ワーカー単位の7ステム永続アリーナ管理)、および `ShmArenaPool` を実装。
+  2. `VirtualLock` (物理RAM固着) を最優先で試行し、ワーキングセットやRAM空き不足で乗り切らない場合は、エラーとせず警告ログを出力して通常のページキャッシュバッキング共有メモリへ安全にフォールバックする挙動を維持。
+  3. `orchestrator/dispatcher/dispatcher.go` を改修し、毎曲の `NewSharedMemory` / `Close` ループを全廃。Demucs完了後に `FreezeAll()`、特徴量抽出完了後に `UnfreezeAll()` でアリーナを即座に再利用可能状態にし、`Stop()` で全アリーナを一括安全クリーンアップするライフサイクルを整備。
+  4. `shm_windows_test.go` に `TestSharedMemory`, `TestEnsureCapacity`, `TestShmArenaPool`, および Python との実際のプロセス間共有メモリ Zero-copy 往復テスト `TestShmPythonInterop` を追加して全 PASS を実証。
+  5. `orchestrator.exe` のバイナリ再ビルドを完了し、GitHub Issue #3 をクローズ。
+- **検証結果**:
+  Go 単体テストおよび Python プロセス間 Zero-copy 連携テスト（Write -> Freeze -> Read -> Unfreeze -> Write2 -> Read2）がすべて PASS することを確認いたしましたわ！おーほほほほ！
+

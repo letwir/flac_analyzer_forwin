@@ -550,7 +550,7 @@ def _calc_spectral_bandwidth(ctx: AudioContext) -> float:
     spectro = ctx.spectro
     sr = ctx.sr
     n_fft = (spectro.shape[0] - 1) * 2
-    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft).astype(np.float32)[:, np.newaxis]
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft).astype(np.float32)
 
     total_energy = np.sum(spectro, axis=0, dtype=np.float32)
     valid_mask = total_energy > 1e-8
@@ -558,9 +558,12 @@ def _calc_spectral_bandwidth(ctx: AudioContext) -> float:
     if not np.any(valid_mask):
         return 0.0
 
-    diff_sq = (freqs - ctx.centroid[np.newaxis, :]) ** 2
-    bandwidth_sq = np.sum(spectro * diff_sq, axis=0, dtype=np.float32) / (total_energy + 1e-12)
-    bandwidth = np.sqrt(np.maximum(bandwidth_sq, 0.0), dtype=np.float32)
+    # (f - c)^2 の加重平均を展開: E[(f - c)^2] = E[f^2] - c^2
+    # 巨大な (n_bins, n_frames) の中間ブロードキャスト配列を作らず O(K * N) 行列ベクトル積で float32 直射計算
+    freqs_sq = freqs ** 2
+    second_moment = np.dot(freqs_sq, spectro) / (total_energy + 1e-12)
+    bandwidth_sq = second_moment - (ctx.centroid ** 2)
+    bandwidth = np.sqrt(np.maximum(bandwidth_sq, 0.0, dtype=np.float32), dtype=np.float32)
 
     return float(np.mean(bandwidth[valid_mask])) if np.any(valid_mask) else 0.0
 
@@ -850,9 +853,11 @@ def _calc_groove_features(ctx: AudioContext) -> GrooveFeatures:
 
 
 def _calc_crest_factor(ctx: AudioContext) -> float:
+    if ctx.y is None or len(ctx.y) == 0:
+        return 0.0
     eps = 1e-10
     peak = float(np.max(np.abs(ctx.y)))
-    rms = float(np.sqrt(np.mean(ctx.y**2)) + eps)
+    rms = float(np.sqrt(np.dot(ctx.y, ctx.y) / len(ctx.y)) + eps)
     return float(np.clip(peak / rms, 0.0, 100.0))
 
 

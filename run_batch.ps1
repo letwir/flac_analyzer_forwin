@@ -4,7 +4,7 @@
     すべての FLAC ファイルを Go オーケストレーターに POST しますわ。スキップ判定は Go 側の SQLite DB で一元管理されますの。
 
 .PARAMETER MusicRoot
-    音楽ライブラリのルートパス（デフォルト: M:\Music\album）
+    音楽ライブラリのルートディレクトリ、または単一の FLAC ファイルパス（エイリアス: -Path, -File / デフォルト: M:\Music\album）
 
 .PARAMETER Test
     有効にすると、一時ディレクトリにダミー構成を作成して動作確認テストを行いますわ。
@@ -14,6 +14,7 @@
 #>
 
 param (
+    [Alias("Path", "File")]
     [string]$MusicRoot = "M:\Music\album",
     [switch]$Test,
     [switch]$DryRun,
@@ -63,15 +64,21 @@ sys.exit(0)
     $targetScript = Join-Path $PSScriptRoot "main.py"
 }
 
-# ディレクトリ存在チェック
+# パス存在チェック
 if (-not (Test-Path $MusicRoot)) {
-    Write-Host "❌ 致命的エラー: 指定された音楽ルートディレクトリが存在いたしませんわ: $MusicRoot" -ForegroundColor Red
+    Write-Host "❌ 致命的エラー: 指定されたパス（ファイルまたはディレクトリ）が存在いたしませんわ: $MusicRoot" -ForegroundColor Red
     exit 1
 }
 
+$isSingleFile = -not (Test-Path -Path $MusicRoot -PathType Container)
+
 Write-Host "=========================================" -ForegroundColor DarkGray
 Write-Host " 🌹 FLAC Analyzer バッチ処理を開始いたしますわ！" -ForegroundColor Magenta
-Write-Host " 📂 ルートパス  : $MusicRoot" -ForegroundColor Gray
+if ($isSingleFile) {
+    Write-Host " 📄 単一ファイル: $MusicRoot" -ForegroundColor Gray
+} else {
+    Write-Host " 📂 ルートパス  : $MusicRoot" -ForegroundColor Gray
+}
 Write-Host " 🎯 ターゲット  : $targetScript" -ForegroundColor Gray
 Write-Host "=========================================" -ForegroundColor DarkGray
 
@@ -94,20 +101,27 @@ if (-not $orchestratorProcess) {
     Write-Host "🔵 Phase 1: Orchestrator は既に起動済みでございますわ！" -ForegroundColor Blue
 }
 
-# Phase 2: ファイル走査モードの判定 (fd / rg による Rust高速モード)
-$fdCmd = Get-Command fd.exe -ErrorAction SilentlyContinue
-$rgCmd = Get-Command rg.exe -ErrorAction SilentlyContinue
-
+# Phase 2: ファイル走査モードの判定 (単一ファイル / fd / rg / 標準走査)
 $flacPaths = @()
-if ($fdCmd) {
-    Write-Host "🦀⚡ [Phase 2] Rust高速モード(fd)起動ですわ！" -ForegroundColor Cyan
-    $flacPaths = & $fdCmd.Source -e flac -t f -a . $MusicRoot
-} elseif ($rgCmd) {
-    Write-Host "🦀⚡ [Phase 2] Rust高速モード(rg)起動ですわ！" -ForegroundColor Cyan
-    $flacPaths = & $rgCmd.Source --files -g "*.flac" $MusicRoot
+$resolvedRoot = (Resolve-Path $MusicRoot).Path
+
+if ($isSingleFile) {
+    Write-Host "🎯 [Phase 2] 単一ファイル直接指定モードですわ！" -ForegroundColor Cyan
+    $flacPaths = @($resolvedRoot)
 } else {
-    Write-Host "🐢 [Phase 2] PowerShell標準フォールバックモードで走査いたしますわ..." -ForegroundColor DarkYellow
-    $flacPaths = [System.IO.Directory]::EnumerateFiles($MusicRoot, "*.flac", [System.IO.SearchOption]::AllDirectories)
+    $fdCmd = Get-Command fd.exe -ErrorAction SilentlyContinue
+    $rgCmd = Get-Command rg.exe -ErrorAction SilentlyContinue
+
+    if ($fdCmd) {
+        Write-Host "🦀⚡ [Phase 2] Rust高速モード(fd)起動ですわ！" -ForegroundColor Cyan
+        $flacPaths = @(fd.exe -I -e flac -t f -a --search-path $resolvedRoot)
+    } elseif ($rgCmd) {
+        Write-Host "🦀⚡ [Phase 2] Rust高速モード(rg)起動ですわ！" -ForegroundColor Cyan
+        $flacPaths = @(rg.exe --no-ignore --files -g "*.flac" $resolvedRoot)
+    } else {
+        Write-Host "🐢 [Phase 2] PowerShell標準フォールバックモードで走査いたしますわ..." -ForegroundColor DarkYellow
+        $flacPaths = @([System.IO.Directory]::EnumerateFiles($resolvedRoot, "*.flac", [System.IO.SearchOption]::AllDirectories))
+    }
 }
 
 $processedCount = 0
