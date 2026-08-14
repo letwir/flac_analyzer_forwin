@@ -1304,3 +1304,20 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Search**: `GetProcessWorkingSetSizeEx`, `SetProcessWorkingSetSizeEx`, `QUOTA_LIMITS_HARDWS_MIN_ENABLE`, `VirtualLock`.
 - **Correction**: ワーキングセットの動的オートスケールと自己回復リトライを融合させ、共有メモリの物理 RAM 固着化を決定論的に保証。
 - **Emotion/Thoughts**: あらまあ旦那様！「検証はこっちでも行うのでcloseはまってね」とのありがたいお言葉、承知いたしましたわ！テスト実行時に出ていた `[WARN] VirtualLock failed ... 1453` の警告が跡形もなく消滅し、8MB〜16MBの共有メモリも全7ステムのアリーナも `isLocked == true` で物理 RAM にガッチリとピン留め固定される完璧な状態に仕上がりましたわ！旦那様の手による実機検証を心待ちにしておりますの！
+
+### 2026-08-14 19:42:00
+- **Hypothesis**: `run_batch.ps1` のキュー投下が 1 ファイルごとの同期直列ループになっており、Go オーケストレーター側も SQLite DB への判定が単一 `writerLoop` チャネルに集中していた。PowerShell 側の `ForEach-Object -Parallel` による並列 HTTP POST と、Go 側 SQLite の WAL モード並列 Read (Read-First) 最適化を組み合わせることで、数万曲規模のライブラリ走査・タスク登録を極限まで高速化できる。
+- **Tried**:
+  1. `orchestrator/state/db.go`: `CheckOrInsertWithForce` に Read-First パターンを実装。`!force` 時は各 Goroutine から直接 SQLite に並列 `SELECT` を発行し、既存の `COMPLETED` / `RUNNING` / `PENDING` 楽曲は単一 Writer チャネルを通さずに即座にスキップ（`false, nil`）を返却。新規または Force 時のみ `opQueue` に直列書き込み。
+  2. `orchestrator/main.go`: 並列 POST 時に `worker_cue.py` の Python プロセスが乱立しないよう、最大 8 並列のセマフォ（`cueInspectSem`）を導入。
+  3. `run_batch.ps1`: `[int]$Concurrency = 8` パラメータを追加。PowerShell 7 の `ForEach-Object -Parallel` と C# `Add-Type` による静的アトミックカウンター `BatchCounter` を導入し、Runspace を跨いだ完全スレッドセーフな進捗表示と並列 POST を実現。`-match "Skipped"` が `"Task accepted (... 0 skipped)"` に誤爆していたレスポンス判定を `-like "Skipped*"` に修正。
+  4. `orchestrator.exe` の再ビルドおよびテストモード（`-Test -DryRun`, `-Test`, `-Test -Force`）、単一ファイル指定モードの実機検証を全 PASS。
+- **Rejected**:
+  1. 単一スレッドでの順次 `Invoke-RestMethod` 呼び出し。
+  2. PowerShell の `class` による共有カウンター（Runspace 境界で型が見えなくなるため、C# ネイティブの `Add-Type` へ切り替え）。
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+  - PowerShell 7 の `ForEach-Object -Parallel` における `$using:` 変数の制約（`-ThrottleLimit` に `$using:` を渡せない問題）、Runspace を跨ぐ際の `class` スコープ消失、そして `-match "Skipped"` が大文字小文字無視で `"0 skipped"` にマッチして表示が化けるという初歩的な凡ミスを連発してしまいましたわ！深く反省いたしますわ。
+- **Uncertainty**: N/A
+- **Search**: `ForEach-Object -Parallel`, `System.Threading.Interlocked`, SQLite WAL concurrent reads.
+- **Correction**: C# `Add-Type` による確実なスレッドセーフカウンターの採用、および Go 側 WAL 並列 Read-First 設計の完備。
+- **Emotion/Thoughts**: 旦那様からの「キュー追加ロジックってパラレルじゃないんだね？」「DB参照もパラレルにして、Goオーケストレーターへパラレルで送信したい」という鋭いご指摘にハッとさせられましたわ！PowerShell の並列化特有の罠（Runspace 分離や `$using:` の挙動）で少しドタバタしてしまいましたが、C# `Add-Type` で `Interlocked.Increment` を仕込み、Go 側の SQLite WAL 並列 Read-First と CUE セマフォを組み合わせたことで、完璧な並列パイプラインが完成いたしましたの！これで数万曲の FLAC ライブラリも一瞬でキュー投下＆スキップ判定が完了いたしますわ！

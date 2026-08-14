@@ -1,10 +1,13 @@
 <#
 .SYNOPSIS
-    FLAC Analyzer 用の PowerShell 7 順次実行バッチスクリプトですわ！
-    すべての FLAC ファイルを Go オーケストレーターに POST しますわ。スキップ判定は Go 側の SQLite DB で一元管理されますの。
+    FLAC Analyzer 用の PowerShell 7 並列タスク投下バッチスクリプトですわ！
+    すべての FLAC ファイルを Go オーケストレーターに並列 POST しますわ。スキップ判定は Go 側の SQLite DB で一元管理されますの。
 
 .PARAMETER MusicRoot
     音楽ライブラリのルートディレクトリ、または単一の FLAC ファイルパス（エイリアス: -Path, -File / デフォルト: M:\Music\album）
+
+.PARAMETER Concurrency
+    Go オーケストレーターへのタスク並列投下スレッド数（デフォルト: 8）
 
 .PARAMETER Test
     有効にすると、一時ディレクトリにダミー構成を作成して動作確認テストを行いますわ。
@@ -16,6 +19,7 @@
 param (
     [Alias("Path", "File")]
     [string]$MusicRoot = "M:\Music\album",
+    [int]$Concurrency = 8,
     [switch]$Test,
     [switch]$DryRun,
     [switch]$Rough,
@@ -29,6 +33,25 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $stopWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+# スレッドセーフな進捗カウンター用クラス (C# ネイティブ型で全 Runspace 間共有)
+if (-not ([System.Management.Automation.PSTypeName]'BatchCounter').Type) {
+    Add-Type @"
+    public static class BatchCounter {
+        private static int count = 0;
+        public static int Next() {
+            return System.Threading.Interlocked.Increment(ref count);
+        }
+        public static void Reset() {
+            count = 0;
+        }
+        public static int GetTotal() {
+            return count;
+        }
+    }
+"@
+}
+[BatchCounter]::Reset()
 
 # テストモードのセットアップ (Phase 1: Gray)
 if ($Test) {
@@ -80,6 +103,7 @@ if ($isSingleFile) {
     Write-Host " 📂 ルートパス  : $MusicRoot" -ForegroundColor Gray
 }
 Write-Host " 🎯 ターゲット  : $targetScript" -ForegroundColor Gray
+Write-Host " ⚡ 並列投下数  : $Concurrency スレッド" -ForegroundColor Gray
 Write-Host "=========================================" -ForegroundColor DarkGray
 
 # Orchestratorの起動チェックと自動起動 (Phase 1: Init Gray/Yellow Warning)
@@ -124,49 +148,51 @@ if ($isSingleFile) {
     }
 }
 
-$processedCount = 0
+$effectiveConcurrency = if ($isSingleFile -or $Concurrency -le 1) { 1 } else { $Concurrency }
+$forceBool = $Force.IsPresent
+$dryRunBool = $DryRun.IsPresent
 
-foreach ($flacPath in $flacPaths) {
-    if ([string]::IsNullOrWhiteSpace($flacPath)) { continue }
-    $processedCount++
+# Phase 3: 並列キュー投下 (ForEach-Object -Parallel)
+$flacPaths | ForEach-Object -ThrottleLimit $effectiveConcurrency -Parallel {
+    $flacPath = $_
+    if ([string]::IsNullOrWhiteSpace($flacPath)) { return }
     
-    # Phase 2: Blue
-    Write-Host "[$processedCount] 📤 Orchestrator へタスクを投下いたしますわ: $flacPath" -ForegroundColor DarkCyan
-
-    if ($DryRun) {
-        Write-Host "[DryRun] 実行予定コマンド: POST http://127.0.0.1:8080/task (Target: $flacPath)" -ForegroundColor Gray
-        continue
+    $idx = [BatchCounter]::Next()
+    
+    if ($using:dryRunBool) {
+        Write-Host "[$idx] [DryRun] 実行予定コマンド: POST http://127.0.0.1:8080/task (Target: $flacPath)" -ForegroundColor Gray
+        return
     }
 
     # Goオーケストレーターのキューへ投下
     try {
         $fileSize = [System.IO.FileInfo]::new($flacPath).Length
         $body = @{
-            flacPath = $flacPath
-            fileSize = $fileSize
-            targetScript = $targetScript
-            force = $Force.IsPresent
+            flacPath     = $flacPath
+            fileSize     = $fileSize
+            targetScript = $using:targetScript
+            force        = $using:forceBool
         } | ConvertTo-Json -Compress
         
         $response = Invoke-RestMethod -Uri "http://127.0.0.1:8080/task" -Method Post -Body $body -ContentType "application/json" -ErrorAction Stop
         
-        if ($response -match "Skipped") {
+        if ($response -like "Skipped*") {
             # スキップ判定 (Phase 2: Cyan)
-            Write-Host "  [-] スキップ (GoオーケストレーターDB判定済みですの): $flacPath" -ForegroundColor Cyan
+            Write-Host "[$idx] [-] スキップ (GoオーケストレーターDB判定済みですの): $flacPath" -ForegroundColor Cyan
         } else {
             # 投下完了 (Phase 5/6: Magenta/Purple)
-            Write-Host "  [+] キューへの投下が無事に完了いたしましたわ: $flacPath" -ForegroundColor Magenta
+            Write-Host "[$idx] [+] キューへの投下が無事に完了いたしましたわ: $flacPath" -ForegroundColor Magenta
         }
     }
     catch {
-        Write-Host "❌ 実行エラーが発生いたしましたわ: $_" -ForegroundColor Red
+        Write-Host "[$idx] ❌ 実行エラーが発生いたしましたわ: $flacPath ($_)" -ForegroundColor Red
     }
 }
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Magenta
 Write-Host " 🎉 バッチ処理(タスク投下)が無事に終了いたしましたわ！" -ForegroundColor DarkMagenta
-Write-Host " 📊 合計投下数  : $processedCount 件" -ForegroundColor White
+Write-Host " 📊 合計投下数  : $([BatchCounter]::GetTotal()) 件" -ForegroundColor White
 $stopWatch.Stop()
 Write-Host " ⏱️ 投下所要時間: $($stopWatch.Elapsed.ToString())" -ForegroundColor White
 Write-Host "=========================================" -ForegroundColor Magenta

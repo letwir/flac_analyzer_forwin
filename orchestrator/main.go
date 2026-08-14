@@ -244,6 +244,8 @@ func main() {
 	// 6. Setup Task Receiver and Admin Endpoints
 	mux := http.NewServeMux()
 
+	cueInspectSem := make(chan struct{}, 8)
+
 	// POST /task
 	mux.HandleFunc("/task", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -257,8 +259,11 @@ func main() {
 			return
 		}
 
-		// 1. Inspect CUE / FLAC tags automatically
+		// 1. Inspect CUE / FLAC tags automatically (throttled by semaphore)
+		cueInspectSem <- struct{}{}
 		cueRes, err := disp.InspectCue(payload.FlacPath)
+		<-cueInspectSem
+
 		if err != nil || cueRes == nil || len(cueRes.Tracks) == 0 {
 			warnMsg := "CUE not present or failed to parse"
 			if err != nil {

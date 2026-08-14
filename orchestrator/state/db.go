@@ -159,7 +159,24 @@ func (db *DB) CheckOrInsert(filePath string) (bool, error) {
 }
 
 // CheckOrInsertWithForce checks if a task should be executed via async writer channel.
+// Optimized with Read-First pattern for fast parallel checks without write channel bottleneck.
 func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force bool) (bool, error) {
+	// 1. Fast parallel read (WAL concurrent read)
+	if !force {
+		var status string
+		err := db.conn.QueryRow(`SELECT status FROM task_state WHERE file_path = ? AND track_number = ?`, filePath, trackNumber).Scan(&status)
+		if err == nil {
+			// Already completed, running, or pending -> skip immediately without going through write channel
+			if status == string(StatusCompleted) || status == string(StatusRunning) || status == string(StatusPending) {
+				return false, nil
+			}
+		} else if err != sql.ErrNoRows {
+			return false, err
+		}
+		// If ErrNoRows or StatusFailed, proceed to write channel for registration/retry
+	}
+
+	// 2. Write path (Serialized via writerLoop channel)
 	resChan := make(chan dbWriteResult, 1)
 	db.opQueue <- dbWriteOp{
 		opType:      "check_or_insert",

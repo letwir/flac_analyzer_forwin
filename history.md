@@ -917,6 +917,17 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし（ユーザーによる実機検証待ち）。
 - Files: orchestrator/dispatcher/shm_windows.go, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go, config.toml, config.toml.example, shm_interop.py, orchestrator/dispatcher/shm_windows_test.go, docs/shm_architecture.md, history.md, diary.md
 
+## 2026-08-14 19:42:00
+- Goal: `run_batch.ps1` の並列タスク投下 & Go オーケストレーターの SQLite WAL 並列 Read-First 最適化
+- Actions:
+  1. `run_batch.ps1`: `[int]$Concurrency = 8` パラメータを追加。PowerShell 7 の `ForEach-Object -ThrottleLimit $effectiveConcurrency -Parallel` と C# `Add-Type` による静的スレッドセーフカウンター `BatchCounter` を導入し、並列タスク投下（HTTP POST）を実現。`-match "Skipped"` の誤爆判定を `-like "Skipped*"` に修正。
+  2. `orchestrator/state/db.go`: `CheckOrInsertWithForce` に Read-First パターンを実装。各 Goroutine から直接並列に `SELECT` を発行して既存解析済み楽曲を即座にスキップ（`false, nil`）し、単一 Writer チャネル（`opQueue`）への負荷を劇的に低減。
+  3. `orchestrator/main.go`: CUE 解析 Python プロセスの同時実行数を制御するセマフォ（`cueInspectSem`、最大8並列）を導入。
+  4. `orchestrator.exe` の再コンパイル・配置、テストモード（`-Test -DryRun`, `-Test`, `-Test -Force`）および単一ファイル指定モードの実機検証完了。
+- Blockers: なし。
+- Files: run_batch.ps1, orchestrator/state/db.go, orchestrator/main.go, orchestrator.exe, history.md, diary.md, walkthrough.md
+
+
 
 
 
