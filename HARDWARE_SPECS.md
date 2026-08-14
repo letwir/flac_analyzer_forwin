@@ -6,7 +6,7 @@
 - **RAM**: 31.0 GB Physical DDR4
 - **GPU**: AMD Radeon(TM) Graphics
 - **OS**: Microsoft Windows 11 Pro / PowerShell 7
-- **Pagefile**: C:\pagefile.sys (59.2 GB)
+- **Pagefile**: C:\pagefile.sys (59.3 GB)
 </dev_specs>
 
 <exec_specs id="EXEC_SPECS">

@@ -4,7 +4,7 @@
     すべての FLAC ファイルを Go オーケストレーターに並列 POST しますわ。スキップ判定は Go 側の SQLite DB で一元管理されますの。
 
 .PARAMETER MusicRoot
-    音楽ライブラリのルートディレクトリ、または単一の FLAC ファイルパス（エイリアス: -Path, -File / デフォルト: M:\Music\album）
+    音楽ライブラリのルートディレクトリ、または単一の FLAC ファイルパス（エイリアス: -Dir, -Directory, -Path, -File, -TargetDir / デフォルト: M:\Music\album）
 
 .PARAMETER Concurrency
     Go オーケストレーターへのタスク並列投下スレッド数（デフォルト: 8）
@@ -16,10 +16,16 @@
     有効にすると、コマンドを実行せずに、実行予定のコマンドを表示するだけにとどめますわ。
 #>
 
+[CmdletBinding()]
 param (
-    [Alias("Path", "File")]
+    [Parameter(Position = 0, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+    [Alias("Path", "File", "Dir", "Directory", "MusicDir", "TargetDir", "Target", "FilePath", "DirPath")]
     [string]$MusicRoot = "M:\Music\album",
+
+    [Parameter(Position = 1)]
+    [Alias("c", "Threads", "Parallel", "Jobs")]
     [int]$Concurrency = 8,
+
     [switch]$Test,
     [switch]$DryRun,
     [switch]$Rough,
@@ -88,12 +94,16 @@ sys.exit(0)
 }
 
 # パス存在チェック
-if (-not (Test-Path $MusicRoot)) {
+if (-not (Test-Path -LiteralPath $MusicRoot) -and -not (Test-Path -Path $MusicRoot)) {
     Write-Host "❌ 致命的エラー: 指定されたパス（ファイルまたはディレクトリ）が存在いたしませんわ: $MusicRoot" -ForegroundColor Red
     exit 1
 }
 
-$isSingleFile = -not (Test-Path -Path $MusicRoot -PathType Container)
+$isSingleFile = if (Test-Path -LiteralPath $MusicRoot) {
+    -not (Test-Path -LiteralPath $MusicRoot -PathType Container)
+} else {
+    -not (Test-Path -Path $MusicRoot -PathType Container)
+}
 
 Write-Host "=========================================" -ForegroundColor DarkGray
 Write-Host " 🌹 FLAC Analyzer バッチ処理を開始いたしますわ！" -ForegroundColor Magenta
@@ -111,11 +121,11 @@ $orchestratorProcess = Get-Process -Name "orchestrator" -ErrorAction SilentlyCon
 if (-not $orchestratorProcess) {
     Write-Host "⚠️ Orchestrator が起動していらっしゃらないため、自動起動いたしますわ！" -ForegroundColor DarkYellow
     $orchestratorExe = Join-Path $PSScriptRoot "orchestrator.exe"
-    if (-not (Test-Path $orchestratorExe)) {
+    if (-not (Test-Path -LiteralPath $orchestratorExe)) {
         $orchestratorExe = Join-Path $PSScriptRoot "orchestrator\orchestrator.exe"
     }
 
-    if (Test-Path $orchestratorExe) {
+    if (Test-Path -LiteralPath $orchestratorExe) {
         Start-Process -FilePath $orchestratorExe -WorkingDirectory $PSScriptRoot
         Start-Sleep -Seconds 2 # 起動を少し待ちますわ
     } else {
@@ -127,7 +137,11 @@ if (-not $orchestratorProcess) {
 
 # Phase 2: ファイル走査モードの判定 (単一ファイル / fd / rg / 標準走査)
 $flacPaths = @()
-$resolvedRoot = (Resolve-Path $MusicRoot).Path
+$resolvedRoot = if (Test-Path -LiteralPath $MusicRoot) {
+    (Resolve-Path -LiteralPath $MusicRoot).Path
+} else {
+    (Resolve-Path -Path $MusicRoot).Path
+}
 
 if ($isSingleFile) {
     Write-Host "🎯 [Phase 2] 単一ファイル直接指定モードですわ！" -ForegroundColor Cyan

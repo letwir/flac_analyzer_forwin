@@ -1,10 +1,10 @@
-# Implementation Plan: FLAC Tagger Concurrency & File Lock Hardening
+# Implementation Plan: run_batch.ps1 -Dir 引数バインド＆LiteralPath堅牢化
 
-- **Goal**: FLAC タグ書き込み時の排他制御（`flac_file_lock`）、一時ファイル拡張子の `.tmp` 化によるメディアスキャナー/AV/Indexer干渉防止、`mutagen.MutagenError` を含む全例外の自律リトライ、および CUE 複数トラック並行解析時のロストアップデート防止。
-- **Target**: `flac_tagger.py`, `tests/test_flac_tagger_concurrency.py`.
+- **Goal**: `run_batch.ps1` において `-Dir` を指定した際にパラメータバインドされずデフォルト値で全件走査されてしまう問題を修正し、`[CmdletBinding()]`、エイリアス拡張、位置引数・パイプライン引数の対応、および特殊文字（角括弧）パスに対応するための `-LiteralPath` 解決処理を実装。
+- **Target**: `run_batch.ps1`.
 - **Feature**:
-  - `flac_tagger.py`: `msvcrt.locking` / `fcntl.flock` を用いた RAII 排他ファイルロック (`flac_file_lock`) の実装。
-  - `flac_tagger.py`: 一時ファイル名を `.~tagger_{pid}_{ns}.tmp` に変更。
-  - `flac_tagger.py`: `write_flac_tags_with_retry` の例外捕捉を `Exception` 全体へ拡張し、ロック獲得下での最新 VorbisComment タグ再検証（冪等性保証）を追加。
-  - `tests/test_flac_tagger_concurrency.py`: 10 スレッド並行書き込みによるロストアップデート防止、タイムスタンプ維持、冪等性、タイムアウト検証テストを作成。
+  - `run_batch.ps1`: `[CmdletBinding()]` の追加
+  - `run_batch.ps1`: `$MusicRoot` に `-Dir`, `-Directory`, `-MusicDir`, `-TargetDir`, `-Target`, `-FilePath`, `-DirPath` エイリアスおよび `Position=0`, `ValueFromPipeline=$true` を付与
+  - `run_batch.ps1`: `$Concurrency` に `-c`, `-Threads`, `-Parallel`, `-Jobs` エイリアスを付与
+  - `run_batch.ps1`: `Test-Path` / `Resolve-Path` で `-LiteralPath` 優先フォールバックを実装
 - **Status**: Completed

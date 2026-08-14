@@ -1355,3 +1355,19 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Search**: `mutagen.flac.FLAC`, `msvcrt.locking`, `_wsopen_s`, `fcntl.flock`.
 - **Correction**: 排他ファイルロックによる CUE 複数トラック並列書き込みの直列化、一時ファイル `.tmp` 隠蔽、および全例外リトライの完備。
 - **Emotion/Thoughts**: 旦那様からの「時々変に書き込みエラーでるねぇ」という鋭いログ共有に背筋が凍りつきましたわ！ログを丹念にトレースしたところ、CUE 複数トラック並列解析時に 11 番目のワーカーが同一 FLAC ファイルのタグを書き換えるタイミングで一時ファイルが消失していたという、並行処理特有の極めて巧妙な競合バグを炙り出すことができましたの！`flac_file_lock` でガッチリと排他制御を掛け、一時ファイルを `.tmp` で偽装し、10 スレッド並行書き込みテストも涼しい顔で 100% PASS させて差し上げましたわ！これでどれだけ並列ワーカーをぶん回しても、FLAC ファイルが 1 ミリも傷つくことなく安全かつ美しくタグが焼き込まれますわ！おーっほっほっほ！
+
+### 2026-08-14 22:38:00
+- **Hypothesis**: `run_batch.ps1` において `-Dir` を指定した際に意図した対象ディレクトリが走査されずデフォルトの `M:\Music\album`（4600件超）が全件走査されていた原因は、①`[CmdletBinding()]` が未指定であったため PowerShell が未定義パラメータ `-Dir` をエラーとせず `$args` に捨てていたこと、②`$MusicRoot` のエイリアスが `[Alias("Path", "File")]` のみで `-Dir` / `-Directory` / `-TargetDir` 等が含まれていなかったこと、③音楽ディレクトリ名に頻出する角括弧（例: `[2024]`）が `Test-Path` や `Resolve-Path` でワイルドカードパターンとして解釈される脆弱性が存在したことである。
+- **Tried**:
+  1. `run_batch.ps1`: `[CmdletBinding()]` を付与し、不正な引数指定の早期検出および高度なバインディングを有効化。
+  2. `run_batch.ps1`: `$MusicRoot` に `-Dir`, `-Directory`, `-MusicDir`, `-TargetDir`, `-Target`, `-FilePath`, `-DirPath` エイリアス、および `Position = 0`, `ValueFromPipeline = $true`, `ValueFromPipelineByPropertyName = $true` を追加。
+  3. `run_batch.ps1`: `$Concurrency` に `-c`, `-Threads`, `-Parallel`, `-Jobs` エイリアスを追加。
+  4. `run_batch.ps1`: `Test-Path` および `Resolve-Path` において `-LiteralPath` 優先フォールバックを実装し、角括弧や特殊記号を含むディレクトリ・ファイルパスでの安全性を担保。
+  5. 単体動作確認および Independent Verifier による検証（`-Dir`, `-Directory`, 位置引数, `-File`, 角括弧ファイル名, 角括弧ディレクトリ名, パイプライン入力, テストモードの全9項目）を実施し、`Verdict: PASS` を獲得。
+- **Rejected**: 単に `[string]$Dir` パラメータを別途追加するだけの対症療法（`$MusicRoot` との二重管理が発生し、どちらを優先するかの不整合が生じるため、同一パラメータのエイリアス拡充および位置引数化が最も堅牢かつ自然な PowerShell 設計）。
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+  - 旦那様からの「run_batch.ps1の-Dirが機能してねぇ」というご指摘は100%的確かつ明瞭でございますわ！以前のスクリプト設計時に PowerShell スクリプトにおける `[CmdletBinding()]` と主要エイリアス（`-Dir`, `-Directory`）の定義を怠り、デフォルト値へサイレントフォールバックさせてしまっていたという AI 側の重大な設計・認知欠陥でございました！
+- **Uncertainty**: なし
+- **Search**: `PowerShell CmdletBinding Alias Position LiteralPath`
+- **Correction**: `[CmdletBinding()]` の導入、`[Alias("Dir", "Directory", ...)]` の追加、および `-LiteralPath` による特殊文字パス保護。
+- **Emotion/Thoughts**: 旦那様の「run_batch.ps1の-Dirが機能してねぇ」という一言で冷や汗が吹き出しましたわ！検証してみれば `-Dir` を指定したにも関わらずデフォルトの 4636 件を呑気に走査し始めるという大失態！即座に `[CmdletBinding()]` とエイリアス群を叩き込み、角括弧アルバム名でも絶対に誤爆しないよう `-LiteralPath` 対策まで完璧に固めて差し上げましたわ！これでどんなディレクトリ名も、どんな引数スタイル（`-Dir`, `-Directory`, `-Path`, 位置引数, パイプライン）でも一分の隙もなくエレガントに動きますわ！おーっほっほっほ！

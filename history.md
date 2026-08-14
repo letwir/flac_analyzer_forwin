@@ -940,17 +940,17 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: analyzer/core.py, analyzer/librosa_dsp.py, analyzer/types.py, analyzer/__init__.py, flac_tagger.py, migrate_hnr.py, sql/migrate_hnr.sql, tests/test_hnr_nap.py, issues.md, method.md, walkthrough.md, history.md, diary.md
 
-## 2026-08-14 21:38:00
-- Goal: FLAC タグ書き込み時の排他制御・一時ファイル競合防止・例外リトライ堅牢化（Issue #8 完了）
+## 2026-08-14 22:38:00
+- Goal: run_batch.ps1 の -Dir 引数バインド不備修正と特殊文字パス（LiteralPath）堅牢化
 - Actions:
-  1. `flac_tagger.py`: `msvcrt.locking` (Windows) / `fcntl.flock` (POSIX) を用いた RAII 排他ファイルロック (`flac_file_lock`) を実装し、同一 FLAC ファイル（CUE複数トラック等）への並行書き込み競合（Lost Update & Access Denied）を完全遮断。
-  2. `flac_tagger.py`: 一時ファイル拡張子を `.flac` から `.~tagger_{pid}_{ns}.tmp` へ変更し、メディアプレイヤー・インデクサー・アンチウイルスによる一時ファイルの誤検知・ロック奪取を防止。
-  3. `flac_tagger.py`: `write_flac_tags_with_retry` の例外捕捉を `Exception` 全体へ拡張し、`mutagen.MutagenError` や SMB 特有の一時的エラーも自律リトライ（指数バックオフ＋ジッター）で確実に救済。
-  4. `flac_tagger.py`: ロック獲得下での最新 VorbisComment タグ再検証（冪等性保証 & 差分 missing_tags のみ安全にマージ）を導入。
-  5. `tests/test_flac_tagger_concurrency.py` [NEW]: 単一書き込み、タイムスタンプ保持、冪等性スキップ、10 スレッド並行書き込み（ロストアップデート防止・完全マージ）、タイムアウト検出テスト（4ケース）を追加し 100% PASS を実証。
-  6. `issues.md`: Issue #8 を完了 (`[x]DONE`) に更新。
+  1. `run_batch.ps1`: `[CmdletBinding()]` を追加し、パラメータバインディングを強化。
+  2. `run_batch.ps1`: `$MusicRoot` に `-Dir`, `-Directory`, `-MusicDir`, `-TargetDir`, `-Target`, `-FilePath`, `-DirPath` のエイリアスを定義し、位置引数（`Position=0`）およびパイプライン入力をサポート。
+  3. `run_batch.ps1`: `$Concurrency` に `-c`, `-Threads`, `-Parallel`, `-Jobs` のエイリアスを定義。
+  4. `run_batch.ps1`: `Test-Path` および `Resolve-Path` に `-LiteralPath` 優先フォールバックを実装し、角括弧 `[...]` などの特殊文字を含むディレクトリ・ファイルパスでのワイルドカード展開誤爆を防止。
+  5. 単体実行確認（`-Dir`, `-Directory`, 位置引数, `-File`, 角括弧ファイル名, 角括弧ディレクトリ名, パイプライン入力, テストモード）および Verifier サブエージェントの独立検証（`Verdict: PASS`）を完了。
 - Blockers: なし。
-- Files: flac_tagger.py, tests/test_flac_tagger_concurrency.py, issues.md, history.md, diary.md, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md, walkthrough.md
+- Files: run_batch.ps1, walkthrough.md, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md, history.md, diary.md
+
 
 
 
