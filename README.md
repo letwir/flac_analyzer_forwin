@@ -101,6 +101,13 @@ skip_dup_by_hash = true
 | `orchestrator.queue_dir` | String | 各抽出ワーカーが一時的に成果物 JSON を書き出すキューディレクトリのパス。 |
 | `orchestrator.skip_dup_by_hash` | Boolean | `true` の場合、波形 MD5 ハッシュを算出（`--check-hash-only`）し、PostgreSQL に同ハッシュの解析成果が既に存在すれば Demucs 音源分離および特徴量抽出処理を **100% スキップ** します。 |
 
+#### 🔄 設定の動的再読み込み（ホットリロード）
+Orchestrator は稼働中に **`config.toml` の変更を自動検知して即座に動的反映** します。
+
+- **自動リロード (File Watcher)**: `config.toml` を保存すると、約2秒以内に変更が自動検知され、稼働中のプロセスを停止することなく設定（`demucs_concurrent_limit`, `log_level`, `max_ram_ratio`, `python_env` 等）が更新されます。
+- **手動リロード API**: `POST http://localhost:8080/reload` を呼び出すことで即座にリロードし、変更差分を JSON で取得できます。
+- **設定確認 API**: `GET http://localhost:8080/config` で現在適用されている動的設定値を確認できます。
+
 #### 🔄 `force: true` (再解析フラグ `-Force`) の挙動
 `.\run_batch.ps1 -Force` を指定して実行した場合、過去に解析・永続化済みの楽曲であっても Demucs 音源分離から全特徴量抽出、PostgreSQL への `JSONB` UPSERT（履歴テーブル `raw_library_flac_history` への自動退避含む）が強制再実行されます。
 

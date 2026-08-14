@@ -44,6 +44,25 @@ func ParseLogLevel(s string) LogLevel {
 	}
 }
 
+func (l LogLevel) String() string {
+	switch l {
+	case LevelDebug:
+		return "debug"
+	case LevelInfo:
+		return "info"
+	case LevelWarn:
+		return "warn"
+	case LevelError:
+		return "error"
+	default:
+		return "unknown"
+	}
+}
+
+func (l LogLevel) MarshalJSON() ([]byte, error) {
+	return json.Marshal(l.String())
+}
+
 type EventLogger interface {
 	Info(eid uint32, msg string) error
 	Warning(eid uint32, msg string) error
@@ -84,11 +103,12 @@ type Config struct {
 
 
 type Dispatcher struct {
+	configMu               sync.RWMutex
 	config                 Config
 	db                     *state.DB
 	taskQueue              chan TaskPayload
 	allocMutex             sync.Mutex
-	demucsSemaphore        chan struct{}
+	demucsSemaphore        *DynamicSemaphore
 	tensorSemaphore        chan struct{}
 	wg                     sync.WaitGroup
 	logLevel               LogLevel
@@ -124,7 +144,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		config:                 cfg,
 		db:                     db,
 		taskQueue:              make(chan TaskPayload, 1000),
-		demucsSemaphore:        make(chan struct{}, cfg.DemucsConcurrentLimit),
+		demucsSemaphore:        NewDynamicSemaphore(cfg.DemucsConcurrentLimit),
 		tensorSemaphore:        make(chan struct{}, 1),
 		logLevel:               cfg.LogLevel,
 		eventLog:               cfg.EventLog,
@@ -134,21 +154,91 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 	}
 }
 
+// GetConfig returns a thread-safe copy of the current configuration.
+func (d *Dispatcher) GetConfig() Config {
+	d.configMu.RLock()
+	defer d.configMu.RUnlock()
+
+	copiedEnv := make(map[string]string, len(d.config.PythonEnv))
+	for k, v := range d.config.PythonEnv {
+		copiedEnv[k] = v
+	}
+	cfg := d.config
+	cfg.PythonEnv = copiedEnv
+	return cfg
+}
+
+// UpdateConfig dynamically updates the configuration at runtime, adjusting semaphores and logging.
+// It returns a diff map describing what was changed.
+func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
+	d.configMu.Lock()
+	defer d.configMu.Unlock()
+
+	oldCfg := d.config
+	diff := make(map[string]string)
+
+	if oldCfg.DemucsConcurrentLimit != newCfg.DemucsConcurrentLimit {
+		diff["demucs_concurrent_limit"] = fmt.Sprintf("%d -> %d", oldCfg.DemucsConcurrentLimit, newCfg.DemucsConcurrentLimit)
+		d.demucsSemaphore.SetLimit(newCfg.DemucsConcurrentLimit)
+	}
+	if oldCfg.LogLevel != newCfg.LogLevel {
+		diff["log_level"] = fmt.Sprintf("%s -> %s", oldCfg.LogLevel, newCfg.LogLevel)
+		d.logLevel = newCfg.LogLevel
+	}
+	if oldCfg.SkipDupByHash != newCfg.SkipDupByHash {
+		diff["skip_dup_by_hash"] = fmt.Sprintf("%v -> %v", oldCfg.SkipDupByHash, newCfg.SkipDupByHash)
+		d.skipDupByHash = newCfg.SkipDupByHash
+	}
+	if oldCfg.MaxRamRatio != newCfg.MaxRamRatio {
+		diff["max_ram_ratio"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.MaxRamRatio, newCfg.MaxRamRatio)
+	}
+	if oldCfg.EstimatedWorkerRamGB != newCfg.EstimatedWorkerRamGB {
+		diff["estimated_worker_ram_gb"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.EstimatedWorkerRamGB, newCfg.EstimatedWorkerRamGB)
+	}
+	if oldCfg.MinAvailRamGB != newCfg.MinAvailRamGB {
+		diff["min_avail_ram_gb"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.MinAvailRamGB, newCfg.MinAvailRamGB)
+	}
+	if oldCfg.ShmAllocationDelaySec != newCfg.ShmAllocationDelaySec {
+		diff["shm_allocation_delay_sec"] = fmt.Sprintf("%d -> %d", oldCfg.ShmAllocationDelaySec, newCfg.ShmAllocationDelaySec)
+	}
+	if oldCfg.ShmExpansionRatio != newCfg.ShmExpansionRatio {
+		diff["shm_expansion_ratio"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.ShmExpansionRatio, newCfg.ShmExpansionRatio)
+	}
+	if oldCfg.ShmRetryCount != newCfg.ShmRetryCount {
+		diff["shm_retry_count"] = fmt.Sprintf("%d -> %d", oldCfg.ShmRetryCount, newCfg.ShmRetryCount)
+	}
+	if oldCfg.ShmRetryDelaySec != newCfg.ShmRetryDelaySec {
+		diff["shm_retry_delay_sec"] = fmt.Sprintf("%d -> %d", oldCfg.ShmRetryDelaySec, newCfg.ShmRetryDelaySec)
+	}
+	if oldCfg.QueueDir != newCfg.QueueDir {
+		diff["queue_dir"] = fmt.Sprintf("%s -> %s", oldCfg.QueueDir, newCfg.QueueDir)
+	}
+
+	d.config = newCfg
+	return diff
+}
+
+func (d *Dispatcher) getLogLevel() LogLevel {
+	d.configMu.RLock()
+	defer d.configMu.RUnlock()
+	return d.logLevel
+}
+
 func (d *Dispatcher) LogDebug(format string, v ...interface{}) {
-	if d.logLevel <= LevelDebug {
+	if d.getLogLevel() <= LevelDebug {
 		log.Printf(format, v...)
 	}
 }
 
 func (d *Dispatcher) LogInfo(format string, v ...interface{}) {
-	if d.logLevel <= LevelInfo {
+	if d.getLogLevel() <= LevelInfo {
 		log.Printf(format, v...)
 	}
 }
 
 func (d *Dispatcher) LogWarn(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
-	if d.logLevel <= LevelWarn {
+	if d.getLogLevel() <= LevelWarn {
 		log.Printf("%s[WARN] %s%s\n", ColorYellow, msg, ColorReset)
 	}
 	if d.eventLog != nil {
@@ -158,7 +248,7 @@ func (d *Dispatcher) LogWarn(format string, v ...interface{}) {
 
 func (d *Dispatcher) LogError(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
-	if d.logLevel <= LevelError {
+	if d.getLogLevel() <= LevelError {
 		log.Printf("%s[ERROR] %s%s\n", ColorRed, msg, ColorReset)
 	}
 	if d.eventLog != nil {
@@ -265,8 +355,9 @@ func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID 
 	cmd := exec.Command(pythonPath, cmdArgs...)
 	cmd.Dir = parentDir
 
+	currentCfg := d.GetConfig()
 	var envVars []string
-	for k, v := range d.config.PythonEnv {
+	for k, v := range currentCfg.PythonEnv {
 		envVars = append(envVars, fmt.Sprintf("%s=%s", strings.ToUpper(k), v))
 	}
 	cmd.Env = append(os.Environ(), envVars...)
@@ -329,7 +420,8 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 	inFlight := d.activeInFlightRamBytes
 	d.inFlightMutex.Unlock()
 
-	minAvailBytes := uint64(d.config.MinAvailRamGB * 1024 * 1024 * 1024)
+	currentCfg := d.GetConfig()
+	minAvailBytes := uint64(currentCfg.MinAvailRamGB * 1024 * 1024 * 1024)
 
 	var effectiveAvailBytes uint64
 	if memInfo.AvailPhys > inFlight {
@@ -403,7 +495,7 @@ func (d *Dispatcher) worker(id int) {
 				cleanupCache(trackHash)
 			}()
 			
-			if d.skipDupByHash {
+			if d.GetConfig().SkipDupByHash {
 				// 2.1 Calculate MD5 hash only (Lightweight decoding)
 				endSampleParam = task.EndSample
 				if endSampleParam == 0 {
@@ -460,15 +552,16 @@ func (d *Dispatcher) worker(id int) {
 				}
 			}
 			
-			ratio := d.config.ShmExpansionRatio
+			currentCfg := d.GetConfig()
+			ratio := currentCfg.ShmExpansionRatio
 			if ratio <= 0 { ratio = 3.5 }
 			estimatedSize := EstimateShmSizeForTaskWithRatio(task, ratio)
 			
-			d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot...", id)
-			d.demucsSemaphore <- struct{}{}
+			d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot (limit: %d)...", id, d.demucsSemaphore.GetLimit())
+			d.demucsSemaphore.Acquire()
 			metrics.AnalyzerDemucsSlotsInUse.Inc()
 			
-			delaySec := d.config.ShmAllocationDelaySec
+			delaySec := currentCfg.ShmAllocationDelaySec
 			if delaySec <= 0 { delaySec = 2 }
 			time.Sleep(time.Duration(delaySec) * time.Second)
 			
@@ -493,11 +586,11 @@ func (d *Dispatcher) worker(id int) {
 				d.allocMutex.Lock()
 			}
 			
-			retryCount := d.config.ShmRetryCount
+			retryCount := currentCfg.ShmRetryCount
 			if retryCount <= 0 {
 				retryCount = 5
 			}
-			retryDelaySec := d.config.ShmRetryDelaySec
+			retryDelaySec := currentCfg.ShmRetryDelaySec
 			if retryDelaySec <= 0 {
 				retryDelaySec = 8
 			}
@@ -526,7 +619,7 @@ func (d *Dispatcher) worker(id int) {
 			d.allocMutex.Unlock()
 
 			if allocError != nil {
-				<-d.demucsSemaphore
+				d.demucsSemaphore.Release()
 				metrics.AnalyzerDemucsSlotsInUse.Dec()
 				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, allocError.Error())
@@ -537,7 +630,7 @@ func (d *Dispatcher) worker(id int) {
 			tagsMap := arenaSet.GetTagsMap()
 			tagsJson, err := json.Marshal(tagsMap)
 			if err != nil {
-				<-d.demucsSemaphore
+				d.demucsSemaphore.Release()
 				metrics.AnalyzerDemucsSlotsInUse.Dec()
 				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, fmt.Sprintf("Failed to marshal tagsMap: %v", err))
@@ -556,7 +649,7 @@ func (d *Dispatcher) worker(id int) {
 				"--end-sample", fmt.Sprintf("%d", endSampleParam),
 			}, id, "Demucs", ColorCyan, true)
 			
-			<-d.demucsSemaphore
+			d.demucsSemaphore.Release()
 			metrics.AnalyzerDemucsSlotsInUse.Dec()
 			
 			if err != nil {
@@ -673,7 +766,7 @@ func (d *Dispatcher) worker(id int) {
 			
 			parentDir := findProjectRoot()
 
-			queueDir := d.config.QueueDir
+			queueDir := d.GetConfig().QueueDir
 			if queueDir == "" {
 				if parentDir != "" {
 					queueDir = filepath.Join(parentDir, "queue")

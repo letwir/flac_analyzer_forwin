@@ -1,6 +1,18 @@
 
 # History Log
 
+### 2026-08-14 19:25:00
+
+- Category: Feature / Dynamic Configuration Hot-Reload & File Watcher
+- Summary: Orchestrator 稼働中の `config.toml` 動的再読み込み（ホットリロード）機能、可変セマフォ `DynamicSemaphore`、ファイル自動監視 (File Watcher)、および `/reload` / `/config` HTTP エンドポイントを実装。
+- Decisions:
+  - `orchestrator/dispatcher/semaphore.go`: 稼働中に `demucs_concurrent_limit` の同時実行制限スロット数をデッドロックなく安全に動的増減できる `DynamicSemaphore` を新設。
+  - `orchestrator/dispatcher/dispatcher.go`: `sync.RWMutex` によるスレッドセーフな設定アクセス管理と、`UpdateConfig(newCfg)` による変更差分検出・アトミック適用を実装。
+  - `orchestrator/main.go`: 設定の共通バリデーション関数 `loadAndValidateConfig`、`config.toml` の変更を自動検知する `startConfigFileWatcher`、手動リロード API `POST /reload`、および設定確認 API `GET /config` を追加。
+  - `orchestrator/reload_test.go`, `orchestrator/dispatcher/semaphore_test.go`: 動的リロード・File Watcher・セマフォ伸縮の単体・統合テストを作成し、全件 PASS を確認。
+  - `README.md`, `README_en.md`: ホットリロードおよび管理エンドポイントの仕様をドキュメントへ反映。
+- Files: [semaphore.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/semaphore.go), [semaphore_test.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/semaphore_test.go), [dispatcher.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go), [main.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go), [reload_test.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/reload_test.go), [README.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README.md), [README_en.md](file:///a:/Users/letwir/repo/flac_analyzer_forwin/README_en.md)
+
 ### 2026-08-05 22:11:00
 
 - Category: Bugfix / worker_demucs.py NameError

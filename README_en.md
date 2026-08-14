@@ -100,6 +100,13 @@ skip_dup_by_hash = true
 | `orchestrator.queue_dir` | String | Temporary directory path where extraction workers write result JSONs. |
 | `orchestrator.skip_dup_by_hash` | Boolean | When `true`, calculates PCM MD5 hash (`--check-hash-only`) and skips Demucs separation and feature extraction **100%** if hash already exists in PostgreSQL. |
 
+#### 🔄 Dynamic Configuration Reload (Hot-Reload)
+The Orchestrator automatically detects changes to `config.toml` and applies them at runtime without restarting:
+
+- **Automatic Reload (File Watcher)**: Modifying and saving `config.toml` triggers automatic reload within ~2 seconds (dynamically adjusts `demucs_concurrent_limit`, `log_level`, `max_ram_ratio`, `python_env`, etc.).
+- **Manual Reload API**: Trigger immediate reload via `POST http://localhost:8080/reload` to receive a detailed JSON diff of modified parameters.
+- **Config Inspection API**: View current active configuration via `GET http://localhost:8080/config`.
+
 #### 🔄 Forced Re-analysis (`-Force`)
 Executing `.\run_batch.ps1 -Force` forces re-analysis of previously processed tracks, bypassing existing SQLite `COMPLETED` states and Postgres hash checks.
 

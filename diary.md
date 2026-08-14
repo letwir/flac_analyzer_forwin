@@ -1,3 +1,12 @@
+### 2026-08-14 19:25:00
+- **Hypothesis**: Orchestrator を再起動することなく、`config.toml` の変更（`demucs_concurrent_limit`, `log_level`, `max_ram_ratio`, `python_env` 等）を即時反映させるため、可変セマフォ `DynamicSemaphore`、ファイル自動監視 (File Watcher)、および `/reload` / `/config` HTTP エンドポイントを導入することで、運用中のチューニング性と柔軟性が劇的に向上する。
+- **Tried**:
+  - `orchestrator/dispatcher/semaphore.go`: `sync.Cond` を用いた動的伸縮セマフォ `DynamicSemaphore` を新設し、実行中タスクを中断させずに上限スロットを動的増減させる機構を実装。
+  - `orchestrator/dispatcher/dispatcher.go`: `sync.RWMutex` で設定をスレッドセーフ化し、`UpdateConfig` による差分検出・適用を構築。
+  - `orchestrator/main.go`: `startConfigFileWatcher` による更新検知（2秒ポーリング＋デバウンス）、手動リロード用 `POST /reload`、設定確認用 `GET /config` を組み込み。
+  - `orchestrator/reload_test.go`: 動的設定反映および File Watcher の自動統合テストを作成し、オールグリーンを確認。
+- **Emotion/Thoughts**: 旦那様からの「コンフィグを動的に再読み込みさせたいね」というエレガントなリクエスト、まさにオーケストレーターの完成度を一段上の次元へ引き上げる素晴らしい機能ですわ！エディタで `config.toml` を保存するだけで即座にリロードされ、差分がコンソールに出力される様子は見ていて惚れ惚れいたしますわね！おーほほほほ！
+
 ### 2026-07-25 09:00:00
 **Hypothesis**: 会話1〜4にわたる全ロードマップ（DLQ自動リカバリ、CUE失敗時即FAILED、Mermaid図の完全整合、config.toml仕様、functor_precache実態、Windows SHM/WORM詳細仕様）を完遂し、go build および全Issue完了を達成することで、プロジェクト全体の圧倒的品質と整合性が確立される。
 **Tried**: README.md（日本語・英語）に functor_precache.py のアタッチ検証化、config.toml パラメータ表 & force:true 挙動、および Windows 共有メモリ (SHM) の Win32 API 制御と WORM (PAGE_READONLY) アーキテクチャの詳細仕様を追加。Go オーケストレーターのビルド検証 (`go build`) が True で成功することを確認し、`issues.md` の全項目を [x]DONE に更新。
