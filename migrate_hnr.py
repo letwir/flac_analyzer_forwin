@@ -413,7 +413,7 @@ def main():
     update_sql = """
         UPDATE raw.library_flac
         SET features = %s::jsonb,
-            updated_at = NOW()
+            collected_at = CURRENT_TIMESTAMP
         WHERE id = %s
     """
 
