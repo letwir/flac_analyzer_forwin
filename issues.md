@@ -36,7 +36,7 @@
 - [x]CLOSED [#6 [Spec] Guitar / Piano ステムの特徴量抽出対応方針を決定 (予定なしのためクローズ)](https://github.com/letwir/flac_analyzer_forwin/issues/6)
 
 ### 3. パイプライン堅牢化・ETL改善 (`goal:pipeline`)
-- [ ] [#8 [Test] repair_flac_tags / flac_tagger: CUE付き複数トラックの重複書き込みリグレッションテスト整備](https://github.com/letwir/flac_analyzer_forwin/issues/8)
+- [x]DONE [#8 [Test] repair_flac_tags / flac_tagger: CUE付き複数トラックの重複書き込みリグレッションテスト整備](https://github.com/letwir/flac_analyzer_forwin/issues/8)
 - [ ] [#9 [Test] Gatekeeper EffectiveAvail 判定の自動化テスト整備](https://github.com/letwir/flac_analyzer_forwin/issues/9)
 - [ ] [#10 [Feat] DLQ retry_ingest.py の orchestrator 起動時自動実行・定期実行化](https://github.com/letwir/flac_analyzer_forwin/issues/10)
 

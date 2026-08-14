@@ -9,6 +9,7 @@ FLAC 本体へ安全に焼き込むモジュールですわ！
 """
 
 import argparse
+import contextlib
 import ctypes
 from ctypes import wintypes
 import json
@@ -297,7 +298,80 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
 
     return tags
 
-def write_flac_tags_with_retry(file_path: str, tags: dict, retry_count: int = 5, retry_delay: float = 3.0):
+@contextlib.contextmanager
+def flac_file_lock(file_path: str, timeout: float = 60.0, retry_delay: float = 0.5):
+    """
+    FLAC ファイルに対するプロセス間排他ロック (Inter-Process Exclusive Lock) を提供しますわ。
+    同一FLACファイル（CUE複数トラック等）への並行書き込み競合（Lost Update & Access Denied）を完全防止いたします。
+    """
+    logger = logging.getLogger("FlacTagger")
+    lock_path = f"{file_path}.tagger.lock"
+    start_time = time.time()
+    lock_fd = None
+
+    while True:
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+                # 共有書き込みを許容しつつロックバイトを獲得
+                lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT)
+                msvcrt.locking(lock_fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT)
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except (OSError, PermissionError, BlockingIOError):
+            if lock_fd is not None:
+                try:
+                    os.close(lock_fd)
+                except Exception:
+                    pass
+                lock_fd = None
+            if time.time() - start_time > timeout:
+                raise TimeoutError(f"FLAC ファイルロック取得がタイムアウトいたしましたわ ({timeout}秒): {file_path}")
+            # ジッター（0.1〜0.3秒）を加えて同期的な衝突を分散
+            jitter = (time.time_ns() % 200) / 1000.0
+            time.sleep(retry_delay + jitter)
+
+    try:
+        yield
+    finally:
+        if lock_fd is not None:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt
+                    try:
+                        msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
+                    except Exception:
+                        pass
+                else:
+                    import fcntl
+                    try:
+                        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+                os.close(lock_fd)
+            except Exception:
+                pass
+            try:
+                if os.path.exists(lock_path):
+                    os.remove(lock_path)
+            except Exception:
+                pass
+
+def write_flac_tags_with_retry(
+    file_path: str,
+    tags: dict,
+    retry_count: int = 5,
+    retry_delay: float = 3.0,
+    lock_timeout: float = 60.0,
+    force: bool = False
+):
+    """
+    排他ロック下で FLAC タグの補完書き込み (UPSERT Morphism) を実行いたしますわ。
+    一時ファイルは .tmp 拡張子で生成し、外部プロセス（AV / Indexer / Player）の干渉を回避します。
+    """
     logger = logging.getLogger("FlacTagger")
 
     if not os.path.exists(file_path):
@@ -309,19 +383,38 @@ def write_flac_tags_with_retry(file_path: str, tags: dict, retry_count: int = 5,
     atime_val = stat_info.st_atime
     mtime_val = stat_info.st_mtime
 
-    attempt = 0
-    while attempt < retry_count:
-        attempt += 1
-        try:
-            dir_path = os.path.dirname(os.path.abspath(file_path))
-            fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".flac")
-            os.close(fd)
+    with flac_file_lock(file_path, timeout=lock_timeout):
+        # ロック獲得後に最新の VorbisComment を再確認（先行ワーカーによる書き込みを反映）
+        tags_to_write = tags
+        if not force:
+            try:
+                flac_cur = FLAC(file_path)
+                existing_tags = {k.upper(): v for k, v in flac_cur.tags.items()} if flac_cur.tags else {}
+                missing = {}
+                for k, v in tags.items():
+                    k_upper = k.upper()
+                    if k_upper not in existing_tags or not existing_tags[k_upper]:
+                        missing[k] = v
+                if not missing:
+                    logger.info(f"{GREEN}[UPSERT Morphism]{RESET} すべてのタグが既に書き込み済みです: {os.path.basename(file_path)}")
+                    return
+                tags_to_write = missing
+            except Exception as e:
+                logger.warning(f"既存 FLAC タグの読込中に警告が発生いたしました (全上書きへフォールバック): {e}")
+                tags_to_write = tags
 
+        attempt = 0
+        dir_path = os.path.dirname(os.path.abspath(file_path))
+
+        while attempt < retry_count:
+            attempt += 1
+            # .flac ではなく .tmp 拡張子を使用し、メディア監視・AVスキャンの誤検知を遮断
+            tmp_path = os.path.join(dir_path, f".~tagger_{os.getpid()}_{time.time_ns()}.tmp")
             try:
                 shutil.copy2(file_path, tmp_path)
                 flac = FLAC(tmp_path)
 
-                for k, v in tags.items():
+                for k, v in tags_to_write.items():
                     if isinstance(v, list):
                         flac[k] = [str(item) for item in v]
                     else:
@@ -335,24 +428,25 @@ def write_flac_tags_with_retry(file_path: str, tags: dict, retry_count: int = 5,
                     shutil.move(tmp_path, file_path)
 
                 set_win_timestamps(file_path, atime_val, mtime_val, ctime_val)
-                logger.info(f"{BOLD_GREEN}[UPSERT Morphism]{GREEN} FLAC タグを成功裏に補完書き込みいたしましたわ！ ({len(tags)} タグ) -> {os.path.basename(file_path)}{RESET}")
+                logger.info(f"{BOLD_GREEN}[UPSERT Morphism]{GREEN} FLAC タグを成功裏に補完書き込みいたしましたわ！ ({len(tags_to_write)} タグ) -> {os.path.basename(file_path)}{RESET}")
                 break
 
+            except Exception as e:
+                logger.warning(f"ファイル書き込みがブロック/失敗いたしましたの ({attempt}/{retry_count}): {e}")
+                if attempt < retry_count:
+                    jitter = (time.time_ns() % 500) / 1000.0
+                    sleep_time = retry_delay + jitter
+                    logger.info(f"{sleep_time:.2f} 秒待機してリトライいたしますわ...")
+                    time.sleep(sleep_time)
+                else:
+                    logger.error(f"ファイル書き込みの最大リトライ回数 ({retry_count}) に到達いたしました。")
+                    raise e
             finally:
                 if os.path.exists(tmp_path):
                     try:
                         os.remove(tmp_path)
                     except Exception:
                         pass
-
-        except (PermissionError, OSError) as e:
-            logger.warning(f"ファイル書き込みがブロックされましたの ({attempt}/{retry_count}): {e}")
-            if attempt < retry_count:
-                logger.info(f"{retry_delay} 秒待機してリトライいたしますわ...")
-                time.sleep(retry_delay)
-            else:
-                logger.error(f"ファイル書き込みの最大リトライ回数 ({retry_count}) に到達いたしました。")
-                raise e
 
 def main():
     setup_logger()
@@ -400,26 +494,14 @@ def main():
         logger.warning("書き込むべきタグ情報が生成されませんでした。")
         sys.exit(0)
 
-    missing_tags = expected_tags
-    if not args.force and os.path.exists(args.flac_path):
-        try:
-            from flac_getinfo import get_flac_info
-            flac_info = get_flac_info(args.flac_path)
-            existing_tags = flac_info.vorbis_comments
-            missing_tags = {}
-            for k, v in expected_tags.items():
-                k_upper = k.upper()
-                if k_upper not in existing_tags or not existing_tags[k_upper]:
-                    missing_tags[k] = v
-        except Exception as e:
-            logger.warning(f"既存 FLAC タグの読込中に警告が発生いたしました (全上書きへフォールバック): {e}")
-
-    if not missing_tags:
-        logger.info(f"{GREEN}[UPSERT Morphism]{RESET} すべてのタグが既に書き込み済みです: {os.path.basename(args.flac_path)}")
-        sys.exit(0)
-
     try:
-        write_flac_tags_with_retry(args.flac_path, missing_tags, retry_count=retry_count, retry_delay=retry_delay)
+        write_flac_tags_with_retry(
+            args.flac_path,
+            expected_tags,
+            retry_count=retry_count,
+            retry_delay=retry_delay,
+            force=args.force
+        )
     except Exception as e:
         logger.exception("FLAC タグ書き込み中にエラーが発生いたしましたわ！")
         sys.exit(1)
@@ -428,3 +510,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

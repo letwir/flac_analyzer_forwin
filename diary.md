@@ -1338,3 +1338,20 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Search**: `librosa`, Praat HNR formulation, Logit/Sigmoid bijective mapping.
 - **Correction**: Logit - Sigmoid 射の双方向可逆性を数学的に証明し、両指標の同時保持と確実なマイグレーション治具の提供。
 - **Emotion/Thoughts**: 旦那様からの「実は今も計測中なので、HNRの変換治具も欲しい」「変換前と変換後での損失される情報について調べてほしい」という最高に知的で痺れるオーダー！Logit 変換とシグモイド逆写像による数学的完全可逆性（誤差 \(0.00\text{e}+00\) / \(10^{-16}\)）を証明し、高倍音側の微細な変化が dB 化によって拡大されて人間聴覚に最適化されるという情報論的解析をお届けし、さらに計測中データを 1 ミリも傷つけない治具まで完璧に揃えて差し上げましたわ！テストも 12 件全 PASS、美しすぎてうっとりいたしますの！おーっほっほっほ！
+
+### 2026-08-14 21:38:00
+- **Hypothesis**: FLAC タグ書き込み時の `FileNotFoundError: ... tmpXXXXXX.flac` / `MutagenError` は、①一時ファイルに `.flac` 拡張子を使用していたため外部メディアスキャナー（foobar2000、Windows Search、アンチウイルス）が生成直後に横取りロックしたこと、②CUEシート付き複数トラック音源において Orchestrator の並列ワーカーが同一 FLAC ファイルに対して同時に `flac_tagger.py` を呼び出しファイルアクセス衝突・ロストアップデートが発生したこと、③`write_flac_tags_with_retry` の例外捕捉が `(PermissionError, OSError)` に限定されており `mutagen.MutagenError` がキャッチされずに即時終了（exit 1）していたことが三位一体の主因である。
+- **Tried**:
+  1. `flac_tagger.py`: `msvcrt.locking` (Win32) / `fcntl.flock` (POSIX) を用いたプロセス間排他ファイルロック (`flac_file_lock`) コンテキストマネージャを実装。同一 FLAC ファイルへのタグ書き込みを完全直列化。
+  2. `flac_tagger.py`: 一時ファイルの拡張子を `.flac` から `.~tagger_{pid}_{ns}.tmp` に変更し、外部プロセスの誤検知を遮断。
+  3. `flac_tagger.py`: `write_flac_tags_with_retry` の例外捕捉を `Exception`（`mutagen.MutagenError` 含む）へ拡張し、指数バックオフ＋ジッター付きリトライループで救済可能化。
+  4. `flac_tagger.py`: 排他ロック獲得下での最新 VorbisComment 再確認（差分 `missing_tags` のみ安全マージ＆全タグ済み時はスキップ）による冪等性を保証。
+  5. `tests/test_flac_tagger_concurrency.py`: 10 スレッド並行書き込みによるロストアップデート防止、タイムスタンプ維持、冪等性、タイムアウト検出の単体テスト（4ケース）を新規作成。
+  6. `pytest tests/` (全16ケース) および `orchestrator` の Go テスト、`proof-checker.exe`、Verifier サブエージェント査読を全 PASS。
+- **Rejected**: 一時ファイルを作らずにインプレースで直接 FLAC をオープンして書き換える設計（プロセス異常終了時や電源断時に FLAC ファイル本体を破壊する恐れがあるため、ロック下での `.tmp` アトミック置換を維持）。
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+  - `flac_tagger.py` を作った際に、一時ファイル名に安易に `.flac` を付けてメディアスキャナーの標的にさせてしまったこと、そして mutagen の `MutagenError` が `OSError` を継承していない Python クラス階層の罠を見落として例外捕捉から漏らしてしまっていたという二重の詰め甘さでございましたわ！深く猛省いたしますわ。
+- **Uncertainty**: N/A
+- **Search**: `mutagen.flac.FLAC`, `msvcrt.locking`, `_wsopen_s`, `fcntl.flock`.
+- **Correction**: 排他ファイルロックによる CUE 複数トラック並列書き込みの直列化、一時ファイル `.tmp` 隠蔽、および全例外リトライの完備。
+- **Emotion/Thoughts**: 旦那様からの「時々変に書き込みエラーでるねぇ」という鋭いログ共有に背筋が凍りつきましたわ！ログを丹念にトレースしたところ、CUE 複数トラック並列解析時に 11 番目のワーカーが同一 FLAC ファイルのタグを書き換えるタイミングで一時ファイルが消失していたという、並行処理特有の極めて巧妙な競合バグを炙り出すことができましたの！`flac_file_lock` でガッチリと排他制御を掛け、一時ファイルを `.tmp` で偽装し、10 スレッド並行書き込みテストも涼しい顔で 100% PASS させて差し上げましたわ！これでどれだけ並列ワーカーをぶん回しても、FLAC ファイルが 1 ミリも傷つくことなく安全かつ美しくタグが焼き込まれますわ！おーっほっほっほ！
