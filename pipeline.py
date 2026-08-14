@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import shutil
+import sys
 import tempfile
 import gc
 import time
@@ -1210,6 +1211,7 @@ def process_single_flac_file_directly(
 
     basename = os.path.basename(filepath)
     filepath_abs = os.path.abspath(filepath)
+    conn = None
 
     logging.info(f"[Direct-Process] 解析開始: {basename}")
     # 2. FLAC ハンドルの構築 (Cuesheet / メタデータ)
