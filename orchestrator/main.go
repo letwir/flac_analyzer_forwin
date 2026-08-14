@@ -41,6 +41,9 @@ type Config struct {
 
 		LogLevel              string  `toml:"log_level"`
 		SkipDupByHash         *bool   `toml:"skip_dup_by_hash"`
+		EnableVirtualLock     *bool   `toml:"enable_virtual_lock"`
+		MinWorkingSetMB       int     `toml:"min_working_set_mb"`
+		MaxWorkingSetMB       int     `toml:"max_working_set_mb"`
 	} `toml:"orchestrator"`
 	PythonEnv map[string]string `toml:"python_env"`
 }
@@ -179,11 +182,34 @@ func main() {
 		log.Printf("Successfully auto-detected hardware specs and updated %s", specsPath)
 	}
 
-	// 物理RAMへの固着 (VirtualLock) 用にプロセスのワーキングセットサイズを拡張試行いたしますの
-	if err := dispatcher.EnableProcessWorkingSetLock(512, 16384); err != nil {
-		log.Printf("[INFO] Working set expansion note: %v (using standard Working Set quotas)", err)
+	// Enable Virtual Lock setting (default: true)
+	enableVirtualLock := true
+	if cfg.Orchestrator.EnableVirtualLock != nil {
+		enableVirtualLock = *cfg.Orchestrator.EnableVirtualLock
+	}
+
+	minWS := cfg.Orchestrator.MinWorkingSetMB
+	if minWS <= 0 {
+		minWS = 512
+	}
+	maxWS := cfg.Orchestrator.MaxWorkingSetMB
+	if maxWS <= 0 {
+		calcMaxWS := int(totalRamGB * 1024 * 0.75)
+		if calcMaxWS < 16384 {
+			calcMaxWS = 16384
+		}
+		maxWS = calcMaxWS
+	}
+
+	if enableVirtualLock {
+		// 物理RAMへの固着 (VirtualLock) 用にプロセスのワーキングセットサイズを拡張試行いたしますの
+		if err := dispatcher.EnableProcessWorkingSetLock(minWS, maxWS); err != nil {
+			log.Printf("[INFO] Working set expansion note: %v (using dynamic auto-expansion Working Set quotas)", err)
+		} else {
+			log.Printf("[INFO] Successfully expanded process working set quotas (Min: %d MB, Max: %d MB) for physical RAM locking.", minWS, maxWS)
+		}
 	} else {
-		log.Printf("[INFO] Successfully expanded process working set quotas for physical RAM locking.")
+		log.Printf("[INFO] VirtualLock disabled via config (enable_virtual_lock = false). Using standard shared memory.")
 	}
 
 	// Win32 Job Object の初期化（Chrome風プロセスグループ化 ＆ 自動一括クリーンアップ）
@@ -326,10 +352,11 @@ func main() {
 		LogLevel:              logLevel,
 		EventLog:              elog,
 		SkipDupByHash:         skipDup,
+		EnableVirtualLock:     enableVirtualLock,
 	}
 	disp := dispatcher.NewDispatcher(dispConfig, stateDB)
 	disp.Start()
-	log.Printf("Dispatcher started with %d workers (Demucs Limit: %d, MaxRamRatio: %.1f%%, LogLevel: %s)\n", dispConfig.NumWorkers, dispConfig.DemucsConcurrentLimit, effectiveRamRatio*100, targetLogLevelStr)
+	log.Printf("Dispatcher started with %d workers (Demucs Limit: %d, MaxRamRatio: %.1f%%, VirtualLock: %v, LogLevel: %s)\n", dispConfig.NumWorkers, dispConfig.DemucsConcurrentLimit, effectiveRamRatio*100, enableVirtualLock, targetLogLevelStr)
 
 
 	// 5. Setup Task Receiver Endpoint

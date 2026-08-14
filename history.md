@@ -893,6 +893,18 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: orchestrator/dispatcher/shm_windows.go, orchestrator/dispatcher/dispatcher.go, orchestrator/dispatcher/shm_windows_test.go, issues.md, history.md, memo.md, diary.md
 
+## 2026-08-14 17:51:00
+- Goal: Issue #4 実装（VirtualLock / SetProcessWorkingSetSizeEx 完全実装・物理RAM固着化）
+- Actions:
+  1. `orchestrator/dispatcher/shm_windows.go`: `GetProcessWorkingSetSizeEx`, `SetProcessWorkingSetSizeEx`, `VirtualLock`, `VirtualUnlock` の Win32 API バインディングを完全整備。プロセスの Working Set Quota を動的に取得・拡張する `GetProcessWorkingSetSize()`, `SetProcessWorkingSetSize()`, `ExpandWorkingSetForSize()` を実装。
+  2. `orchestrator/dispatcher/shm_windows.go`: `LockMemory()` / `UnlockMemory()` を導入。`VirtualLock` 実行時に `ERROR_WORKING_SET_QUOTA` (1453) を検知した場合、ワーキングセットクォータを自動でスケールアップしてリトライする自律機構を構築。
+  3. `orchestrator/main.go` & `dispatcher.go`: `config.toml` の `enable_virtual_lock`, `min_working_set_mb`, `max_working_set_mb` を読み込み、起動時にシステム物理 RAM 容量に基づいたワーキングセット初期拡張を実行。`ShmArenaPool` へ設定を伝播。
+  4. `shm_interop.py`: Python プロセス側でもオプショナルに `VirtualLock` を呼び出せる `pin_shm_memory` / `unpin_shm_memory` ユーティリティ関数を追加。
+  5. `orchestrator/dispatcher/shm_windows_test.go`: `TestWorkingSetExpansion`, `TestVirtualLock` (8MB/16MB), `TestShmArenaPool`, `TestShmPythonInterop` を追加・更新し、全テストで `isLocked == true` かつ警告なし PASS を実証。
+  6. `docs/shm_architecture.md`: Win32 API 呼出一覧表および Working Set 動的オートスケール仕様を最新化。
+- Blockers: なし（ユーザーによる実機検証待ち）。
+- Files: orchestrator/dispatcher/shm_windows.go, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go, config.toml, config.toml.example, shm_interop.py, orchestrator/dispatcher/shm_windows_test.go, docs/shm_architecture.md, history.md, diary.md
+
 
 
 

@@ -79,6 +79,7 @@ type Config struct {
 	LogLevel              LogLevel
 	EventLog              EventLogger
 	SkipDupByHash         bool
+	EnableVirtualLock     bool
 }
 
 
@@ -129,7 +130,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		eventLog:               cfg.EventLog,
 		skipDupByHash:          cfg.SkipDupByHash,
 		activeInFlightRamBytes: 0,
-		arenaPool:              NewShmArenaPool(),
+		arenaPool:              NewShmArenaPool(cfg.EnableVirtualLock),
 	}
 }
 

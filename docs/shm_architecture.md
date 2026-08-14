@@ -60,9 +60,10 @@ Windows C API (`kernel32.dll`) を Go言語の `syscall.NewLazyDLL` から直接
 | :--- | :--- | :--- |
 | `CreateFileMappingW` | `INVALID_HANDLE_VALUE`, `PAGE_READWRITE`, `size`, `name` | Windows ページングファイルバックの命名共有メモリハンドルの作成 |
 | `MapViewOfFile` | `handle`, `FILE_MAP_WRITE \| FILE_MAP_READ`, `0`, `0`, `size` | 共有メモリハンドルをプロセスの仮想アドレス空間へマッピング |
-| `VirtualLock` | `addr`, `size` | 共有メモリ空間のページを物理 RAM 上にピン留め（スワップアウト防止・RAM直載せ）。失敗時は自動的に標準共有メモリへフォールバック |
+| `GetProcessWorkingSetSizeEx` | `hProc`, `&minSize`, `&maxSize`, `&flags` | プロセスの現在のワーキングセットサイズ（Min/Max）およびクォータフラグを取得 |
+| `SetProcessWorkingSetSizeEx` | `hProc`, `minSize`, `maxSize`, `flags` | プロセスの物理 RAM ワーキングセットの上限・下限を動的に拡大し、OS のメモリトリムを強力に抑制 |
+| `VirtualLock` | `addr`, `size` | 共有メモリ空間のページを物理 RAM 上にピン留め（スワップアウト防止・RAM直載せ）。ワーキングセットクォータ不足 (1453) 発生時は自動でワーキングセットを動的拡大してリトライ |
 | `VirtualUnlock` | `addr`, `size` | 共有メモリ空間の物理 RAM ピン留め解除 |
-| `SetProcessWorkingSetSizeEx` | `hProc`, `minSize`, `maxSize`, `flags` | プロセスの物理 RAM ワーキングセットの上限を拡大し、OS のメモリトリムを強力に抑制 |
 | `VirtualProtect` | `addr`, `size`, `PAGE_READONLY`, `&oldProtect` | 共有メモリ空間のアクセス保護属性を `PAGE_READONLY` に変更（WORMフリーズ処理） |
 | `UnmapViewOfFile` | `addr` | プロセスの仮想アドレス空間から共有メモリのマッピングを解除 |
 | `CloseHandle` | `handle` | Windows カーネルオブジェクト（共有メモリハンドル）のクローズと解放 |
@@ -71,11 +72,15 @@ Windows C API (`kernel32.dll`) を Go言語の `syscall.NewLazyDLL` から直接
 ## 4. ライフサイクル管理とリーク防止メカニズム
 
 - **Win32 API による精密制御**:
-  - Go 側では `syscall` または Win32 DLL 経由で `CreateFileMappingW`, `MapViewOfFile`, `VirtualProtect`, `UnmapViewOfFile`, `CloseHandle` を直接呼び出して管理します。
+  - Go 側では `syscall` または Win32 DLL 経由で `CreateFileMappingW`, `MapViewOfFile`, `VirtualProtect`, `VirtualLock`, `SetProcessWorkingSetSizeEx`, `UnmapViewOfFile`, `CloseHandle` を直接呼び出して管理します。
+- **Working Set 動的オートスケール ＆ `VirtualLock` リトライ**:
+  - 共有メモリの割り当て時（`NewSharedMemoryWithLock` / `EnsureCapacity`）、`VirtualLock` 実行時に `ERROR_WORKING_SET_QUOTA` (1453: Insufficient quota) が検知された場合、`ExpandWorkingSetForSize` が自動発動してプロセスのワーキングセットサイズを必要量に合わせて動的に引き上げ、即座にリトライします。
+  - これにより、大容量トラックや複数ワーカーの並列実行時でも物理 RAM へのピン留め（固着化）が 100% 成功します。
 - **同期遅延 (`shm_allocation_delay_sec`)**:
   - 各ワーカーが共有メモリハンドルを閉じる際、OS 側のハンドルフラグクリア待ちによる競合を防ぐため、`shm_allocation_delay_sec` で指定された安全セマフォ遅延が挿入されます。
 - **`defer` ステートメントによる確実な解放**:
-  - 全ての特徴量抽出タスク完了時、または途中でエラー（例外やワーカー異常終了）が発生した場合でも、Go の `defer` クリーンアップ関数が確実に発動し、`UnmapViewOfFile` および `CloseHandle` を実行して共有メモリ領域を即座に OS へ返還します。
+  - 全ての特徴量抽出タスク完了時、または途中でエラー（例外やワーカー異常終了）が発生した場合でも、Go の `defer` クリーンアップ関数が確実に発動し、`VirtualUnlock`、`UnmapViewOfFile` および `CloseHandle` を実行して共有メモリ領域を即座に OS へ返還します。
 - **タスク単位の精密メモリサイズ計算 (`EstimateShmSizeForTask`)**:
   - CUE シート配下のサブトラック解析時、親 FLAC 全体の巨大なファイルサイズではなく、**切り出し区間のサンプル数 (`(EndSample - StartSample) * channels * 4bytes * 1.5`)** に基づいて必要最小限の共有メモリサイズを動的に計算します。
   - これにより、大容量 CD アルバム等のコンピレーション音源解析時における過剰なコミットチャージ要求（WinError 1455: ページングファイル不足）を完全防止します。
+

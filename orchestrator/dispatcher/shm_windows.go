@@ -9,16 +9,17 @@ import (
 )
 
 var (
-	kernel32                     = syscall.NewLazyDLL("kernel32.dll")
-	procCreateFileMappingW       = kernel32.NewProc("CreateFileMappingW")
-	procMapViewOfFile            = kernel32.NewProc("MapViewOfFile")
-	procUnmapViewOfFile          = kernel32.NewProc("UnmapViewOfFile")
-	procVirtualProtect           = kernel32.NewProc("VirtualProtect")
-	procGlobalMemoryStatusEx     = kernel32.NewProc("GlobalMemoryStatusEx")
-	procVirtualLock              = kernel32.NewProc("VirtualLock")
-	procVirtualUnlock            = kernel32.NewProc("VirtualUnlock")
+	kernel32                       = syscall.NewLazyDLL("kernel32.dll")
+	procCreateFileMappingW         = kernel32.NewProc("CreateFileMappingW")
+	procMapViewOfFile              = kernel32.NewProc("MapViewOfFile")
+	procUnmapViewOfFile            = kernel32.NewProc("UnmapViewOfFile")
+	procVirtualProtect             = kernel32.NewProc("VirtualProtect")
+	procGlobalMemoryStatusEx       = kernel32.NewProc("GlobalMemoryStatusEx")
+	procVirtualLock                = kernel32.NewProc("VirtualLock")
+	procVirtualUnlock              = kernel32.NewProc("VirtualUnlock")
+	procGetProcessWorkingSetSizeEx = kernel32.NewProc("GetProcessWorkingSetSizeEx")
 	procSetProcessWorkingSetSizeEx = kernel32.NewProc("SetProcessWorkingSetSizeEx")
-	procGetCurrentProcess        = kernel32.NewProc("GetCurrentProcess")
+	procGetCurrentProcess          = kernel32.NewProc("GetCurrentProcess")
 )
 
 const (
@@ -26,6 +27,16 @@ const (
 	PAGE_READONLY  = 0x02
 	FILE_MAP_WRITE = 0x0002
 	FILE_MAP_READ  = 0x0004
+
+	// Win32 Working Set Quota Flags
+	QUOTA_LIMITS_HARDWS_MIN_ENABLE  = 0x00000001
+	QUOTA_LIMITS_HARDWS_MIN_DISABLE = 0x00000002
+	QUOTA_LIMITS_HARDWS_MAX_ENABLE  = 0x00000004
+	QUOTA_LIMITS_HARDWS_MAX_DISABLE = 0x00000008
+
+	// Win32 Error Codes
+	ERROR_NOT_ENOUGH_MEMORY = 8
+	ERROR_WORKING_SET_QUOTA = 1453
 )
 
 type MemoryStatusEx struct {
@@ -50,32 +61,142 @@ func GetAvailableMemory() (uint64, error) {
 	return memStatus.AvailPhys, nil
 }
 
-func EnableProcessWorkingSetLock(minMB, maxMB int) error {
+// GetProcessWorkingSetSize retrieves the current working set quotas for the current process.
+func GetProcessWorkingSetSize() (minSize, maxSize uintptr, flags uint32, err error) {
+	hProc, _, _ := procGetCurrentProcess.Call()
+	if hProc == 0 {
+		return 0, 0, 0, fmt.Errorf("GetCurrentProcess failed")
+	}
+	ret, _, errStr := procGetProcessWorkingSetSizeEx.Call(
+		hProc,
+		uintptr(unsafe.Pointer(&minSize)),
+		uintptr(unsafe.Pointer(&maxSize)),
+		uintptr(unsafe.Pointer(&flags)),
+	)
+	if ret == 0 {
+		return 0, 0, 0, fmt.Errorf("GetProcessWorkingSetSizeEx failed: %v", errStr)
+	}
+	return minSize, maxSize, flags, nil
+}
+
+// SetProcessWorkingSetSize sets minimum and maximum working set sizes with specified flags.
+func SetProcessWorkingSetSize(minBytes, maxBytes uintptr, flags uint32) error {
 	hProc, _, _ := procGetCurrentProcess.Call()
 	if hProc == 0 {
 		return fmt.Errorf("GetCurrentProcess failed")
 	}
-	minSize := uintptr(minMB * 1024 * 1024)
-	maxSize := uintptr(maxMB * 1024 * 1024)
-	// QUOTA_LIMITS_HARDWS_MIN_ENABLE (1) | QUOTA_LIMITS_HARDWS_MAX_DISABLE (8)
-	flags := uintptr(0x00000001 | 0x00000008)
-	ret, _, errStr := procSetProcessWorkingSetSizeEx.Call(hProc, minSize, maxSize, flags)
+	ret, _, errStr := procSetProcessWorkingSetSizeEx.Call(hProc, minBytes, maxBytes, uintptr(flags))
 	if ret == 0 {
+		// Fallback: If specific flags failed (e.g. HARDWS flags without privilege), try standard flags = 0
+		if flags != 0 {
+			retRetry, _, errRetry := procSetProcessWorkingSetSizeEx.Call(hProc, minBytes, maxBytes, 0)
+			if retRetry != 0 {
+				return nil
+			}
+			return fmt.Errorf("SetProcessWorkingSetSizeEx failed (flags 0x%x: %v, flags 0: %v)", flags, errStr, errRetry)
+		}
 		return fmt.Errorf("SetProcessWorkingSetSizeEx failed: %v", errStr)
 	}
 	return nil
 }
 
+// EnableProcessWorkingSetLock expands working set for initial physical RAM locking.
+func EnableProcessWorkingSetLock(minMB, maxMB int) error {
+	if minMB <= 0 {
+		minMB = 512
+	}
+	if maxMB <= minMB {
+		maxMB = minMB * 4
+	}
+	minBytes := uintptr(minMB) * 1024 * 1024
+	maxBytes := uintptr(maxMB) * 1024 * 1024
+	// Try HARDWS_MIN_ENABLE | HARDWS_MAX_DISABLE
+	flags := uint32(QUOTA_LIMITS_HARDWS_MIN_ENABLE | QUOTA_LIMITS_HARDWS_MAX_DISABLE)
+	return SetProcessWorkingSetSize(minBytes, maxBytes, flags)
+}
+
+// ExpandWorkingSetForSize dynamically expands working set quotas to accommodate requiredBytes.
+func ExpandWorkingSetForSize(requiredBytes uintptr) error {
+	currMin, currMax, currFlags, err := GetProcessWorkingSetSize()
+	var newMin, newMax uintptr
+	margin := uintptr(64 * 1024 * 1024)
+
+	if err == nil && currMin > 0 && currMax > 0 {
+		newMin = currMin + requiredBytes + margin
+		newMax = currMax + (requiredBytes * 2) + margin
+		if newMax < newMin*2 {
+			newMax = newMin * 2
+		}
+	} else {
+		newMin = (requiredBytes * 2) + uintptr(128*1024*1024)
+		newMax = newMin * 4
+		currFlags = uint32(QUOTA_LIMITS_HARDWS_MIN_ENABLE | QUOTA_LIMITS_HARDWS_MAX_DISABLE)
+	}
+
+	return SetProcessWorkingSetSize(newMin, newMax, currFlags)
+}
+
+// LockMemory attempts to pin virtual memory pages to physical RAM via VirtualLock.
+// If ERROR_WORKING_SET_QUOTA is encountered, it automatically expands the working set and retries.
+func LockMemory(addr uintptr, size uintptr) (bool, error) {
+	if addr == 0 || size == 0 {
+		return false, nil
+	}
+
+	const maxRetries = 3
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		retLock, _, errLock := procVirtualLock.Call(addr, size)
+		if retLock != 0 {
+			return true, nil
+		}
+
+		lastErr = errLock
+		errno, ok := errLock.(syscall.Errno)
+		if ok && (errno == syscall.Errno(ERROR_WORKING_SET_QUOTA) || errno == syscall.Errno(ERROR_NOT_ENOUGH_MEMORY)) {
+			// Expand working set quota and retry
+			expandAmount := size * uintptr(attempt)
+			if expErr := ExpandWorkingSetForSize(expandAmount); expErr != nil {
+				// Try expanding with basic flags = 0
+				_ = SetProcessWorkingSetSize(expandAmount*2+uintptr(64*1024*1024), expandAmount*4+uintptr(256*1024*1024), 0)
+			}
+			continue
+		}
+		// For non-quota errors, break early
+		break
+	}
+
+	return false, lastErr
+}
+
+// UnlockMemory unpins virtual memory pages from physical RAM via VirtualUnlock.
+func UnlockMemory(addr uintptr, size uintptr) error {
+	if addr == 0 || size == 0 {
+		return nil
+	}
+	retUnlock, _, errUnlock := procVirtualUnlock.Call(addr, size)
+	if retUnlock == 0 {
+		return fmt.Errorf("VirtualUnlock failed: %v", errUnlock)
+	}
+	return nil
+}
+
 type SharedMemory struct {
-	Name     string
-	Size     uint32
-	handle   syscall.Handle
-	addr     uintptr
-	data     []byte
-	isLocked bool
+	Name       string
+	Size       uint32
+	handle     syscall.Handle
+	addr       uintptr
+	data       []byte
+	isLocked   bool
+	enableLock bool
 }
 
 func NewSharedMemory(name string, size uint32) (*SharedMemory, error) {
+	return NewSharedMemoryWithLock(name, size, true)
+}
+
+func NewSharedMemoryWithLock(name string, size uint32, enableLock bool) (*SharedMemory, error) {
 	name16, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
 		return nil, err
@@ -111,23 +232,24 @@ func NewSharedMemory(name string, size uint32) (*SharedMemory, error) {
 	header.Len = int(size)
 	header.Cap = int(size)
 
-	// 物理RAMへの固着 (VirtualLock) を試行しますわ！
-	retLock, _, errLock := procVirtualLock.Call(addr, uintptr(size))
 	locked := false
-	if retLock != 0 {
-		locked = true
-	} else {
-		// 失敗時は警告ログを出力し、通常のページファイルバッキング共有メモリへフォールバックしますの
-		log.Printf("[WARN] VirtualLock failed for SHM %s (size %d): %v. Fallback to standard shared memory.", name, size, errLock)
+	if enableLock {
+		var lockErr error
+		locked, lockErr = LockMemory(addr, uintptr(size))
+		if !locked {
+			// 失敗時は警告ログを出力し、通常のページファイルバッキング共有メモリへフォールバックしますの
+			log.Printf("[WARN] VirtualLock failed for SHM %s (size %d): %v. Fallback to standard shared memory.", name, size, lockErr)
+		}
 	}
 
 	return &SharedMemory{
-		Name:     name,
-		Size:     size,
-		handle:   syscall.Handle(handle),
-		addr:     addr,
-		data:     data,
-		isLocked: locked,
+		Name:       name,
+		Size:       size,
+		handle:     syscall.Handle(handle),
+		addr:       addr,
+		data:       data,
+		isLocked:   locked,
+		enableLock: enableLock,
 	}, nil
 }
 
@@ -169,14 +291,19 @@ func (shm *SharedMemory) Unfreeze() error {
 
 func (shm *SharedMemory) EnsureCapacity(requiredSize uint32) error {
 	if shm.Size >= requiredSize && shm.handle != 0 && shm.addr != 0 {
-		// 既存の領域で十分収まる場合、Unfreeze (PAGE_READWRITE) のみ確実に適用して即座に再利用しますわ！
+		// 既存の領域で十分収まる場合、未ロックであればロックを試行し、Unfreeze (PAGE_READWRITE) して即座に再利用しますわ！
+		if shm.enableLock && !shm.isLocked {
+			locked, _ := LockMemory(shm.addr, uintptr(shm.Size))
+			shm.isLocked = locked
+		}
 		return shm.Unfreeze()
 	}
 
 	name := shm.Name
+	enableLock := shm.enableLock
 	_ = shm.Close()
 
-	newShm, err := NewSharedMemory(name, requiredSize)
+	newShm, err := NewSharedMemoryWithLock(name, requiredSize, enableLock)
 	if err != nil {
 		return err
 	}
@@ -189,7 +316,7 @@ func (shm *SharedMemory) Close() error {
 	var lastErr error
 	if shm.addr != 0 {
 		if shm.isLocked {
-			procVirtualUnlock.Call(shm.addr, uintptr(shm.Size))
+			_ = UnlockMemory(shm.addr, uintptr(shm.Size))
 			shm.isLocked = false
 		}
 		ret, _, errStr := procUnmapViewOfFile.Call(shm.addr)
@@ -210,14 +337,16 @@ func (shm *SharedMemory) Close() error {
 }
 
 type WorkerArenaSet struct {
-	WorkerID int
-	arenas   map[string]*SharedMemory
+	WorkerID   int
+	arenas     map[string]*SharedMemory
+	enableLock bool
 }
 
-func NewWorkerArenaSet(workerID int) *WorkerArenaSet {
+func NewWorkerArenaSet(workerID int, enableLock bool) *WorkerArenaSet {
 	return &WorkerArenaSet{
-		WorkerID: workerID,
-		arenas:   make(map[string]*SharedMemory),
+		WorkerID:   workerID,
+		arenas:     make(map[string]*SharedMemory),
+		enableLock: enableLock,
 	}
 }
 
@@ -225,7 +354,7 @@ func (w *WorkerArenaSet) GetOrCreateArena(stem string, requiredSize uint32) (*Sh
 	shm, exists := w.arenas[stem]
 	if !exists {
 		tagName := fmt.Sprintf("Local\\FlacShm_W%d_%s", w.WorkerID, stem)
-		newShm, err := NewSharedMemory(tagName, requiredSize)
+		newShm, err := NewSharedMemoryWithLock(tagName, requiredSize, w.enableLock)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create initial SHM arena for stem %s (size %d): %w", stem, requiredSize, err)
 		}
@@ -273,19 +402,21 @@ func (w *WorkerArenaSet) Close() {
 }
 
 type ShmArenaPool struct {
-	workers map[int]*WorkerArenaSet
+	workers    map[int]*WorkerArenaSet
+	enableLock bool
 }
 
-func NewShmArenaPool() *ShmArenaPool {
+func NewShmArenaPool(enableLock bool) *ShmArenaPool {
 	return &ShmArenaPool{
-		workers: make(map[int]*WorkerArenaSet),
+		workers:    make(map[int]*WorkerArenaSet),
+		enableLock: enableLock,
 	}
 }
 
 func (p *ShmArenaPool) GetWorkerArenaSet(workerID int) *WorkerArenaSet {
 	set, exists := p.workers[workerID]
 	if !exists {
-		set = NewWorkerArenaSet(workerID)
+		set = NewWorkerArenaSet(workerID, p.enableLock)
 		p.workers[workerID] = set
 	}
 	return set

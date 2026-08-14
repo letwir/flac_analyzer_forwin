@@ -84,8 +84,65 @@ func TestEnsureCapacity(t *testing.T) {
 	}
 }
 
+func TestWorkingSetExpansion(t *testing.T) {
+	minSize, maxSize, flags, err := GetProcessWorkingSetSize()
+	if err != nil {
+		t.Logf("GetProcessWorkingSetSize note: %v", err)
+	} else {
+		t.Logf("Current WorkingSet - Min: %d KB, Max: %d KB, Flags: 0x%x", minSize/1024, maxSize/1024, flags)
+	}
+
+	// Expand working set for a 32MB buffer
+	if err := ExpandWorkingSetForSize(32 * 1024 * 1024); err != nil {
+		t.Logf("ExpandWorkingSetForSize note: %v", err)
+	}
+
+	newMin, newMax, _, err := GetProcessWorkingSetSize()
+	if err == nil {
+		t.Logf("Expanded WorkingSet - Min: %d KB, Max: %d KB", newMin/1024, newMax/1024)
+	}
+}
+
+func TestVirtualLock(t *testing.T) {
+	// Enable working set expansion for test process
+	_ = EnableProcessWorkingSetLock(256, 4096)
+
+	name := "Local\\TestSHM_VirtualLock"
+	size := uint32(8 * 1024 * 1024) // 8MB
+
+	shm, err := NewSharedMemoryWithLock(name, size, true)
+	if err != nil {
+		t.Fatalf("Failed to create shared memory: %v", err)
+	}
+	defer shm.Close()
+
+	if !shm.isLocked {
+		t.Errorf("Expected shm.isLocked to be true for 8MB SHM, got false")
+	} else {
+		t.Logf("Successfully pinned 8MB SHM to physical RAM (isLocked: true)")
+	}
+
+	// Test writing to pinned memory
+	data := bytes.Repeat([]byte("LOCKED_DATA_"), 1000)
+	if err := shm.Write(data); err != nil {
+		t.Fatalf("Failed to write to locked SHM: %v", err)
+	}
+
+	// Test EnsureCapacity with lock retention
+	expandedSize := uint32(16 * 1024 * 1024) // 16MB
+	if err := shm.EnsureCapacity(expandedSize); err != nil {
+		t.Fatalf("EnsureCapacity failed: %v", err)
+	}
+	if !shm.isLocked {
+		t.Errorf("Expected shm.isLocked to be true after expansion to 16MB, got false")
+	} else {
+		t.Logf("Successfully maintained physical RAM lock after expansion to 16MB (isLocked: true)")
+	}
+}
+
 func TestShmArenaPool(t *testing.T) {
-	pool := NewShmArenaPool()
+	_ = EnableProcessWorkingSetLock(256, 4096)
+	pool := NewShmArenaPool(true)
 	defer pool.Close()
 
 	worker1 := pool.GetWorkerArenaSet(1)
@@ -95,12 +152,15 @@ func TestShmArenaPool(t *testing.T) {
 
 	stems := []string{"mix", "bass", "drums", "vocals", "other", "guitar", "piano"}
 	for _, stem := range stems {
-		shm, err := worker1.GetOrCreateArena(stem, 1024)
+		shm, err := worker1.GetOrCreateArena(stem, 1024*1024*2) // 2MB each
 		if err != nil {
 			t.Fatalf("Failed to get or create arena for stem %s: %v", stem, err)
 		}
-		if shm.Size != 1024 {
-			t.Fatalf("Expected size 1024 for stem %s, got %d", stem, shm.Size)
+		if shm.Size != 1024*1024*2 {
+			t.Fatalf("Expected size 2MB for stem %s, got %d", stem, shm.Size)
+		}
+		if !shm.isLocked {
+			t.Logf("Note: stem %s isLocked: %v", stem, shm.isLocked)
 		}
 		if err := shm.Write([]byte("stem:" + stem)); err != nil {
 			t.Fatalf("Failed to write to stem %s: %v", stem, err)
@@ -122,7 +182,7 @@ func TestShmArenaPool(t *testing.T) {
 
 	// Re-write to test reuse
 	for _, stem := range stems {
-		shm, err := worker1.GetOrCreateArena(stem, 1024)
+		shm, err := worker1.GetOrCreateArena(stem, 1024*1024*2)
 		if err != nil {
 			t.Fatalf("Failed to reuse arena for stem %s: %v", stem, err)
 		}
@@ -132,12 +192,12 @@ func TestShmArenaPool(t *testing.T) {
 	}
 
 	// Test expansion in arena set
-	shmMix, err := worker1.GetOrCreateArena("mix", 4096)
+	shmMix, err := worker1.GetOrCreateArena("mix", 1024*1024*4) // 4MB
 	if err != nil {
 		t.Fatalf("Failed to expand mix arena: %v", err)
 	}
-	if shmMix.Size != 4096 {
-		t.Fatalf("Expected mix size 4096, got %d", shmMix.Size)
+	if shmMix.Size != 1024*1024*4 {
+		t.Fatalf("Expected mix size 4MB, got %d", shmMix.Size)
 	}
 
 	pool.Close()

@@ -32,6 +32,8 @@ skip_dup_by_hash = true
 
 # Windows 共有メモリ (SHM) の物理 RAM 固着化 (VirtualLock / Pinning) 有効化
 enable_virtual_lock = true
+min_working_set_mb = 512          # 起動時初期最小ワーキングセット (MB, デフォルト: 512)
+max_working_set_mb = 16384        # 起動時初期最大ワーキングセット (MB, デフォルト: システムRAMの75%または16384)
 
 [python_env]
 # Python シングルスレッド化および環境変数設定 (CPU スレッド競合・オーバーヘッドの防止)
