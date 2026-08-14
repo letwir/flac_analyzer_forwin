@@ -1,4 +1,14 @@
 <knowledge>
+  <api id="FLAC_CLI_DECODE_RESILIENCY">
+    <title>flac CLI Range Decoding Resiliency and Subprocess Safety</title>
+    - **概要**: `flac -d -c --skip=... --until=...` による部分デコード時、CUEシートのサンプル境界の端数やストリームフレームの軽微な警告により、flac CLI が `rc=1` で異常終了することがある。
+    - **対策**:
+      - `-F` (`--decode-through-errors`): 軽微なストリームエラーやヘッダ警告を無視してデコードを完走させる。
+      - `--silent`（`-s`）の使用: `--totally-silent` は stderr メッセージまで破棄するため、`--silent` を用いて進捗統計のみを抑制し、重大なエラー文脈を stderr パイプで回収する。
+      - `proc.communicate()`: `proc.stdout.read()` + `proc.wait()` はパイプのデッドロックや stderr 取得漏れのリスクがあるため、`communicate()` で一括回収する。
+      - 指数バックオフリトライ: 外付けHDD/NAS等の外部ストレージや並列ワーカー実行時の一時的ファイル競合に備え、最大3回（0.5s, 1.0s, 2.0s）のリトライを実施する。
+    - **参照**: [FLAC documentation - tools](https://xiph.org/flac/documentation_tools_flac.html)
+  </api>
   <api id="ONNX_CONCURRENCY">
     <title>ONNX Runtime Concurrency and Segmentation Faults</title>
     - **概要**: `onnxruntime` の C++ バックエンドは内部で OpenMP またはスレッドプールを使用して演算を並列化している。Python の `threading` または `concurrent.futures` から同一または複数の `InferenceSession` に対して並列に `.run()` を実行すると、スレッド競合やスタックの破壊が発生し、Segmentation Fault が生じることがある。

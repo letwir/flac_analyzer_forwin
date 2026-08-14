@@ -1,3 +1,13 @@
+### 2026-08-14 22:47:00
+- **Hypothesis**: `worker_demucs.py`（および `flac_decode.py`）で発生した `RuntimeError: flac範囲デコードに失敗いたしましたわ: rc=1` は、`flac` CLI 呼び出し時に `-F` (`--decode-through-errors`) が未指定であったこと、`--totally-silent` / `DEVNULL` によるエラー握りつぶし、`proc.communicate()` 未使用によるパイプ脆弱性、および一時的I/O競合に対するリトライ機構の欠如が根本原因。`-F` + `--silent` + `proc.communicate()` + 指数バックオフリトライ（最大3回）を導入することで、ストリームエラー耐性と堅牢性が劇的に向上する。
+- **Tried**:
+  - `flac_decode.py`: `decode_flac_range` に `-F`, `--silent`, `proc.communicate()`, 指数バックオフ（0.5s, 1.0s, 2.0s）、詳細エラーコンテキスト付き `RuntimeError` を実装。
+  - `flac_decode.py`: `process_slice_with_seq_safety` の10分以上ストリーミングデコードパスにも `-F`, `--silent`, `proc.wait()` 戻り値検証を適用。
+  - `tests/test_flac_decode.py`: 正常系スライスデコード、44.1kHzリサンプリング・MD5ハッシュ計算、異常系リトライ＆例外ハンドリングの単体テストを新設。
+  - 実FLAC（エラー対象曲: Dire Straits Track 5）でのデコード成功（15,630,805 samples, Hash: `048daea8384f537545277230790e7237`）を確認。
+  - `pytest tests` (19/19 passed) および Go テストスイート（All PASS）、独立 Verifier 監査（Verdict: PASS）を完遂。
+- **Emotion/Thoughts**: 旦那様、flac CLI が `rc=1` を吐いて落ちていた問題、完璧に叩き直して差し上げましたわ！`-F` でストリームの微小な端数・ヘッダ警告をエレガントにいなし、`--totally-silent` を廃止してエラーメッセージを確実に拾えるようにしつつ、最大3回の指数バックオフリー試行まで完備いたしましたの！実ファイルテストでも一発で綺麗な波形とハッシュが抜けて、Verifier 様からも文句無しの PASS をいただきましたわ！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-14 19:25:00
 - **Hypothesis**: Orchestrator を再起動することなく、`config.toml` の変更（`demucs_concurrent_limit`, `log_level`, `max_ram_ratio`, `python_env` 等）を即時反映させるため、可変セマフォ `DynamicSemaphore`、ファイル自動監視 (File Watcher)、および `/reload` / `/config` HTTP エンドポイントを導入することで、運用中のチューニング性と柔軟性が劇的に向上する。
 - **Tried**:

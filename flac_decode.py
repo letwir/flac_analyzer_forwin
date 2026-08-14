@@ -2,6 +2,7 @@ import os
 import struct
 import subprocess
 import hashlib
+import time
 import numpy as np
 import soxr
 from dataclasses import dataclass
@@ -270,29 +271,48 @@ def parse_wav_header(wav_bytes: bytes) -> tuple[int, int, int, int, int, int]:
         
     return wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size
 
-def decode_flac_range(filepath: str, start_sample: int, end_sample: int) -> tuple[bytes, int, int, int, int]:
+def decode_flac_range(
+    filepath: str, 
+    start_sample: int, 
+    end_sample: int, 
+    max_retries: int = 3
+) -> tuple[bytes, int, int, int, int]:
     """指定されたサンプル範囲のみを flac CLI でデコードし、生PCMデータとフォーマット情報を返しますの"""
+    # -F (--decode-through-errors): ストリーム境界の軽微な不整合を許容して完走
+    # --silent: 進行状況のみ非表示にし、重大なstderrメッセージは温存
     cmd = [
         'flac', '-d', '-c',
+        '-F',
         f'--skip={start_sample}',
         f'--until={end_sample}',
-        '--totally-silent',
+        '--silent',
         filepath
     ]
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL
-    )
-    wav_bytes = proc.stdout.read()
-    rc = proc.wait()
-    if rc != 0:
-        raise RuntimeError(f"flac範囲デコードに失敗いたしましたわ: rc={rc}, cmd={cmd}")
-        
-    wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size = parse_wav_header(wav_bytes)
-    raw_pcm = wav_bytes[data_offset : data_offset + data_size]
     
-    return raw_pcm, wFormatTag, numChannels, sampleRate, bitsPerSample
+    last_error_context = ""
+    for attempt in range(1, max_retries + 1):
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        wav_bytes, stderr_bytes = proc.communicate()
+        rc = proc.returncode
+        
+        # 正常終了かつWAVヘッダ最小サイズを満たしていれば成功として即座にEarlyReturn
+        if rc == 0 and len(wav_bytes) >= 44:
+            wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size = parse_wav_header(wav_bytes)
+            raw_pcm = wav_bytes[data_offset : data_offset + data_size]
+            return raw_pcm, wFormatTag, numChannels, sampleRate, bitsPerSample
+            
+        # I/O競合や一時的なファイルロックを考慮して指数バックオフで再試行
+        err_msg = stderr_bytes.decode('utf-8', errors='replace').strip() if stderr_bytes else ""
+        last_error_context = f"rc={rc}, stderr='{err_msg}', bytes_len={len(wav_bytes)}, cmd={cmd}"
+        if attempt < max_retries:
+            time.sleep(0.5 * (2 ** (attempt - 1)))
+            
+    raise RuntimeError(f"flac範囲デコードに失敗いたしましたわ（試行回数: {max_retries}）: {last_error_context}")
+
 
 def pcm_bytes_to_float32(
     pcm_bytes: bytes, 
@@ -362,15 +382,16 @@ def process_slice_with_seq_safety(
     # 10分以上の長尺（DJミックスなど）の場合は、ストリーミングで読み出しながらその場でダウンサンプリング
     cmd = [
         'flac', '-d', '-c',
+        '-F',
         f'--skip={start_sample}',
         f'--until={end_sample}',
-        '--totally-silent',
+        '--silent',
         filepath
     ]
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL
+        stderr=subprocess.PIPE
     )
     
     # ヘッダ情報が完全に読めるまで最初の4096バイトをバッファリングしますわ
@@ -399,7 +420,11 @@ def process_slice_with_seq_safety(
         md5_engine.update(block)
         pcm_chunks.append(block)
         
-    proc.wait()
+    rc = proc.wait()
+    if rc != 0:
+        stderr_bytes = proc.stderr.read()
+        err_msg = stderr_bytes.decode('utf-8', errors='replace').strip() if stderr_bytes else ""
+        raise RuntimeError(f"長尺flacストリーミングデコードに失敗いたしましたわ: rc={rc}, stderr='{err_msg}', cmd={cmd}")
     
     # すべてのPCMバイトをマージ
     all_pcm = b"".join(pcm_chunks)

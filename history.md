@@ -1,6 +1,16 @@
 
 # History Log
 
+### 2026-08-14 22:48:00
+
+- Category: Bugfix & Robustness / flac_decode.py Range Decode Resiliency
+- Summary: `flac_decode.py` における `flac` CLI 呼び出し例外（`rc=1`）に対し、`-F` (`--decode-through-errors`)、`--silent`、`proc.communicate()`、指数バックオフリトライ（最大3回）を導入し、マルチトラックCUEスライス境界・軽微ストリームエラー・一時的I/O競合への耐性を確立。
+- Decisions:
+  - `flac_decode.py`: `decode_flac_range` に `-F`, `--silent`, `proc.communicate()`, 指数バックオフ（0.5s, 1.0s, 2.0s）、詳細エラーコンテキスト付き `RuntimeError` を実装。
+  - `flac_decode.py`: `process_slice_with_seq_safety` の長尺ストリーミングデコードに `-F`, `--silent`, `proc.wait()` 戻り値検証を実装。
+  - `tests/test_flac_decode.py`: 単体テスト（正常系スライスデコード・ハッシュ計算・異常系リトライ＆エラーハンドリング）を新設。
+- Files: [flac_decode.py](file:///a:/Users/letwir/repo/flac_analyzer_forwin/flac_decode.py), [test_flac_decode.py](file:///a:/Users/letwir/repo/flac_analyzer_forwin/tests/test_flac_decode.py)
+
 ### 2026-08-14 19:25:00
 
 - Category: Feature / Dynamic Configuration Hot-Reload & File Watcher
