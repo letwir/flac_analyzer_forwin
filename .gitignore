@@ -19,3 +19,4 @@ search/
 *.db-wal
 queue/
 config.toml
+HARDWARE_SPECS.md

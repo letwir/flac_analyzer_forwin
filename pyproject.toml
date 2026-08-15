@@ -1,0 +1,30 @@
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-v --tb=short"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.coverage.run]
+source = ["analyzer", "flac_decode", "flac_tagger", "zig"]
+omit = [
+    ".venv/*",
+    "tests/*",
+    "docs/*",
+    "orchestrator/*",
+    "testFLAC/*",
+    "queue/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

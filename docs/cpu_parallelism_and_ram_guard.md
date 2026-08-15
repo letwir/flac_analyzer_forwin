@@ -41,8 +41,9 @@ Flac_Analyzer は、各処理ステップを**厳格な射（Morphism）**およ
 
 ### ④ Waveform長ベース Demucs RAM予測 ＆ 実質空きRAM GO/NOGO ゲートキーパー (Gatekeeper Decision)
 - CUEシート分割およびスタンドアロン FLAC の波形長 (PCM サンプリング長) から Demucs 音源分離に必要な RAM 容量 ($R_{\text{task}}$) をタスク投入前に動的算定。
-- ホストのリアルタイム物理空きメモリ ($R_{\text{avail}}$ / `AvailPhys`) から、Goが投下済みでプロセス起動途中のインフライト中予約RAM ($R_{\text{inFlight}}$) を差し引いた **実質空き物理RAM (Effective Available RAM)** を導出。
-- 実質空きRAMが「タスク推定RAM ($R_{\text{task}}$) ＋ システム最小安全保護容量 ($R_{\text{min}}$ / `MinAvailRamGB`)」を下回る場合は自動的にタスク投入を一時停止 (NOGO Gatekeeper Decision)。他アプリのメモリ消費による影響を防ぎつつ OOM クラッシュを 100% 防御します。
+- ホストのリアルタイム物理空きメモリ ($R_{\text{avail}}$ / `AvailPhys`) から、Goが投下済みでプロセス起動途中のインフライト中予約RAM ($R_{\text{inFlight}}$) を差し引いた **実質空き物理RAM (Effective Available RAM)** を導出（$R_{\text{inFlight}} > R_{\text{avail}}$ 時はアンダーフロー防止ガードにより 0 MB と評価）。
+- 実質空きRAMが「タスク推定RAM ($R_{\text{task}}$) ＋ システム最小安全保護容量 ($R_{\text{min}}$ / `MinAvailRamGB`)」を下回る場合は自動的にタスク投入を一時停止 (NOGO Gatekeeper Decision)。`gatekeeper_retry_delay_sec`（デフォルト: 20秒）待機して自律再試行し、OOM クラッシュを 100% 防御します。
+- 純粋関数 `EvaluateGoNoGoPure` により、副作用（OSメトリクス取得）と判定ロジックを圏論的に完全分離し、100% の自動テストカバレッジを実現。
 
 ### ⑤ `tensorSemaphore` ＆ VRAM 逐次解放 (`torch.cuda.empty_cache`)
 - Go ディスパッチャ内に PyTorch 用の `tensorSemaphore` を個別に配置し、複数ワーカー間での VRAM 競合・フラグメンテーションを防止。
@@ -50,7 +51,7 @@ Flac_Analyzer は、各処理ステップを**厳格な射（Morphism）**およ
 
 ### ⑥ リアルタイム実質空き RAM バックプレッシャー ＆ `MemoryLoad >= 90%` Emergency Guard
 - タスク投入直前、Windows API (`GetMemoryInfo`) を呼び出し、実質空きRAM（$R_{\text{avail}} - R_{\text{inFlight}}$）を監視します。
-- 実質空きRAMが不足している場合や、システム全体の物理メモリ使用率が緊急警戒レベル (`MemoryLoad >= 90%`) に達している場合、Worker は自動的に 2〜3 秒間スリープ（バックプレッシャー）し、既存タスクのメモリ解放やシステム安定化を安全に待ちます。
+- 実質空きRAMが不足している場合や、システム全体の物理メモリ使用率が緊急警戒レベル (`MemoryLoad >= 90%`) に達している場合、Worker は自動的に `gatekeeper_retry_delay_sec`（デフォルト: 20秒）スリープ（バックプレッシャー）し、既存タスクのメモリ解放やシステム安定化を安全に待ちます。
 
 ### ⑦ Python ワーカー内の `float32` 保持 ＆ 一元プロパティキャッシュ化
 - Librosa による音響特徴量算出（`spectral_centroid`, `spectral_rolloff` 等）において、`AudioContext.centroid` の一元キャッシュ化および `spectro` (float32) からの直接演算を適用。

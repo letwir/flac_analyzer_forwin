@@ -50,6 +50,7 @@ func InitDB(dbPath string) (*DB, error) {
 		opQueue: make(chan dbWriteOp, 10000),
 	}
 	if err := db.createTables(); err != nil {
+		_ = conn.Close()
 		return nil, err
 	}
 

@@ -100,11 +100,15 @@ skip_dup_by_hash = true
 | `orchestrator.shm_allocation_delay_sec` | Integer | 共有メモリ (SHM) の確保・解放タイミングにおけるプロセス間同期用の安全遅延（秒）。 |
 | `orchestrator.queue_dir` | String | 各抽出ワーカーが一時的に成果物 JSON を書き出すキューディレクトリのパス。 |
 | `orchestrator.skip_dup_by_hash` | Boolean | `true` の場合、波形 MD5 ハッシュを算出（`--check-hash-only`）し、PostgreSQL に同ハッシュの解析成果が既に存在すれば Demucs 音源分離および特徴量抽出処理を **100% スキップ** します。 |
+| `orchestrator.gatekeeper_retry_delay_sec` | Integer | Gatekeeper（メモリ事前判定）の NOGO 判定時におけるタスク再試行待機秒数（デフォルト: `20` 秒）。 |
+| `orchestrator.config_watch_interval_sec` | Integer | `config.toml` の変更検知・ホットリロード監視間隔（デフォルト: `600` 秒 = 10分）。 |
+| `orchestrator.enable_dlq_retry` | Boolean | PostgreSQL 送信失敗時 DLQ (`send_failed.db`) の自動再送・リカバリ有効化（デフォルト: `true`）。 |
+| `orchestrator.dlq_retry_interval_sec` | Integer | DLQ 定期自動再送間隔（秒、デフォルト: `600` 秒 = 10分、`0` で定期実行無効化）。 |
 
 #### 🔄 設定の動的再読み込み（ホットリロード）
 Orchestrator は稼働中に **`config.toml` の変更を自動検知して即座に動的反映** します。
 
-- **自動リロード (File Watcher)**: `config.toml` を保存すると、約2秒以内に変更が自動検知され、稼働中のプロセスを停止することなく設定（`demucs_concurrent_limit`, `log_level`, `max_ram_ratio`, `python_env` 等）が更新されます。
+- **自動リロード (File Watcher)**: `config_watch_interval_sec`（デフォルト10分）ごとに `config.toml` の変更を自動検知し、稼働中のプロセスを停止することなく設定（`demucs_concurrent_limit`, `log_level`, `max_ram_ratio`, `gatekeeper_retry_delay_sec` 等）が更新されます。
 - **手動リロード API**: `POST http://localhost:8080/reload` を呼び出すことで即座にリロードし、変更差分を JSON で取得できます。
 - **設定確認 API**: `GET http://localhost:8080/config` で現在適用されている動的設定値を確認できます。
 
@@ -114,7 +118,7 @@ Orchestrator は稼働中に **`config.toml` の変更を自動検知して即�
 ---
 
 ### 3. 解析モデルの配置
-`models/` ディレクトリに必要な ONNX 分類器モデルおよびクラスマッピング JSON を配置します（例: `discogs-effnet-bs64-1.onnx` 等）。
+`models/` ディレクトリに必要な ONNX 分類器モデルおよびクラスマッピング JSON を配置します（例: `discogs-effnet-bs64-1.onnx` 等）。`init.bat` または `python zig/init_dl_model.py` により自動取得可能です。
 
 ---
 
@@ -144,15 +148,15 @@ go build -o orchestrator.exe
 .\run_batch.ps1 -Dir "D:\Music\FLAC_Library" -Force
 ```
 
-#### ステップ 3: 失敗タスク（DLQ）の再送処理
-PostgreSQL 送信失敗により `send_failed.db` へ一時退避（Dead Letter Queue）されたデータを手動で再送信・DB同期します。
+#### ステップ 3: 失敗タスク（DLQ）の自動再送・リカバリ
+PostgreSQL 送信失敗により `send_failed.db` へ一時退避（Dead Letter Queue）されたデータは、Orchestrator 起動時および定期実行（10分間隔）により自動的に PostgreSQL へ再送・同期されます。手動で即時実行することも可能です。
 
 ```powershell
-.venv\Scripts\python.exe retry_ingest.py
+.venv\Scripts\python.exe zig/retry_ingest.py
 ```
 
 #### ステップ 4: 既存楽曲のタグ補完・再焼き込み (独立治具 ./zig/)
-PostgreSQL DB に蓄積された過去の解析結果から、FLAC ファイル本体へ未焼き込みの不足タグ（`LIBROSA_*`, `ESSENTIA_*`, `ESSENTIA_GENRE_DISCOGS400_TOP` 等）を自動検出し、CUE シート有無（`CUE_TRACKxx_` プレフィックス切り替え）を自動判定して安全に焼き込み補完します。
+PostgreSQL DB に蓄積された過去の解析結果から、FLAC ファイル本体へ未焼き込みの不足タグ（`LIBROSA_*`, `ESSENTIA_*` 等）を自動検出し、CUE シート有無（`CUE_TRACKxx_` プレフィックス切り替え）を自動判定して安全に焼き込み補完します。
 
 ```powershell
 # プレビュー確認 (ドライランモード)
@@ -196,6 +200,7 @@ PostgreSQL DB に蓄積された過去の解析結果から、FLAC ファイル�
 | [DLQ・エラーリカバリ](docs/dlq_error_recovery.md) | Dead Letter Queue・ゾンビタスクリセット |
 | [GPU/RAMフォールバック](docs/gpu_fallback_and_ram_defense.md) | CUDA/DirectML/Blackwell対応・VRAM解放 |
 | [Blackwell RTX 50xx インストール](docs/install_blackwell_rtx50.md) | NVIDIA RTX 50xx シリーズ (CUDA 13.2) セットアップ |
+| [治具スクリプト集](docs/utility_tools.md) | 独立治具集 (zig/) の仕様・使用例 |
 
 ---
 

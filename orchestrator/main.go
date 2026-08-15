@@ -45,6 +45,10 @@ type Config struct {
 		EnableVirtualLock     *bool   `toml:"enable_virtual_lock"`
 		MinWorkingSetMB       int     `toml:"min_working_set_mb"`
 		MaxWorkingSetMB       int     `toml:"max_working_set_mb"`
+		GatekeeperRetryDelaySec int   `toml:"gatekeeper_retry_delay_sec"`
+		ConfigWatchIntervalSec  int   `toml:"config_watch_interval_sec"`
+		EnableDlqRetry          *bool `toml:"enable_dlq_retry"`
+		DlqRetryIntervalSec     int   `toml:"dlq_retry_interval_sec"`
 	} `toml:"orchestrator"`
 	PythonEnv map[string]string `toml:"python_env"`
 }
@@ -236,10 +240,13 @@ func main() {
 	log.Printf("Dispatcher started with %d workers (Demucs Limit: %d, MaxRamRatio: %.1f%%, VirtualLock: %v, LogLevel: %v)\n",
 		dispConfig.NumWorkers, dispConfig.DemucsConcurrentLimit, dispConfig.MaxRamRatio*100, enableVirtualLock, dispConfig.LogLevel)
 
-	// 5.1 Start Config File Watcher for dynamic hot-reloading
+	// 5.1 Start DLQ Auto-Retry Scheduler (startup immediate run + periodic ticker)
+	disp.StartDlqRetryScheduler(context.Background())
+
+	// 5.2 Start Config File Watcher for dynamic hot-reloading (10 min / config_watch_interval_sec)
 	watcherCtx, cancelWatcher := context.WithCancel(context.Background())
 	defer cancelWatcher()
-	startConfigFileWatcher(watcherCtx, configPath, disp, totalRamGB, numCPU, logLevelStr, elog)
+	startConfigFileWatcher(watcherCtx, configPath, disp, totalRamGB, numCPU, logLevelStr, elog, dispConfig.ConfigWatchIntervalSec)
 
 	// 6. Setup Task Receiver and Admin Endpoints
 	mux := http.NewServeMux()
@@ -423,14 +430,17 @@ func reloadConfiguration(disp *dispatcher.Dispatcher, configPath string, totalRa
 	return diff, nil
 }
 
-func startConfigFileWatcher(ctx context.Context, configPath string, disp *dispatcher.Dispatcher, totalRamGB float64, numCPU int, explicitLogLevel string, elog dispatcher.EventLogger) {
+func startConfigFileWatcher(ctx context.Context, configPath string, disp *dispatcher.Dispatcher, totalRamGB float64, numCPU int, explicitLogLevel string, elog dispatcher.EventLogger, intervalSec int) {
+	if intervalSec <= 0 {
+		intervalSec = 600
+	}
 	go func() {
 		var lastModTime time.Time
 		if fi, err := os.Stat(configPath); err == nil {
 			lastModTime = fi.ModTime()
 		}
 
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -544,6 +554,28 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		skipDup = *cfg.Orchestrator.SkipDupByHash
 	}
 
+	gatekeeperRetryDelay := cfg.Orchestrator.GatekeeperRetryDelaySec
+	if gatekeeperRetryDelay <= 0 {
+		gatekeeperRetryDelay = 20
+	}
+
+	configWatchInterval := cfg.Orchestrator.ConfigWatchIntervalSec
+	if configWatchInterval <= 0 {
+		configWatchInterval = 600
+	}
+
+	enableDlqRetry := true
+	if cfg.Orchestrator.EnableDlqRetry != nil {
+		enableDlqRetry = *cfg.Orchestrator.EnableDlqRetry
+	}
+
+	dlqRetryInterval := cfg.Orchestrator.DlqRetryIntervalSec
+	if dlqRetryInterval < 0 {
+		dlqRetryInterval = 600
+	} else if cfg.Orchestrator.DlqRetryIntervalSec == 0 && cfg.Orchestrator.EnableDlqRetry == nil {
+		dlqRetryInterval = 600
+	}
+
 	resolvedPythonEnv := resolvePythonEnv(cfg.PythonEnv, numCPU, cfg.Orchestrator.NumWorkers)
 
 	dispConfig := &dispatcher.Config{
@@ -558,11 +590,15 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		ShmRetryDelaySec:      cfg.Orchestrator.ShmRetryDelaySec,
 		QueueDir:              cfg.Orchestrator.QueueDir,
 
-		PythonEnv:             resolvedPythonEnv,
-		LogLevel:              logLevel,
-		EventLog:              elog,
-		SkipDupByHash:         skipDup,
-		EnableVirtualLock:     enableVirtualLock,
+		PythonEnv:               resolvedPythonEnv,
+		LogLevel:                logLevel,
+		EventLog:                elog,
+		SkipDupByHash:           skipDup,
+		EnableVirtualLock:       enableVirtualLock,
+		GatekeeperRetryDelaySec: gatekeeperRetryDelay,
+		ConfigWatchIntervalSec:  configWatchInterval,
+		EnableDlqRetry:          enableDlqRetry,
+		DlqRetryIntervalSec:     dlqRetryInterval,
 	}
 
 	return &cfg, dispConfig, nil
@@ -572,18 +608,18 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 func resolvePythonEnv(raw map[string]string, numCPU, numWorkers int) map[string]string {
 	resolved := make(map[string]string)
 	for k, v := range raw {
-		if v == "0" {
-			threads := 1
-			if numWorkers > 0 {
-				threads = numCPU / numWorkers
-				if threads < 1 {
-					threads = 1
-				}
-			}
-			resolved[k] = strconv.Itoa(threads)
-		} else {
+		if v != "0" {
 			resolved[k] = v
+			continue
 		}
+		threads := 1
+		if numWorkers > 0 {
+			threads = numCPU / numWorkers
+		}
+		if threads < 1 {
+			threads = 1
+		}
+		resolved[k] = strconv.Itoa(threads)
 	}
 	return resolved
 }

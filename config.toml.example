@@ -35,6 +35,16 @@ enable_virtual_lock = true
 min_working_set_mb = 512          # 起動時初期最小ワーキングセット (MB, デフォルト: 512)
 max_working_set_mb = 16384        # 起動時初期最大ワーキングセット (MB, デフォルト: システムRAMの75%または16384)
 
+# Gatekeeper (メモリ事前判定) の NOGO 時リトライ待機秒数 (デフォルト: 20秒)
+gatekeeper_retry_delay_sec = 20
+
+# 設定ファイル (config.toml) の変更検知・ホットリロード監視間隔 (秒, デフォルト: 600秒 = 10分)
+config_watch_interval_sec = 600
+
+# PostgreSQL 送信失敗時 DLQ (send_failed.db) の自動再送・リカバリ設定
+enable_dlq_retry = true
+dlq_retry_interval_sec = 600          # DLQ 定期自動リトライ間隔 (秒, デフォルト: 600秒 = 10分, 0 で定期実行無効化・起動時のみ)
+
 [python_env]
 # Python シングルスレッド化および環境変数設定 (CPU スレッド競合・オーバーヘッドの防止)
 omp_num_threads = "1"

@@ -36,7 +36,7 @@ stateDiagram-v2
     [*] --> StartupReset
     
     subgraph Cat_Init ["Phase 1: Initialization Functor (基盤・初期化)"]
-        StartupReset: オーケストレーター起動
+        StartupReset: オーケストレーター起動<br/>（Win32 JobObject 初期化 & DLQ 自動リトライスケジューラ起動）
         Idle: orchestrator.db の RUNNING/PENDING タスクを FAILED へリセット
         TaskReceived: /task APIへファイルパスがPOSTされる
         CueInspect: worker_cue.py 起動<br/>（CUE/タグ解析・トラック自動抽出。CUE不在時も自動フォールバック）
@@ -53,28 +53,29 @@ stateDiagram-v2
     end
 
     subgraph Cat_HeavyState ["Phase 3: Monadic Heavy Resource Functor (重畳分離・SHM資源)"]
-        ResourceWait: 未登録楽曲 semaphore 監視
-        AllocatingSHM: メモリ空き容量・並列上限セマフォ監視
+        GatekeeperDecision: Gatekeeper Pre-flight 判定<br/>(EffectiveAvail RAM < Required 時 20秒待機バックプレッシャー)
+        ArenaAcquire: ShmArenaPool からワーカー専用アリーナセット取得<br/>(VirtualLock 物理RAM固着 ＆ ワーキングセット自動拡張)
         DemucsProcessing: worker_demucs.py 起動<br/>（波形スライスデコード・分離・SHM書き込み）
-        FreezingSHM: Go側で共有メモリを PAGE_READONLY 化
-        Precache: functor_precache.py 起動<br/>（SHM read-only アタッチ・メタデータ整合性検証）
+        FreezingSHM: Go側で全ステム共有メモリを PAGE_READONLY 化 (FreezeAll)
+        Precache: zig/functor_precache.py 起動<br/>（SHM read-only アタッチ・メタデータ整合性検証）
     end
 
     subgraph Cat_ParallelProduct ["Phase 4: Parallel Product Morphisms (並列積射抽出)"]
         ParallelFeatureExtracting: ポストDemucs並列特徴量抽出起動<br/>（Librosa, Tensor, Essentia 3本同時並列実行）
-        ReleaseSHM: Go側で共有メモリ (SHM) 解放
+        UnfreezeSHM: Go側で共有メモリを PAGE_READWRITE へ復帰 (UnfreezeAll: アリーナ再利用準備)
         WriteJSONFiles: 中間JSONファイル書き込み<br/>(queue/ ディレクトリへ一時出力)
     end
 
     subgraph Cat_PersistenceMonad ["Phase 5: Terminal Persistence Monad (Ingest永続化モナド)"]
-        Ingesting: ingester.py 起動（JSON集約・DB照合）
+        Ingesting: ingester.py 起動（JSON集約・HNR/NAP分離タグ生成・DB照合）
         PostgreSQL_Upsert: DB正常時 (PostgreSQLへUPSERT)
-        DLQ_Fallback: DB接続不可時 (send_failed.dbへ退避)
+        DLQ_Fallback: DB接続不可時 (send_failed.dbへ退避 ＆ 10分後自動リトライ)
     end
 
     subgraph Cat_Finalize ["Phase 6: Terminal Object & Side-Effect Completion (終端射・完了)"]
-        TagWriteback: FLACタグ書き戻し &<br/>Windows タイムスタンプ保護 (SetFileTime)
+        TagWriteback: FLACタグ書き戻し (LIBROSA_NAP, LIBROSA_HNR_DB) &<br/>Windows タイムスタンプ保護 (SetFileTime)
         IngesterCleanup: ingester.py による中間JSON・キャッシュ削除
+        JobObjectCleanup: Win32 Job Object によるゾンビ子プロセス一括クリーンアップ
         TaskCompleted: Go defer クリーンアップ実行後<br/>orchestrator.db の status を COMPLETED に更新
     end
 

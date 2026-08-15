@@ -14,25 +14,28 @@
    - `functor_precache.py` は、ディスクへの中間 `.npy` ファイル保存を完全に排除し、共有メモリのアタッチ性検証とメタデータ整合性の高速チェックのみを行います。
    - 各抽出ワーカーは、他のワーカーや自身の誤動作によって共有メモリ上の波形データが改変されるリスクから物理的に保護された状態で並行解析を実行します。
 
-## 2. Producer-Consumer ゼロコピー IPC シーケンス (Mermaid)
+## 2. ShmArenaPool ＆ Producer-Consumer ゼロコピー IPC シーケンス (Mermaid)
+
+毎曲ごとの共有メモリ作成・破棄ループを廃止し、ワーカーごとに 7 ステム分 (`mix`, `drums`, `bass`, `other`, `vocals`, `guitar`, `piano`) の共有メモリアリーナをプール管理する `ShmArenaPool` を採用しています。
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Go as Go Orchestrator (shm_windows.go)
+    participant Go as Go Orchestrator (shm_windows.go / ShmArenaPool)
     participant Producer as Producer (worker_demucs.py / shm_interop.py)
-    participant SHM as Windows Shared Memory (Kernel Pagefile)
-    participant Precache as Precache (functor_precache.py)
+    participant SHM as Windows Shared Memory (ShmArenaPool)
+    participant Precache as Precache (zig/functor_precache.py)
     participant Consumers as Consumers (worker_librosa / tensor / essentia)
 
-    Go->>Go: NewSharedMemory("Local\\FlacShm_...", size)<br/>Win32 API: CreateFileMappingW(PAGE_READWRITE) & MapViewOfFile
+    Note over Go,SHM: 起動時: ShmArenaPool がワーカー単位に 7 ステム永続アリーナを事前確保 (VirtualLock 物理RAM固着)
+    Go->>SHM: EnsureCapacity(estimatedSize): 必要に応じてアリーナ容量を自律拡張
     Go->>Producer: 起動 (共有メモリタグ名渡す)
     Producer->>SHM: write_to_shm() via mmap(ACCESS_WRITE)<br/>(Zero-copy write to PAGE_READWRITE memory)
     Producer-->>Go: 書き込み完了シグナル
-    Go->>SHM: Freeze(): Win32 API VirtualProtect(PAGE_READONLY)
+    Go->>SHM: FreezeAll(): 全ステムの Win32 API VirtualProtect(PAGE_READONLY)
     Note over SHM: 共有メモリ保護属性を PAGE_READONLY にロック (WORM化)
     
-    Go->>Precache: functor_precache.py 起動
+    Go->>Precache: zig/functor_precache.py 起動
     Precache->>SHM: attach_shm_read_only()<br/>(アタッチ性・メタデータ整合性チェック)
     Precache-->>Go: 検証成功
 
@@ -48,8 +51,8 @@ sequenceDiagram
     Consumers-->>Go: 特徴量抽出完了
     Consumers->>SHM: mmap.close() (Consumer デタッチ)
 
-    Go->>SHM: Close(): Win32 API UnmapViewOfFile & CloseHandle
-    Note over SHM: OS / GC により共有メモリ領域を解放
+    Go->>SHM: UnfreezeAll(): Win32 API VirtualProtect(PAGE_READWRITE)
+    Note over SHM: アリーナを再利用可能状態（Unfreeze）へ復帰。プロセス終了時のみ一括 Close
 ```
 
 ## 3. Win32 API 呼出一覧と役割

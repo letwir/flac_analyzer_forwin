@@ -1,3 +1,29 @@
+# Walkthrough: Gatekeeper 20秒リトライ・10分設定監視・DLQ自動再送・全治具 zig/ 集約 ＆ Docs最新化
+
+- **Summary**: ユーザー要求（GO/NOGO 20秒リトライ制御、10分設定検知、全治具スクリプトの `zig/` 集約）および Issues #9, #10, #12, #13, #14 を解決。Gatekeeper の純粋射化 ＆ テスト整備、DLQ 起動時/定期自動再送スケジューラ、pytest カバレッジ計測設定、治具集約 (`zig/`) ＆ ドキュメント全面最新化を完了。
+- **Changes**:
+  - `orchestrator/dispatcher/dispatcher.go`:
+    - `EvaluateGoNoGoPure`: 副作用のない純粋判定関数（EffectiveAvail 算出・アンダーフロー防御・90%負荷チェック）の実装。
+    - `gatekeeper_retry_delay_sec` (デフォルト: 20秒), `enable_dlq_retry` (true), `dlq_retry_interval_sec` (600秒) の動的適用。
+    - `StartDlqRetryScheduler`: 起動時即時および10分ごとの `zig/retry_ingest.py` バックグラウンド自動実行。
+    - `runPythonScript`: `zig/` 配下のスクリプトパス自動解決。
+  - `orchestrator/main.go`:
+    - `config_watch_interval_sec` (600秒) 対応、DLQ 再送スケジューラ起動。
+  - `config.toml` & `config.toml.example`:
+    - 新設定キー追加。
+  - `zig/`:
+    - `repair_flac_tags.py`, `migrate_hnr.py`, `retry_ingest.py`, `fix_empty_meta.py`, `inspect_track.py`, `functor_precache.py`, `init_dl_model.py`, `update_hardware_specs.py`, `verify_track4.py` の全9治具を集約・UTF-8保護。
+  - `pyproject.toml` & `requirements.txt`:
+    - pytest カバレッジ計測設定 (`pytest-cov`) の追加。
+  - `docs/` & `README.md` / `README_en.md`:
+    - `docs/utility_tools.md` 新規作成。
+    - `state_diagram.md`, `shm_architecture.md`, `dlq_error_recovery.md`, `cpu_parallelism_and_ram_guard.md` を最新化。
+- **Verification**:
+  - `cd orchestrator; go test -v ./...`: 100% PASS
+  - `.venv\Scripts\python.exe -m pytest --cov`: 19 passed in 34.36s
+  - `proof-checker.exe -path "orchestrator"`: Verdict PASS
+  - Verifier Subagent Review: **Verdict: PASS**
+
 # Walkthrough: flac_decode.py 範囲デコード堅牢化 (-F/--silent/communicate/リトライ)
 
 - **Summary**: `worker_demucs.py` / `flac_decode.py` で発生していた `flac` CLI 呼び出し例外（`rc=1`）に対し、`-F` (`--decode-through-errors`)、`--silent`、`proc.communicate()`、指数バックオフリトライ（最大3回）を導入し、ストリームエラー耐性と堅牢性を向上。

@@ -144,10 +144,10 @@ Run directory scanner script from a separate PowerShell window. Uses Rust high-s
 ```
 
 #### Step 3: Replay Failed DLQ Tasks
-Re-transmit and synchronize payloads that failed database insertion and were saved to local Dead Letter Queue (`send_failed.db`):
+Re-transmit and synchronize payloads that failed database insertion and were saved to local Dead Letter Queue (`send_failed.db`). The orchestrator automatically runs DLQ retries on startup and periodically (every 10 minutes):
 
 ```powershell
-.venv\Scripts\python.exe retry_ingest.py
+.venv\Scripts\python.exe zig/retry_ingest.py
 ```
 
 ---
@@ -181,6 +181,7 @@ Re-transmit and synchronize payloads that failed database insertion and were sav
 | [DLQ & Error Recovery](docs/dlq_error_recovery.md) | Dead Letter Queue & zombie task resets |
 | [GPU / RAM Fallback](docs/gpu_fallback_and_ram_defense.md) | CUDA/DirectML/Blackwell & VRAM liberation |
 | [Blackwell RTX 50xx Setup](docs/install_blackwell_rtx50.md) | Setup guide for NVIDIA RTX 50xx Series (CUDA 13.2) |
+| [Utility Tools Guide](docs/utility_tools.md) | Independent jig scripts & diagnostic tools (zig/) |
 
 ---
 

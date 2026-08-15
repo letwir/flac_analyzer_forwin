@@ -70,9 +70,12 @@ flowchart TD
 
 ### 再送の設計ポイント
 
-- **レコード単位のトランザクション**: 1レコードの UPSERT 失敗が他のレコードに影響しないよう、各レコードを独立してコミット/ロールバック
-- **冪等性**: `ON CONFLICT (audio_hash) DO UPDATE` により、何度再送しても安全
-- **成功したレコードは即時 DLQ から DELETE**: 再送ループ中に `send_failed.db` から削除されるため、中断しても再実行時に二重送信されない
+- **Go オーケストレーターによる自動再送 (Background Scheduler)**:
+  - `config.toml` の `enable_dlq_retry = true`（デフォルト）により、Orchestrator 起動時に即時 1 回、以降は `dlq_retry_interval_sec`（デフォルト: 600秒 = 10分）ごとにバックグラウンドから `zig/retry_ingest.py` が自動実行され、DLQ に滞留したレコードを自律的にフラッシュします。
+- **手動実行**: コマンドラインから `python zig/retry_ingest.py` で即座に全件再送することも可能です。
+- **レコード単位のトランザクション**: 1レコードの UPSERT 失敗が他のレコードに影響しないよう、各レコードを独立してコミット/ロールバック。
+- **冪等性**: `ON CONFLICT (audio_hash) DO UPDATE` により、何度再送しても安全。
+- **成功したレコードは即時 DLQ から DELETE**: 再送ループ中に `send_failed.db` から削除されるため、中断しても再実行時に二重送信されない。
 
 ---
 

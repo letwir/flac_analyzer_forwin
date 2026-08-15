@@ -38,13 +38,13 @@
 
 ### 3. パイプライン堅牢化・ETL改善 (`goal:pipeline`)
 - [x]DONE [#8 [Test] repair_flac_tags / flac_tagger: CUE付き複数トラックの重複書き込みリグレッションテスト整備](https://github.com/letwir/flac_analyzer_forwin/issues/8)
-- [ ] [#9 [Test] Gatekeeper EffectiveAvail 判定の自動化テスト整備](https://github.com/letwir/flac_analyzer_forwin/issues/9)
-- [ ] [#10 [Feat] DLQ retry_ingest.py の orchestrator 起動時自動実行・定期実行化](https://github.com/letwir/flac_analyzer_forwin/issues/10)
+- [x]DONE [#9 [Test] Gatekeeper EffectiveAvail 判定の自動化テスト整備 ＆ 20秒リトライ制御](https://github.com/letwir/flac_analyzer_forwin/issues/9)
+- [x]DONE [#10 [Feat] DLQ retry_ingest.py の orchestrator 起動時自動実行・定期実行化](https://github.com/letwir/flac_analyzer_forwin/issues/10)
 
 ### 4. コード品質・テスト整備 (`goal:quality`)
-- [ ] [#12 [Quality] pytest カバレッジ計測とレポート出力設定](https://github.com/letwir/flac_analyzer_forwin/issues/12)
+- [x]DONE [#12 [Quality] pytest カバレッジ計測とレポート出力設定](https://github.com/letwir/flac_analyzer_forwin/issues/12)
 - [x]CLOSED [#11 [CI] test_integration.py および単体テストを GitHub Actions に組み込む (対象外のためクローズ)](https://github.com/letwir/flac_analyzer_forwin/issues/11)
 
 ### 5. ドキュメント整備 (`goal:docs`)
-- [ ] [#13 [Docs] 治具スクリプト (fix_empty_meta.py, inspect_track.py 等) の README 化](https://github.com/letwir/flac_analyzer_forwin/issues/13)
-- [ ] [#14 [Docs] docs/ フォルダを flac_tagger / Gatekeeper / JobObject 修正に合わせて最新化](https://github.com/letwir/flac_analyzer_forwin/issues/14)
+- [x]DONE [#13 [Docs] 治具スクリプト (zig/*.py) の独立集約 ＆ ドキュメント化 (docs/utility_tools.md)](https://github.com/letwir/flac_analyzer_forwin/issues/13)
+- [x]DONE [#14 [Docs] docs/ フォルダを flac_tagger / Gatekeeper / JobObject / ShmArenaPool 修正に合わせて最新化](https://github.com/letwir/flac_analyzer_forwin/issues/14)

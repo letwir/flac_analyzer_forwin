@@ -156,7 +156,7 @@ log_level = "info"
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	startConfigFileWatcher(ctx, configPath, disp, totalRamGB, numCPU, "", nil)
+	startConfigFileWatcher(ctx, configPath, disp, totalRamGB, numCPU, "", nil, 1)
 
 	// Modify config file
 	time.Sleep(500 * time.Millisecond)

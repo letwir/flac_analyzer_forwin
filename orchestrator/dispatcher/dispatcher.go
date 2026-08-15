@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,6 +100,10 @@ type Config struct {
 	EventLog              EventLogger
 	SkipDupByHash         bool
 	EnableVirtualLock     bool
+	GatekeeperRetryDelaySec int
+	ConfigWatchIntervalSec  int
+	EnableDlqRetry          bool
+	DlqRetryIntervalSec     int
 }
 
 
@@ -212,6 +217,18 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	}
 	if oldCfg.QueueDir != newCfg.QueueDir {
 		diff["queue_dir"] = fmt.Sprintf("%s -> %s", oldCfg.QueueDir, newCfg.QueueDir)
+	}
+	if oldCfg.GatekeeperRetryDelaySec != newCfg.GatekeeperRetryDelaySec {
+		diff["gatekeeper_retry_delay_sec"] = fmt.Sprintf("%d -> %d", oldCfg.GatekeeperRetryDelaySec, newCfg.GatekeeperRetryDelaySec)
+	}
+	if oldCfg.ConfigWatchIntervalSec != newCfg.ConfigWatchIntervalSec {
+		diff["config_watch_interval_sec"] = fmt.Sprintf("%d -> %d", oldCfg.ConfigWatchIntervalSec, newCfg.ConfigWatchIntervalSec)
+	}
+	if oldCfg.EnableDlqRetry != newCfg.EnableDlqRetry {
+		diff["enable_dlq_retry"] = fmt.Sprintf("%v -> %v", oldCfg.EnableDlqRetry, newCfg.EnableDlqRetry)
+	}
+	if oldCfg.DlqRetryIntervalSec != newCfg.DlqRetryIntervalSec {
+		diff["dlq_retry_interval_sec"] = fmt.Sprintf("%d -> %d", oldCfg.DlqRetryIntervalSec, newCfg.DlqRetryIntervalSec)
 	}
 
 	d.config = newCfg
@@ -351,6 +368,12 @@ func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID 
 	}
 
 	scriptPath := filepath.Join(parentDir, scriptName)
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		zigScript := filepath.Join(parentDir, "zig", scriptName)
+		if _, errZig := os.Stat(zigScript); errZig == nil {
+			scriptPath = zigScript
+		}
+	}
 	cmdArgs := append([]string{scriptPath}, args...)
 	cmd := exec.Command(pythonPath, cmdArgs...)
 	cmd.Dir = parentDir
@@ -409,6 +432,68 @@ func cleanupCache(trackHash string) {
 	}
 }
 
+// GatekeeperDecision encapsulates the decision result of EvaluateGoNoGoPure.
+type GatekeeperDecision struct {
+	IsGo                bool
+	WaitDuration        time.Duration
+	Reason              string
+	EstimatedRamBytes   uint64
+	EffectiveAvailBytes uint64
+	RequiredBytes       uint64
+	MemoryLoad          uint32
+}
+
+// EvaluateGoNoGoPure evaluates whether a task can be dispatched without side-effects (Pure Domain Morphism).
+func EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam uint64, memLoad uint32, retryDelay time.Duration) GatekeeperDecision {
+	if retryDelay <= 0 {
+		retryDelay = 20 * time.Second
+	}
+
+	var effectiveAvailBytes uint64
+	if availPhys > inFlight {
+		effectiveAvailBytes = availPhys - inFlight
+	} else {
+		effectiveAvailBytes = 0
+	}
+
+	requiredBytes := estimatedRam + minAvailRam
+
+	if effectiveAvailBytes < requiredBytes {
+		return GatekeeperDecision{
+			IsGo:                false,
+			WaitDuration:        retryDelay,
+			Reason:              fmt.Sprintf("Effective Avail RAM (%d MB = Avail %d MB - InFlight %d MB) < Required (%d MB = Task %d MB + MinAvail %d MB)", effectiveAvailBytes/1024/1024, availPhys/1024/1024, inFlight/1024/1024, requiredBytes/1024/1024, estimatedRam/1024/1024, minAvailRam/1024/1024),
+			EstimatedRamBytes:   estimatedRam,
+			EffectiveAvailBytes: effectiveAvailBytes,
+			RequiredBytes:       requiredBytes,
+			MemoryLoad:          memLoad,
+		}
+	}
+
+	if memLoad >= 90 {
+		return GatekeeperDecision{
+			IsGo:                false,
+			WaitDuration:        retryDelay,
+			Reason:              fmt.Sprintf("System MemoryLoad too high (%d%% >= 90%%)", memLoad),
+			EstimatedRamBytes:   estimatedRam,
+			EffectiveAvailBytes: effectiveAvailBytes,
+			RequiredBytes:       requiredBytes,
+			MemoryLoad:          memLoad,
+		}
+	}
+
+	return GatekeeperDecision{
+		IsGo:                true,
+		WaitDuration:        0,
+		Reason:              "Approved",
+		EstimatedRamBytes:   estimatedRam,
+		EffectiveAvailBytes: effectiveAvailBytes,
+		RequiredBytes:       requiredBytes,
+		MemoryLoad:          memLoad,
+	}
+}
+
+// EvaluateGoNoGo queries live system memory status and delegates the preflight decision to EvaluateGoNoGoPure.
 func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.Duration) {
 	estimatedRam := EstimateDemucsTotalRamBytes(task)
 	memInfo, err := sysinfo.GetMemoryInfo()
@@ -422,31 +507,74 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 
 	currentCfg := d.GetConfig()
 	minAvailBytes := uint64(currentCfg.MinAvailRamGB * 1024 * 1024 * 1024)
-
-	var effectiveAvailBytes uint64
-	if memInfo.AvailPhys > inFlight {
-		effectiveAvailBytes = memInfo.AvailPhys - inFlight
-	} else {
-		effectiveAvailBytes = 0
+	retryDelay := time.Duration(currentCfg.GatekeeperRetryDelaySec) * time.Second
+	if retryDelay <= 0 {
+		retryDelay = 20 * time.Second
 	}
 
-	requiredBytes := estimatedRam + minAvailBytes
-
-	if effectiveAvailBytes < requiredBytes {
-		d.LogWarn("[W-%d] [Gatekeeper: NOGO] Effective Avail RAM (%d MB = Avail %d MB - InFlight %d MB) < Required (%d MB = Task %d MB + MinAvail %d MB). Delaying dispatch...",
-			workerID, effectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024,
-			requiredBytes/1024/1024, estimatedRam/1024/1024, minAvailBytes/1024/1024)
-		return false, 2 * time.Second
-	}
-
-	if memInfo.MemoryLoad >= 90 {
-		d.LogWarn("[W-%d] [Gatekeeper: NOGO] System MemoryLoad too high (%d%%). Delaying dispatch...", workerID, memInfo.MemoryLoad)
-		return false, 3 * time.Second
+	decision := EvaluateGoNoGoPure(memInfo.AvailPhys, inFlight, estimatedRam, minAvailBytes, memInfo.MemoryLoad, retryDelay)
+	if !decision.IsGo {
+		d.LogWarn("[W-%d] [Gatekeeper: NOGO] %s. Delaying dispatch for %v...", workerID, decision.Reason, decision.WaitDuration)
+		return false, decision.WaitDuration
 	}
 
 	d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB])",
-		workerID, estimatedRam/1024/1024, effectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024)
+		workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024)
 	return true, 0
+}
+
+// TriggerDlqRetry executes retry_ingest.py to process any queued failed payloads in send_failed.db.
+func (d *Dispatcher) TriggerDlqRetry(ctx context.Context) error {
+	d.LogInfo("[DLQ] Triggering retry_ingest.py execution...")
+	out, err := d.runPythonScript("retry_ingest.py", nil, 0, "DLQRetry", ColorYellow, true)
+	if err != nil {
+		d.LogWarn("[DLQ] retry_ingest.py execution note: %v (output: %s)", err, out)
+		return err
+	}
+	cleanOut := strings.TrimSpace(out)
+	if cleanOut != "" {
+		d.LogInfo("[DLQ] retry_ingest.py output: %s", cleanOut)
+	}
+	return nil
+}
+
+// StartDlqRetryScheduler starts background periodic execution of retry_ingest.py according to config.
+func (d *Dispatcher) StartDlqRetryScheduler(ctx context.Context) {
+	go func() {
+		cfg := d.GetConfig()
+		if !cfg.EnableDlqRetry {
+			d.LogInfo("[DLQ] Auto retry disabled via config (enable_dlq_retry = false)")
+			return
+		}
+
+		// 1. Run immediately on startup in a separate goroutine
+		go func() {
+			_ = d.TriggerDlqRetry(ctx)
+		}()
+
+		// 2. Periodic ticker if interval > 0
+		intervalSec := cfg.DlqRetryIntervalSec
+		if intervalSec <= 0 {
+			d.LogInfo("[DLQ] Periodic retry disabled (dlq_retry_interval_sec <= 0)")
+			return
+		}
+
+		ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				currentCfg := d.GetConfig()
+				if !currentCfg.EnableDlqRetry {
+					continue
+				}
+				_ = d.TriggerDlqRetry(ctx)
+			}
+		}
+	}()
 }
 
 func (d *Dispatcher) worker(id int) {

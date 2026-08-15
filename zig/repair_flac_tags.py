@@ -23,6 +23,11 @@ import psycopg2
 import psycopg2.extras
 from mutagen.flac import FLAC
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 # 親ディレクトリを sys.path に追加してプロジェクト内モジュール (flac_tagger.py 等) をインポート
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
