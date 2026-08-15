@@ -33,7 +33,43 @@ type memoryStatusEx struct {
 var (
 	modkernel32              = syscall.NewLazyDLL("kernel32.dll")
 	procGlobalMemoryStatusEx = modkernel32.NewProc("GlobalMemoryStatusEx")
+	procGetDiskFreeSpaceExW  = modkernel32.NewProc("GetDiskFreeSpaceExW")
 )
+
+// DiskInfo contains disk space statistics for a directory/drive in bytes.
+type DiskInfo struct {
+	FreeBytesAvailable uint64 // Caller available free bytes
+	TotalBytes         uint64 // Total disk bytes
+	TotalFreeBytes     uint64 // Total free bytes on disk
+}
+
+// GetDiskFreeSpace returns disk space metrics for the given path using Win32 GetDiskFreeSpaceExW.
+func GetDiskFreeSpace(dirPath string) (*DiskInfo, error) {
+	if dirPath == "" {
+		dirPath = "."
+	}
+	pDir, err := syscall.UTF16PtrFromString(dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("UTF16PtrFromString failed: %w", err)
+	}
+
+	var freeBytesAvailable, totalBytes, totalFreeBytes uint64
+	ret, _, callErr := procGetDiskFreeSpaceExW.Call(
+		uintptr(unsafe.Pointer(pDir)),
+		uintptr(unsafe.Pointer(&freeBytesAvailable)),
+		uintptr(unsafe.Pointer(&totalBytes)),
+		uintptr(unsafe.Pointer(&totalFreeBytes)),
+	)
+	if ret == 0 {
+		return nil, fmt.Errorf("GetDiskFreeSpaceExW failed for %s: %v", dirPath, callErr)
+	}
+
+	return &DiskInfo{
+		FreeBytesAvailable: freeBytesAvailable,
+		TotalBytes:         totalBytes,
+		TotalFreeBytes:     totalFreeBytes,
+	}, nil
+}
 
 // GetMemoryInfo calls Windows API GlobalMemoryStatusEx to retrieve current system memory metrics.
 func GetMemoryInfo() (*MemoryInfo, error) {

@@ -48,3 +48,13 @@
 ### 5. ドキュメント整備 (`goal:docs`)
 - [x]DONE [#13 [Docs] 治具スクリプト (zig/*.py) の独立集約 ＆ ドキュメント化 (docs/utility_tools.md)](https://github.com/letwir/flac_analyzer_forwin/issues/13)
 - [x]DONE [#14 [Docs] docs/ フォルダを flac_tagger / Gatekeeper / JobObject / ShmArenaPool 修正に合わせて最新化](https://github.com/letwir/flac_analyzer_forwin/issues/14)
+
+### 6. ストレージ防護・リソース管理 (`goal:storage`)
+- [x]DONE [#17 [Feat] ディスク容量防護（Gatekeeper min_avail_disk_gb ＆ 中間JSON/キャッシュ自動GC ＆ Tagger空き容量事前検証）](https://github.com/letwir/flac_analyzer_forwin/issues/17)
+
+### 7. データ整合性・運用保守 (`goal:consistency`)
+- [ ] [#15 [Feat] DB ⇔ FLAC タグの双方向整合性チェッカー＆一括修復スクリプト](https://github.com/letwir/flac_analyzer_forwin/issues/15)
+
+### 8. 可視化・モニタリング (`goal:observability`)
+- [ ] [#16 [Feat] CLI リアルタイム進捗ダッシュボード（処理速度/残り時間/ディスク残量/ワーカー稼働状況）](https://github.com/letwir/flac_analyzer_forwin/issues/16)
+

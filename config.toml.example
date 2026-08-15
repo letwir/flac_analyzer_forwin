@@ -11,6 +11,8 @@ max_ram_ratio = 0.625            # システム最大使用メモリ割合 (例:
 cpu_worker_ratio = 0.80          # CPUコア数に対する最大ワーカー割り当て割合
 estimated_worker_ram_gb = 3.5    # ワーカー1基あたりの想定メモリ使用量 (GB: 長尺トラック対応推奨値)
 min_avail_ram_gb = 3.5           # 最低保証空きメモリ容量 (GB)
+min_avail_disk_gb = 5.0          # 最低保証空きディスク容量 (GB: queue/temp ドライブ空き容量監視)
+tagger_disk_margin_ratio = 1.5   # FLAC タグ書き込み時の一時ファイル作成用空き容量マージン倍率 (デフォルト: 1.5)
 
 # Demucs ONNX 推論の同時実行数制限 (GPU/VRAM 保護のため通常 1)
 demucs_concurrent_limit = 1

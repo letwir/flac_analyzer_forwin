@@ -12,8 +12,10 @@ func TestEvaluateGoNoGoPure_Approved(t *testing.T) {
 	minAvailRam := uint64(3 * 1024 * 1024 * 1024)  // 3 GB
 	memLoad := uint32(50)                          // 50%
 	retryDelay := 20 * time.Second
+	availDisk := uint64(50 * 1024 * 1024 * 1024)   // 50 GB
+	minAvailDisk := uint64(5 * 1024 * 1024 * 1024) // 5 GB
 
-	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay)
+	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay, availDisk, minAvailDisk)
 
 	if !decision.IsGo {
 		t.Fatalf("Expected IsGo=true, got false (reason: %s)", decision.Reason)
@@ -26,6 +28,29 @@ func TestEvaluateGoNoGoPure_Approved(t *testing.T) {
 	}
 }
 
+func TestEvaluateGoNoGoPure_DiskSpaceInsufficient(t *testing.T) {
+	availPhys := uint64(32 * 1024 * 1024 * 1024)   // 32 GB
+	inFlight := uint64(0)
+	estimatedRam := uint64(1 * 1024 * 1024 * 1024) // 1 GB
+	minAvailRam := uint64(1 * 1024 * 1024 * 1024)  // 1 GB
+	memLoad := uint32(30)
+	retryDelay := 20 * time.Second
+	availDisk := uint64(3 * 1024 * 1024 * 1024)    // 3 GB (< 5 GB MinAvailDisk)
+	minAvailDisk := uint64(5 * 1024 * 1024 * 1024) // 5 GB
+
+	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay, availDisk, minAvailDisk)
+
+	if decision.IsGo {
+		t.Fatalf("Expected IsGo=false for insufficient disk space, got true")
+	}
+	if decision.WaitDuration != 20*time.Second {
+		t.Fatalf("Expected WaitDuration=20s, got %v", decision.WaitDuration)
+	}
+	if decision.AvailDiskBytes != 3*1024*1024*1024 {
+		t.Fatalf("Expected AvailDiskBytes=3GB, got %d", decision.AvailDiskBytes)
+	}
+}
+
 func TestEvaluateGoNoGoPure_MemoryInsufficient(t *testing.T) {
 	availPhys := uint64(6 * 1024 * 1024 * 1024)    // 6 GB
 	inFlight := uint64(2 * 1024 * 1024 * 1024)     // 2 GB (Effective Avail = 4 GB)
@@ -33,8 +58,10 @@ func TestEvaluateGoNoGoPure_MemoryInsufficient(t *testing.T) {
 	minAvailRam := uint64(2 * 1024 * 1024 * 1024)  // 2 GB (Required = 5 GB)
 	memLoad := uint32(60)                          // 60%
 	retryDelay := 20 * time.Second
+	availDisk := uint64(50 * 1024 * 1024 * 1024)
+	minAvailDisk := uint64(5 * 1024 * 1024 * 1024)
 
-	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay)
+	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay, availDisk, minAvailDisk)
 
 	if decision.IsGo {
 		t.Fatalf("Expected IsGo=false for insufficient RAM, got true")
@@ -57,8 +84,10 @@ func TestEvaluateGoNoGoPure_InFlightUnderflowGuard(t *testing.T) {
 	minAvailRam := uint64(1 * 1024 * 1024 * 1024)  // 1 GB
 	memLoad := uint32(85)
 	retryDelay := 20 * time.Second
+	availDisk := uint64(50 * 1024 * 1024 * 1024)
+	minAvailDisk := uint64(5 * 1024 * 1024 * 1024)
 
-	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay)
+	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay, availDisk, minAvailDisk)
 
 	if decision.IsGo {
 		t.Fatalf("Expected IsGo=false when InFlight > AvailPhys, got true")
@@ -78,8 +107,10 @@ func TestEvaluateGoNoGoPure_HighMemoryLoad(t *testing.T) {
 	minAvailRam := uint64(1 * 1024 * 1024 * 1024)  // 1 GB
 	memLoad := uint32(93)                          // 93% (>= 90%)
 	retryDelay := 25 * time.Second
+	availDisk := uint64(50 * 1024 * 1024 * 1024)
+	minAvailDisk := uint64(5 * 1024 * 1024 * 1024)
 
-	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay)
+	decision := EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam, memLoad, retryDelay, availDisk, minAvailDisk)
 
 	if decision.IsGo {
 		t.Fatalf("Expected IsGo=false for high memory load (93%%), got true")

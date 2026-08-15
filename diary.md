@@ -1393,3 +1393,23 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Search**: `PowerShell CmdletBinding Alias Position LiteralPath`
 - **Correction**: `[CmdletBinding()]` の導入、`[Alias("Dir", "Directory", ...)]` の追加、および `-LiteralPath` による特殊文字パス保護。
 - **Emotion/Thoughts**: 旦那様の「run_batch.ps1の-Dirが機能してねぇ」という一言で冷や汗が吹き出しましたわ！検証してみれば `-Dir` を指定したにも関わらずデフォルトの 4636 件を呑気に走査し始めるという大失態！即座に `[CmdletBinding()]` とエイリアス群を叩き込み、角括弧アルバム名でも絶対に誤爆しないよう `-LiteralPath` 対策まで完璧に固めて差し上げましたわ！これでどんなディレクトリ名も、どんな引数スタイル（`-Dir`, `-Directory`, `-Path`, 位置引数, パイプライン）でも一分の隙もなくエレガントに動きますわ！おーっほっほっほ！
+
+### 2026-08-16 08:44:00
+- **Hypothesis**: ストレージ不足（Disk Full）による解析クラッシュ、中間 JSON / 一時キャッシュの残存肥大化、および FLAC タグ書き込み時の空き容量枯渇によるファイル破損を防ぐには、①Go Gatekeeper による Win32 `GetDiskFreeSpaceExW` を用いた作業ドライブ・テンポラリドライブのリアルタイム空き容量事前監視 (`min_avail_disk_gb`) と自動スロットリング、②`ingester.py` での Essentia JSON (`*_essentia.json`) 削除漏れ修正、③オーケストレーター起動時およびタスク失敗時の自動ガベージコレクション (`PurgeOrphanedQueueAndCacheFiles`, `cleanupQueueFiles`)、④`flac_tagger.py` における事前空き容量チェック (`tagger_disk_margin_ratio`) による安全中断の四重防護が必須である。
+- **Tried**:
+  1. `orchestrator/sysinfo/sysinfo.go`: Win32 API `GetDiskFreeSpaceExW` をラップした `GetDiskFreeSpace` を実装。
+  2. `orchestrator/dispatcher/dispatcher.go`: `EvaluateGoNoGoPure` を拡張し、RAM チェックの前にディスク空き容量（`availDisk < minAvailDisk`）を検査して自動スロットリング待機する純粋関数を実装。`EvaluateGoNoGo` で `queue_dir`、`os.TempDir()`、FLAC ディレクトリの最小空き容量を動的判定。
+  3. `orchestrator/dispatcher/dispatcher.go` & `orchestrator/main.go`: 起動時の `PurgeOrphanedQueueAndCacheFiles` 呼び出し、およびタスク失敗時の `cleanupQueueFiles` 呼び出しを実装。
+  4. `ingester.py`: 正常コミット時および DLQ 退避時の両方で `args.predictions_json_path` (`*_essentia.json`) を確実に `os.remove` するよう修正。
+  5. `flac_tagger.py`: `config.toml` から `tagger_disk_margin_ratio` (デフォルト 1.5) を読み込み、ファイル書き込み前に `shutil.disk_usage` で対象ディレクトリの空き容量を検証。不足時は `OSError` で安全中断。
+  6. `config.toml` / `config.toml.example`: `min_avail_disk_gb = 5.0`, `tagger_disk_margin_ratio = 1.5` を追加。
+  7. `tests/test_storage_defense.py` (2件) & `gatekeeper_test.go` (ディスク判定ケース追加) を整備。
+  8. Go ユニットテスト全 PASS、pytest (全21件) 100% PASS、`proof-checker.exe` PASS、Verifier サブエージェント `Verdict: PASS` を獲得。
+  9. GitHub Issues: #15 (整合性チェッカー), #16 (CLI進捗ダッシュボード) を起票し、#17 (ストレージ防護) を起票・完了クローズ。
+- **Rejected**: ディスク容量チェックを行わず例外発生後のリトライに依存する設計（ディスク枯渇時はリトライしても解決せず、最悪 FLAC ファイルが破損するリスクがあるため事前防護を徹底）。
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+  - 旦那様からの「Issuesはこの辺で打ち止め？機能追加や整合性のチェックしたほうが良いかなって。ストレージ不足時の対応とか」というご質問をきっかけにコードを再点検したところ、メモリ（RAM/VRAM）ばかりに気を取られてディスク容量の Gatekeeper 監視が完全に抜け落ちていたこと、そして `ingester.py` で `predictions_json_path` の `os.remove` が漏れて中間ファイルが `queue/` に残存するバグを抱えていたことが判明いたしました！旦那様の先見の明にひれ伏すとともに、見落としを猛省いたしますわ！
+- **Uncertainty**: N/A
+- **Search**: `GetDiskFreeSpaceExW`, `shutil.disk_usage`, `os.TempDir`, `PurgeOrphanedQueueAndCacheFiles`
+- **Correction**: Win32 ディスク空き容量監視 Gatekeeper の導入、中間 JSON / 一時キャッシュの自動 GC、および FLAC Tagger の容量事前検証。
+- **Emotion/Thoughts**: 旦那様の「ストレージ不足時の対応とか」という一言でハッといたしましたわ！メモリばかり鉄壁にしておいて、ディスクが溢れたら元も子もありませんでしたの！さらにコードを漁ってみれば、なんと Essentia の JSON だけ削除漏れで `queue/` にゴミが溜まるという恥ずかしいバグまで発見！旦那様のおかげで、ディスク監視 Gatekeeper、起動時＆異常時自動 GC、FLAC Tagger 事前容量チェックの「ストレージ完全防護トリニティ」を一撃で組み上げ、テストも 21 件全 PASS させて完璧に塞ぎ込みましたわ！これでどれだけ膨大な楽曲を一括解析しても、ストレージ枯渇で落ちることもゴミが溜まることも 1 ミリもございませんことよ！おーっほっほっほ！

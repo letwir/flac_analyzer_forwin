@@ -1,3 +1,30 @@
+# Walkthrough: ストレージ防護機能（Gatekeeper ディスク監視・中間JSON/キャッシュ自動GC・Tagger空き容量事前検証）
+
+- **Summary**: ストレージ不足（Disk Full）による解析クラッシュ、中間 JSON / 一時キャッシュの肥大化、および FLAC タグ書き込み時の空き容量枯渇によるファイル破壊を防止するため、Go Gatekeeper によるリアルタイムディスク監視・自動スロットリング、中間 JSON / 一時キャッシュの自動ガベージコレクション (Queue GC)、および FLAC Tagger の事前容量検証を実装。
+- **Changes**:
+  - `orchestrator/sysinfo/sysinfo.go`:
+    - Win32 API `GetDiskFreeSpaceExW` をラップした `GetDiskFreeSpace(dirPath string) (*DiskInfo, error)` を実装。
+  - `orchestrator/dispatcher/dispatcher.go`:
+    - `EvaluateGoNoGoPure`: RAM 判定の前にディスク空き容量（`availDisk < minAvailDisk`）を検査し、容量不足時は安全にスロットリング待機する純粋関数に拡張。
+    - `EvaluateGoNoGo`: キュー領域 (`QueueDir`)、テンポラリ (`os.TempDir()`)、音源ディレクトリの最小空き容量を取得して事前判定。
+    - `PurgeOrphanedQueueAndCacheFiles`: 起動時に 1時間以上経過した一時キャッシュ (`%TEMP%/flac_analyzer_cache`) および孤立 `.json` を自動パージ。
+    - `cleanupQueueFiles`: タスク失敗時に中間 JSON ファイル群（Librosa, Essentia, Tensor）を自動削除。
+  - `orchestrator/main.go`:
+    - `config.toml` から `min_avail_disk_gb` (デフォルト: 5.0 GB) を読み込み、起動時に `PurgeOrphanedQueueAndCacheFiles` を実行。
+  - `ingester.py`:
+    - 正常コミット時および DLQ 退避時の両方で `args.predictions_json_path` (`*_essentia.json`) を確実に `os.remove`。
+  - `flac_tagger.py`:
+    - `config.toml` から `tagger_disk_margin_ratio` (デフォルト 1.5) を読み込み、ファイル書き込み前に `shutil.disk_usage` で対象ディレクトリの空き容量を検証。不足時は `OSError` で安全中断。
+  - `config.toml` / `config.toml.example`:
+    - `min_avail_disk_gb = 5.0`, `tagger_disk_margin_ratio = 1.5` を追加。
+  - `tests/test_storage_defense.py`:
+    - `test_flac_tagger_disk_space_defense`, `test_ingester_cleanup_all_json_files` を新規追加。
+- **Verification**:
+  - `cd orchestrator; go test -v ./dispatcher/...`: 全 18 テスト PASS
+  - `pytest tests/ -v`: 全 21 テスト PASS
+  - `proof-checker.exe -path "orchestrator"`: Verdict PASS
+  - Verifier Subagent Review: **Verdict: PASS**
+
 # Walkthrough: Gatekeeper 20秒リトライ・10分設定監視・DLQ自動再送・全治具 zig/ 集約 ＆ Docs最新化
 
 - **Summary**: ユーザー要求（GO/NOGO 20秒リトライ制御、10分設定検知、全治具スクリプトの `zig/` 集約）および Issues #9, #10, #12, #13, #14 を解決。Gatekeeper の純粋射化 ＆ テスト整備、DLQ 起動時/定期自動再送スケジューラ、pytest カバレッジ計測設定、治具集約 (`zig/`) ＆ ドキュメント全面最新化を完了。

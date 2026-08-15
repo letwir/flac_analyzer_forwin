@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,6 +90,7 @@ type Config struct {
 	MaxRamRatio           float64
 	EstimatedWorkerRamGB  float64
 	MinAvailRamGB         float64
+	MinAvailDiskGB        float64
 	DemucsConcurrentLimit int
 	ShmAllocationDelaySec int
 	ShmExpansionRatio     float64
@@ -432,6 +434,59 @@ func cleanupCache(trackHash string) {
 	}
 }
 
+// cleanupQueueFiles removes intermediate JSON files generated for a task if it fails or aborts.
+func cleanupQueueFiles(queueDir, trackHash, baseName string) {
+	if queueDir == "" || trackHash == "" {
+		return
+	}
+	outName := fmt.Sprintf("%s_%s.json", trackHash, baseName)
+	outNameEss := fmt.Sprintf("%s_%s_essentia.json", trackHash, baseName)
+	outNameTensor := fmt.Sprintf("%s_%s_tensor.json", trackHash, baseName)
+
+	for _, name := range []string{outName, outNameEss, outNameTensor} {
+		p := filepath.Join(queueDir, name)
+		if _, err := os.Stat(p); err == nil {
+			_ = os.Remove(p)
+		}
+	}
+}
+
+// PurgeOrphanedQueueAndCacheFiles cleans up old cache directories and stale intermediate JSON files.
+func PurgeOrphanedQueueAndCacheFiles(queueDir string, maxAge time.Duration) {
+	// 1. Purge Temp cache directory
+	cacheRoot := filepath.Join(os.TempDir(), "flac_analyzer_cache")
+	if entries, err := os.ReadDir(cacheRoot); err == nil {
+		now := time.Now()
+		for _, entry := range entries {
+			if entry.IsDir() {
+				dirPath := filepath.Join(cacheRoot, entry.Name())
+				if info, err := entry.Info(); err == nil {
+					if now.Sub(info.ModTime()) > maxAge {
+						_ = os.RemoveAll(dirPath)
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Purge stale queue JSON files
+	if queueDir != "" {
+		if entries, err := os.ReadDir(queueDir); err == nil {
+			now := time.Now()
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+					filePath := filepath.Join(queueDir, entry.Name())
+					if info, err := entry.Info(); err == nil {
+						if now.Sub(info.ModTime()) > maxAge {
+							_ = os.Remove(filePath)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 // GatekeeperDecision encapsulates the decision result of EvaluateGoNoGoPure.
 type GatekeeperDecision struct {
 	IsGo                bool
@@ -441,12 +496,29 @@ type GatekeeperDecision struct {
 	EffectiveAvailBytes uint64
 	RequiredBytes       uint64
 	MemoryLoad          uint32
+	AvailDiskBytes      uint64
+	MinAvailDiskBytes   uint64
 }
 
 // EvaluateGoNoGoPure evaluates whether a task can be dispatched without side-effects (Pure Domain Morphism).
-func EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam uint64, memLoad uint32, retryDelay time.Duration) GatekeeperDecision {
+func EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam uint64, memLoad uint32, retryDelay time.Duration, availDisk, minAvailDisk uint64) GatekeeperDecision {
 	if retryDelay <= 0 {
 		retryDelay = 20 * time.Second
+	}
+
+	// 1. Disk Space Check (Storage Defense)
+	if minAvailDisk > 0 && availDisk < minAvailDisk {
+		return GatekeeperDecision{
+			IsGo:                false,
+			WaitDuration:        retryDelay,
+			Reason:              fmt.Sprintf("Available Disk Space (%.2f GB) < Required MinAvailDisk (%.2f GB)", float64(availDisk)/(1024*1024*1024), float64(minAvailDisk)/(1024*1024*1024)),
+			EstimatedRamBytes:   estimatedRam,
+			EffectiveAvailBytes: 0,
+			RequiredBytes:       0,
+			MemoryLoad:          memLoad,
+			AvailDiskBytes:      availDisk,
+			MinAvailDiskBytes:   minAvailDisk,
+		}
 	}
 
 	var effectiveAvailBytes uint64
@@ -467,6 +539,8 @@ func EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam uint64, m
 			EffectiveAvailBytes: effectiveAvailBytes,
 			RequiredBytes:       requiredBytes,
 			MemoryLoad:          memLoad,
+			AvailDiskBytes:      availDisk,
+			MinAvailDiskBytes:   minAvailDisk,
 		}
 	}
 
@@ -479,6 +553,8 @@ func EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam uint64, m
 			EffectiveAvailBytes: effectiveAvailBytes,
 			RequiredBytes:       requiredBytes,
 			MemoryLoad:          memLoad,
+			AvailDiskBytes:      availDisk,
+			MinAvailDiskBytes:   minAvailDisk,
 		}
 	}
 
@@ -490,10 +566,12 @@ func EvaluateGoNoGoPure(availPhys, inFlight, estimatedRam, minAvailRam uint64, m
 		EffectiveAvailBytes: effectiveAvailBytes,
 		RequiredBytes:       requiredBytes,
 		MemoryLoad:          memLoad,
+		AvailDiskBytes:      availDisk,
+		MinAvailDiskBytes:   minAvailDisk,
 	}
 }
 
-// EvaluateGoNoGo queries live system memory status and delegates the preflight decision to EvaluateGoNoGoPure.
+// EvaluateGoNoGo queries live system memory and disk status and delegates the preflight decision to EvaluateGoNoGoPure.
 func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.Duration) {
 	estimatedRam := EstimateDemucsTotalRamBytes(task)
 	memInfo, err := sysinfo.GetMemoryInfo()
@@ -507,19 +585,44 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 
 	currentCfg := d.GetConfig()
 	minAvailBytes := uint64(currentCfg.MinAvailRamGB * 1024 * 1024 * 1024)
+	minAvailDiskBytes := uint64(currentCfg.MinAvailDiskGB * 1024 * 1024 * 1024)
 	retryDelay := time.Duration(currentCfg.GatekeeperRetryDelaySec) * time.Second
 	if retryDelay <= 0 {
 		retryDelay = 20 * time.Second
 	}
 
-	decision := EvaluateGoNoGoPure(memInfo.AvailPhys, inFlight, estimatedRam, minAvailBytes, memInfo.MemoryLoad, retryDelay)
+	// Disk space check: inspect queue_dir, temp dir, and source file dir
+	var availDisk uint64 = math.MaxUint64
+	if minAvailDiskBytes > 0 {
+		checkPaths := []string{currentCfg.QueueDir, os.TempDir()}
+		if task.FlacPath != "" {
+			checkPaths = append(checkPaths, filepath.Dir(task.FlacPath))
+		}
+		for _, p := range checkPaths {
+			if p == "" {
+				continue
+			}
+			if dInfo, dErr := sysinfo.GetDiskFreeSpace(p); dErr == nil && dInfo != nil {
+				if dInfo.FreeBytesAvailable < availDisk {
+					availDisk = dInfo.FreeBytesAvailable
+				}
+			}
+		}
+	}
+
+	decision := EvaluateGoNoGoPure(memInfo.AvailPhys, inFlight, estimatedRam, minAvailBytes, memInfo.MemoryLoad, retryDelay, availDisk, minAvailDiskBytes)
 	if !decision.IsGo {
 		d.LogWarn("[W-%d] [Gatekeeper: NOGO] %s. Delaying dispatch for %v...", workerID, decision.Reason, decision.WaitDuration)
 		return false, decision.WaitDuration
 	}
 
-	d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB])",
-		workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024)
+	if minAvailDiskBytes > 0 {
+		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], Min Avail Disk: %.2f GB)",
+			workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024, float64(availDisk)/(1024*1024*1024))
+	} else {
+		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB])",
+			workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024)
+	}
 	return true, 0
 }
 
@@ -921,14 +1024,17 @@ func (d *Dispatcher) worker(id int) {
 			outPathTensor := filepath.Join(queueDir, outNameTensor)
 			
 			if err := os.WriteFile(outPathEss, []byte(essOut), 0644); err != nil {
+				cleanupQueueFiles(queueDir, trackHash, baseName)
 				d.failTask(task, fmt.Sprintf("Failed to write Essentia JSON: %v", err))
 				return
 			}
 			if err := os.WriteFile(outPathTensor, []byte(tensorOut), 0644); err != nil {
+				cleanupQueueFiles(queueDir, trackHash, baseName)
 				d.failTask(task, fmt.Sprintf("Failed to write Tensor JSON: %v", err))
 				return
 			}
 			if err := os.WriteFile(outPath, []byte(libOut), 0644); err != nil {
+				cleanupQueueFiles(queueDir, trackHash, baseName)
 				d.failTask(task, fmt.Sprintf("Failed to write Librosa JSON: %v", err))
 				return
 			}
@@ -988,6 +1094,7 @@ func (d *Dispatcher) worker(id int) {
 					return
 				}
 
+				cleanupQueueFiles(queueDir, trackHash, baseName)
 				d.failTask(task, fmt.Sprintf("Ingester failed: %v", err))
 				return
 			}

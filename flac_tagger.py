@@ -406,6 +406,27 @@ def write_flac_tags_with_retry(
         attempt = 0
         dir_path = os.path.dirname(os.path.abspath(file_path))
 
+        # Storage Defense: 書き込み前に同一ドライブの空き容量を事前検証 (config.toml tagger_disk_margin_ratio)
+        config = load_config()
+        margin_ratio = float(config.get("orchestrator", {}).get("tagger_disk_margin_ratio", 1.5))
+        if margin_ratio <= 0:
+            margin_ratio = 1.5
+        required_disk_bytes = int(stat_info.st_size * margin_ratio)
+
+        try:
+            disk_usage = shutil.disk_usage(dir_path)
+            if disk_usage.free < required_disk_bytes:
+                err_msg = (
+                    f"ディスク空き容量不足のため FLAC タグ書き込みを安全に中断いたしましたわ！ "
+                    f"(必要: {required_disk_bytes / (1024*1024):.2f} MB, 空き: {disk_usage.free / (1024*1024):.2f} MB) -> {os.path.basename(file_path)}"
+                )
+                logger.error(f"[Storage Defense] {err_msg}")
+                raise OSError(err_msg)
+        except OSError:
+            raise
+        except Exception as disk_err:
+            logger.warning(f"ディスク容量確認中に警告が発生いたしました (書き込みを継続試行いたします): {disk_err}")
+
         while attempt < retry_count:
             attempt += 1
             # .flac ではなく .tmp 拡張子を使用し、メディア監視・AVスキャンの誤検知を遮断

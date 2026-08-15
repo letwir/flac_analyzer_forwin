@@ -217,7 +217,10 @@ def main():
         logging.info(f"PostgreSQL への UPSERT が無事に完了いたしましたわ！ (ハッシュ: {args.track_hash})")
         
         try:
-            os.remove(args.json_path)
+            if os.path.exists(args.json_path):
+                os.remove(args.json_path)
+            if args.predictions_json_path and os.path.exists(args.predictions_json_path):
+                os.remove(args.predictions_json_path)
             if args.tensor_json_path and os.path.exists(args.tensor_json_path):
                 os.remove(args.tensor_json_path)
             logging.info("中間JSONファイルのクリーンアップが完了いたしましたわ！")
@@ -284,7 +287,10 @@ def main():
             
             # Still clean up local JSON files since they are safe in DLQ
             try:
-                os.remove(args.json_path)
+                if os.path.exists(args.json_path):
+                    os.remove(args.json_path)
+                if args.predictions_json_path and os.path.exists(args.predictions_json_path):
+                    os.remove(args.predictions_json_path)
                 if args.tensor_json_path and os.path.exists(args.tensor_json_path):
                     os.remove(args.tensor_json_path)
                 import shutil

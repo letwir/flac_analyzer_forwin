@@ -958,8 +958,21 @@ Files: run_batch.ps1, orchestrator/main.go
   3. `run_batch.ps1`: `$Concurrency` に `-c`, `-Threads`, `-Parallel`, `-Jobs` のエイリアスを定義。
   4. `run_batch.ps1`: `Test-Path` および `Resolve-Path` に `-LiteralPath` 優先フォールバックを実装し、角括弧 `[...]` などの特殊文字を含むディレクトリ・ファイルパスでのワイルドカード展開誤爆を防止。
   5. 単体実行確認（`-Dir`, `-Directory`, 位置引数, `-File`, 角括弧ファイル名, 角括弧ディレクトリ名, パイプライン入力, テストモード）および Verifier サブエージェントの独立検証（`Verdict: PASS`）を完了。
+## 2026-08-16 08:44:00
+- Goal: Issue #17 解決（ストレージ防護機能の実装：Gatekeeper ディスク空き容量監視・中間JSON/一時キャッシュ自動GC・Tagger空き容量事前検証）
+- Actions:
+  1. `orchestrator/sysinfo/sysinfo.go`: Win32 API `GetDiskFreeSpaceExW` をラップした `GetDiskFreeSpace` を実装。
+  2. `orchestrator/dispatcher/dispatcher.go`: `EvaluateGoNoGoPure` を拡張し、RAM チェックの前にディスク空き容量（`availDisk < minAvailDisk`）を検査して自動スロットリング待機する純粋関数を実装。`EvaluateGoNoGo` で `queue_dir`、`os.TempDir()`、FLAC ディレクトリの最小空き容量を動的判定。
+  3. `orchestrator/dispatcher/dispatcher.go` & `orchestrator/main.go`: 起動時の `PurgeOrphanedQueueAndCacheFiles` 呼び出し、およびタスク失敗時の `cleanupQueueFiles` 呼び出しを実装。
+  4. `ingester.py`: 正常コミット時および DLQ 退避時の両方で `args.predictions_json_path` (`*_essentia.json`) を確実に `os.remove`。
+  5. `flac_tagger.py`: `config.toml` から `tagger_disk_margin_ratio` (デフォルト 1.5) を読み込み、ファイル書き込み前に `shutil.disk_usage` で対象ディレクトリの空き容量を検証。不足時は `OSError` で安全中断。
+  6. `config.toml` / `config.toml.example`: `min_avail_disk_gb = 5.0`, `tagger_disk_margin_ratio = 1.5` を追加。
+  7. `tests/test_storage_defense.py`: `test_flac_tagger_disk_space_defense`, `test_ingester_cleanup_all_json_files` の単体テストを新規追加。
+  8. Go ユニットテスト全 PASS、pytest (全21件) 100% PASS、`proof-checker.exe` PASS、Verifier サブエージェント `Verdict: PASS` を獲得。
+  9. GitHub Issues: #15 (整合性チェッカー), #16 (CLI進捗ダッシュボード) を起票し、#17 (ストレージ防護) を起票・完了クローズ。
 - Blockers: なし。
-- Files: run_batch.ps1, walkthrough.md, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md, history.md, diary.md
+- Files: orchestrator/sysinfo/sysinfo.go, orchestrator/dispatcher/dispatcher.go, orchestrator/dispatcher/gatekeeper_test.go, orchestrator/main.go, orchestrator.exe, ingester.py, flac_tagger.py, config.toml, config.toml.example, tests/test_storage_defense.py, issues.md, walkthrough.md, history.md, diary.md
+
 
 
 

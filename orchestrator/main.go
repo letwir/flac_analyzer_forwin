@@ -33,6 +33,7 @@ type Config struct {
 		CpuWorkerRatio        float64 `toml:"cpu_worker_ratio"`
 		EstimatedWorkerRamGB  float64 `toml:"estimated_worker_ram_gb"`
 		MinAvailRamGB         float64 `toml:"min_avail_ram_gb"`
+		MinAvailDiskGB        float64 `toml:"min_avail_disk_gb"`
 		DemucsConcurrentLimit int     `toml:"demucs_concurrent_limit"`
 		ShmAllocationDelaySec int     `toml:"shm_allocation_delay_sec"`
 		ShmExpansionRatio     float64 `toml:"shm_expansion_ratio"`
@@ -217,6 +218,9 @@ func main() {
 	} else if resetCount > 0 {
 		log.Printf("Reset %d interrupted/stale tasks to FAILED state for clean retry", resetCount)
 	}
+
+	// 3.2 Purge orphaned cache directories and stale queue JSON files (Storage Defense GC)
+	dispatcher.PurgeOrphanedQueueAndCacheFiles(dispConfig.QueueDir, 1*time.Hour)
 
 	// 4. Initialize Metrics Server
 	go func() {
@@ -491,6 +495,9 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 	if cfg.Orchestrator.MinAvailRamGB <= 0 {
 		cfg.Orchestrator.MinAvailRamGB = 1.75
 	}
+	if cfg.Orchestrator.MinAvailDiskGB <= 0 {
+		cfg.Orchestrator.MinAvailDiskGB = 5.0
+	}
 	if cfg.Orchestrator.DemucsConcurrentLimit <= 0 {
 		cfg.Orchestrator.DemucsConcurrentLimit = 1
 	}
@@ -583,6 +590,7 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		MaxRamRatio:           effectiveRamRatio,
 		EstimatedWorkerRamGB:  cfg.Orchestrator.EstimatedWorkerRamGB,
 		MinAvailRamGB:         cfg.Orchestrator.MinAvailRamGB,
+		MinAvailDiskGB:        cfg.Orchestrator.MinAvailDiskGB,
 		DemucsConcurrentLimit: cfg.Orchestrator.DemucsConcurrentLimit,
 		ShmAllocationDelaySec: cfg.Orchestrator.ShmAllocationDelaySec,
 		ShmExpansionRatio:     cfg.Orchestrator.ShmExpansionRatio,

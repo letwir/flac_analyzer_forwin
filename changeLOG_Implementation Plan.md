@@ -1,3 +1,16 @@
+# Implementation Plan: ストレージ防護機能（Gatekeeper ディスク監視・中間JSON/キャッシュ自動GC・Tagger空き容量事前検証）
+
+- **Goal**: ストレージ不足（Disk Full）による解析クラッシュ、中間 JSON / 一時キャッシュの肥大化、および FLAC タグ書き込み時の空き容量枯渇によるファイル破壊を防止するため、Go Gatekeeper によるリアルタイムディスク監視・自動スロットリング、中間 JSON / 一時キャッシュの自動ガベージコレクション (Queue GC)、および FLAC Tagger の事前容量検証を実装。
+- **Target**: `orchestrator/sysinfo/sysinfo.go`, `orchestrator/dispatcher/dispatcher.go`, `orchestrator/main.go`, `ingester.py`, `flac_tagger.py`, `config.toml`, `config.toml.example`, `tests/test_storage_defense.py`.
+- **Feature**:
+  - `sysinfo.go`: Win32 API `GetDiskFreeSpaceExW` ラッパー `GetDiskFreeSpace` の実装。
+  - `dispatcher.go`: `EvaluateGoNoGoPure` にディスク空き容量判定を追加。`PurgeOrphanedQueueAndCacheFiles` および `cleanupQueueFiles` の実装。
+  - `main.go`: `min_avail_disk_gb` 読み込みと起動時 GC 実行。
+  - `ingester.py`: `predictions_json_path` (`*_essentia.json`) の削除漏れ修正。
+  - `flac_tagger.py`: `tagger_disk_margin_ratio` による `shutil.disk_usage` 事前容量チェックと安全中断。
+  - `tests/test_storage_defense.py`: ストレージ防護の単体テスト新設。
+- **Status**: Completed
+
 # Implementation Plan: flac_decode.py 範囲デコード堅牢化 (-F/--silent/communicate/リトライ)
 
 - **Goal**: `worker_demucs.py` / `flac_decode.py` で発生していた `flac` CLI 呼び出し例外（`rc=1`）に対し、`-F` (`--decode-through-errors`)、`--silent`、`proc.communicate()`、指数バックオフリトライ（最大3回）を導入し、ストリームエラー耐性と堅牢性を向上させる。
