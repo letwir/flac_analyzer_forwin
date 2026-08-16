@@ -58,3 +58,35 @@
 ### 8. 可視化・モニタリング (`goal:observability`)
 - [x]DONE [#16 [Feat] CLI リアルタイム進捗ダッシュボード（処理速度/残り時間/ディスク残量/ワーカー稼働状況）](https://github.com/letwir/flac_analyzer_forwin/issues/16)
 
+### 9. 音響解析パイプラインのプラグインアーキテクチャ化 & 密結合分離 (`goal:pipeline`)
+- [ ] [#18 [Arch] 音響解析パイプラインのプラグインアーキテクチャ化 & analyze-pre/ 分離 & 不要スクリプト整理](https://github.com/letwir/flac_analyzer_forwin/issues/18)
+  - [ ] 1-1. 旧世代スクリプト (`worker_analyzer.py`, `functor_precache.py` 等) の整理・廃止とGo連携ワーカーへの一本化
+  - [ ] 1-2. `analyze-pre/` ディレクトリ新設（Demucs分離後SHM・Pre-warm密結合レイヤーの隔離）
+  - [ ] 1-3. `analyzer/` の純粋関数プラグイン化（`librosa_[なにやるの].py` / `scipy_stats.py` 等への分割・命名統一）
+  - [ ] 1-4. プラグイン自己登録と動的ディスパッチ基盤（`registry_plugins.py` 「あるものを回す」機構）の実装
+  - [ ] 1-5. 既存テストおよび Go オーケストレーター連携の動作確認
+
+### 10. 新規音響解析モジュールの導入 (`goal:features`)
+- [ ] [#19 [Feat] 新規音響解析モジュールの導入 (心理音響・楽曲構造・ボーカル声質・偽ハイレゾ/TruePeak)](https://github.com/letwir/flac_analyzer_forwin/issues/19)
+  - [ ] 2-1. 心理音響指標プラグイン `analyzer/psychoacoustics_din45692.py` (Sharpness DIN 45692, Roughness, Tonality) の実装
+  - [ ] 2-2. 楽曲構造・サビ/ドロップ検出プラグイン `analyzer/structure_ssm.py` (SSM, Chorus, Drop, Complexity) の実装
+  - [ ] 2-3. ボーカル声質指標プラグイン `analyzer/voice_cpp.py` (CPP / CPPS ケプストラム突出度, Breathiness) の実装
+  - [ ] 2-4. オーディオ品質検証プラグイン `analyzer/audio_cutoff_lufs.py` (偽ハイレゾ遮断周波数, 4x True Peak, EBU R128 LUFS/LRA) の実装
+  - [ ] 2-5. 将来の音楽基盤モデル (CLAP/MERT) 連携用プラグインスロットの設計
+  - [ ] 2-6. 新モジュール群の単体テスト（`tests/test_*.py`）整備
+
+### 11. 外だし設定 analyzer.toml 自動生成・エディタ連携・安全弁 (`goal:pipeline`)
+- [ ] [#20 [Feat] 外だし設定 analyzer.toml 自動生成・エディタ連携・安全弁 (execute=false)](https://github.com/letwir/flac_analyzer_forwin/issues/20)
+  - [ ] 3-1. プラグイン定義からの `analyzer.toml` 自動生成機構の実装
+  - [ ] 3-2. 誤実行防止のための安全弁 (`execute = false` 初期値ガード) の導入
+  - [ ] 3-3. 設定ファイル（`config.toml` の `editor = "notepad"` / `"sakura"`）に基づくエディタ自動起動機能の実装
+  - [ ] 3-4. `execute = true` 確認後のパイプライン実行テスト
+
+### 12. Go非介在・治具マイグレーションスクリプトの実装 (`goal:pipeline`)
+- [ ] [#21 [Tool] Go非介在・治具マイグレーションスクリプト (zig/migrate_features.py) の実装](https://github.com/letwir/flac_analyzer_forwin/issues/21)
+  - [ ] 4-1. `--migrate-features` による既存 DB (`raw.library_flac.features`) への JSONB 差分マージ (`||`) 機構の実装
+  - [ ] 4-2. `--from-audio` による FLAC 直接デコード・新特徴量高速バッチ抽出モードの実装（Demucs再実行バイパス）
+  - [ ] 4-3. `--dry-run`, `--fix-tags`, `--batch-size` 等の運用管理オプションおよび単体テスト整備
+  - [ ] 4-4. 実DBおよびテスト音源に対するマイグレーション動作検証
+
+
