@@ -362,6 +362,15 @@ func (d *Dispatcher) streamColoredLog(pipe io.ReadCloser, workerID int, role str
 	prefix := fmt.Sprintf("%s[W-%d] [%s] ", color, workerID, role)
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		// ONNX Runtime の内部 Fallback 警告などのノイズは通常ログではサイレント（DEBUG レベルのみ）にしますわ
+		if strings.Contains(line, "running in Fallback mode") || strings.Contains(line, "onnxruntime::cuda::Conv") {
+			if d.logLevel <= LevelDebug {
+				d.LogDebug("[W-%d] [%s] %s", workerID, role, line)
+			}
+			continue
+		}
+
 		isError := strings.Contains(line, "[ERROR]") || strings.Contains(strings.ToLower(line), "error") || strings.Contains(strings.ToLower(line), "traceback")
 		if isError {
 			msg := fmt.Sprintf("[W-%d] [%s] %s", workerID, role, line)
