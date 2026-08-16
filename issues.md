@@ -60,7 +60,7 @@
 
 ### 9. 音響解析パイプラインのプラグインアーキテクチャ化 & 密結合分離 (`goal:pipeline`)
 - [ ] [#18 [Arch] 音響解析パイプラインのプラグインアーキテクチャ化 & analyze-pre/ 分離 & 不要スクリプト整理](https://github.com/letwir/flac_analyzer_forwin/issues/18)
-  - [ ] 1-1. 旧世代スクリプト (`worker_analyzer.py`, `functor_precache.py` 等) の整理・廃止とGo連携ワーカーへの一本化
+  - [x] 1-1. 旧世代スクリプト (`worker_analyzer.py`, `functor_precache.py` 等) の整理・廃止とGo連携ワーカーへの一本化
   - [ ] 1-2. `analyze-pre/` ディレクトリ新設（Demucs分離後SHM・Pre-warm密結合レイヤーの隔離）
   - [ ] 1-3. `analyzer/` の純粋関数プラグイン化（`librosa_[なにやるの].py` / `scipy_stats.py` 等への分割・命名統一）
   - [ ] 1-4. プラグイン自己登録と動的ディスパッチ基盤（`registry_plugins.py` 「あるものを回す」機構）の実装
