@@ -6,6 +6,7 @@ import psycopg2
 import psycopg2.extras
 import logging
 import tomllib
+import time
 from mutagen.flac import FLAC
 
 def main():

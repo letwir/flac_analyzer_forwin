@@ -1,3 +1,12 @@
+# Walkthrough: Ingester `NameError: name 'time' is not defined` Bug Fix
+
+- **Summary**: PostgreSQL への UPSERT 処理時間計測のために追加された `time.perf_counter()` 呼び出しにおいて、`ingester.py` に `import time` が欠落していた NameError バグを修正いたしました。
+- **Changes**:
+  - `ingester.py`:
+    - ファイル先頭の import セクションに `import time` を追加。
+- **Verification**:
+  - `pytest tests/`: 全 28 テスト PASS (15.72s)
+
 # Walkthrough: Blackwell ONNX CPU Fallback Bug Fix & Metrics URL Identification
 
 - **Summary**: Blackwell GPU 上で ONNX Runtime が CPU にフォールバックしていたバグを cuDNN `EXHAUSTIVE` 設定の強制適用および `gpu_mem_limit` 排除によって修正し、CUDA での高速推論を復旧。また、前回会話のログから VictoriaMetrics のメトリクス URL（`http://100.84.48.65:8428`）を特定・疎通確認した。
