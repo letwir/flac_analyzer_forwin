@@ -973,6 +973,21 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: orchestrator/sysinfo/sysinfo.go, orchestrator/dispatcher/dispatcher.go, orchestrator/dispatcher/gatekeeper_test.go, orchestrator/main.go, orchestrator.exe, ingester.py, flac_tagger.py, config.toml, config.toml.example, tests/test_storage_defense.py, issues.md, walkthrough.md, history.md, diary.md
 
+## 2026-08-16 08:58:00
+- Goal: 残存 Issues (#7, #15, #16) の完全解決と Prometheus :2112/metrics への所要時間（1ファイル/1曲）・進捗可視化・双方向整合性チェッカーの実装
+- Actions:
+  1. `tests/test_blackwell_onnx.py`: Blackwell GPU (RTX 50xx / CUDA 13.2+) および DirectML / CPU における ONNX Runtime プロバイダ優先順位・PyTorch デバイスアロケーション・テンソル演算健全性の自動検証テストを新設（3件 PASS）。Issue #7 を完了。
+  2. `zig/check_tag_consistency.py` & `tests/test_tag_consistency.py`: DB (`raw.library_flac`) と実 FLAC ファイル（VorbisComment）の双方向整合性チェッカーを新設。`db-to-flac`, `flac-to-db`, `diff` / `both` モード、`--repair` 一括修復、CUE マルチトラックプレフィックス対応、JSON レポート出力を実装（単体テスト PASS）。Issue #15 を完了。
+  3. `orchestrator/metrics/metrics.go`: 1ファイル所要時間（Histogram/Gauge）、1曲所要時間（Histogram/Gauge）、スループット（Gauge）、ETA（Gauge）、RAM/Disk 空き容量（Gauge）の Prometheus メトリクスを新設。
+  4. `orchestrator/dispatcher/stats.go`: `StatsTracker` による EMA 所要時間集約、60秒ウィンドウによるスループット算出、キュー残量による ETA 算出、RAM/Disk 定期サンプラーを実装。
+  5. `orchestrator/dispatcher/dispatcher.go` & `orchestrator/main.go`: タスク/ファイル完了時の所要時間計測と `StatsTracker` 連携、キュー長追跡を統合。
+  6. `zig/dashboard.py` & `tests/test_dashboard_stats.py`: Prometheus `:2112/metrics` をリアルタイム取得して 1ファイル/曲所要時間・スループット・ETA・システムリソース・完了実績を描画する Rich TUI / ANSI ダッシュボードを新設。Issue #16 を完了。
+  7. `issues.md`, `docs/utility_tools.md`, `README.md` を最新化。
+  8. Go テスト全件 PASS、pytest 全 28 件 100% PASS、`proof-checker.exe` Verdict: PASS、Verifier サブエージェント Verdict: PASS を獲得。
+- Blockers: なし。
+- Files: orchestrator/metrics/metrics.go, orchestrator/dispatcher/stats.go, orchestrator/dispatcher/stats_test.go, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go, zig/dashboard.py, zig/check_tag_consistency.py, tests/test_blackwell_onnx.py, tests/test_tag_consistency.py, tests/test_dashboard_stats.py, docs/utility_tools.md, README.md, issues.md, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md, history.md, diary.md
+
+
 
 
 

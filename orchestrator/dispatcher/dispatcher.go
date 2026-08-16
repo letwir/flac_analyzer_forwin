@@ -124,6 +124,7 @@ type Dispatcher struct {
 	activeInFlightRamBytes uint64
 	inFlightMutex          sync.Mutex
 	arenaPool              *ShmArenaPool
+	statsTracker           *StatsTracker
 }
 
 const (
@@ -158,6 +159,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		skipDupByHash:          cfg.SkipDupByHash,
 		activeInFlightRamBytes: 0,
 		arenaPool:              NewShmArenaPool(cfg.EnableVirtualLock),
+		statsTracker:           NewStatsTracker(),
 	}
 }
 
@@ -277,6 +279,9 @@ func (d *Dispatcher) LogError(format string, v ...interface{}) {
 }
 
 func (d *Dispatcher) Start() {
+	if d.statsTracker != nil {
+		d.statsTracker.StartSystemResourceCollector(context.Background(), d.config.QueueDir, 5*time.Second)
+	}
 	for i := 1; i <= d.config.NumWorkers; i++ {
 		d.wg.Add(1)
 		go d.worker(i)
@@ -286,7 +291,22 @@ func (d *Dispatcher) Start() {
 func (d *Dispatcher) Enqueue(task TaskPayload) error {
 	metrics.AnalyzerQueueLength.Inc()
 	d.taskQueue <- task
+	if d.statsTracker != nil {
+		d.statsTracker.SetQueueLength(len(d.taskQueue))
+	}
 	return nil
+}
+
+// RegisterFileTracks registers the number of tracks expected for a FLAC file to measure overall file duration.
+func (d *Dispatcher) RegisterFileTracks(filePath string, totalTracks int) {
+	if d.statsTracker != nil {
+		d.statsTracker.RegisterFileTracks(filePath, totalTracks)
+	}
+}
+
+// GetStatsTracker returns the internal stats tracker instance.
+func (d *Dispatcher) GetStatsTracker() *StatsTracker {
+	return d.statsTracker
 }
 
 func (d *Dispatcher) Stop() {
@@ -697,6 +717,15 @@ func (d *Dispatcher) worker(id int) {
 		}
 
 		func(task TaskPayload) {
+			taskStartTime := time.Now()
+			taskSuccess := false
+			defer func() {
+				if d.statsTracker != nil {
+					d.statsTracker.RecordTaskCompletion(task.FlacPath, time.Since(taskStartTime), taskSuccess)
+					d.statsTracker.SetQueueLength(len(d.taskQueue))
+				}
+			}()
+
 			metrics.AnalyzerQueueLength.Dec()
 			metrics.AnalyzerActiveWorkers.Inc()
 			
@@ -776,6 +805,7 @@ func (d *Dispatcher) worker(id int) {
 						d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
 						metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 						metrics.AnalyzerActiveWorkers.Dec()
+						taskSuccess = true
 						return
 					}
 				} else {
@@ -1103,6 +1133,7 @@ func (d *Dispatcher) worker(id int) {
 			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
 			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 			metrics.AnalyzerActiveWorkers.Dec()
+			taskSuccess = true
 		}(task)
 	}
 }

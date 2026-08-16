@@ -297,6 +297,7 @@ func main() {
 		}
 
 		// 2. Expand into track-level tasks
+		disp.RegisterFileTracks(payload.FlacPath, len(cueRes.Tracks))
 		enqueuedCount := 0
 		skippedCount := 0
 

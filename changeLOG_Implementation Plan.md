@@ -1,3 +1,16 @@
+# Implementation Plan: 残存 Issues (#7, #15, #16) の完全解決と Prometheus /metrics への所要時間・進捗メトリクス統合
+
+- **Goal**: 未解決であった残存 Issues（#7 Blackwell GPU 動作検証、#15 DB ⇔ FLAC タグ双方向整合性チェッカー、#16 リアルタイム CLI 進捗ダッシュボード）をすべて解決し、1ファイルあたりおよび1曲（トラック）あたりの所要時間計測を Prometheus `:2112/metrics` に集約・可視化する。
+- **Target**: `orchestrator/metrics/metrics.go`, `orchestrator/dispatcher/stats.go`, `orchestrator/dispatcher/dispatcher.go`, `orchestrator/main.go`, `zig/dashboard.py`, `zig/check_tag_consistency.py`, `tests/test_blackwell_onnx.py`, `tests/test_tag_consistency.py`, `tests/test_dashboard_stats.py`.
+- **Feature**:
+  - `metrics.go`: 1ファイル/1曲所要時間 (Histogram/Gauge)、スループット (Gauge)、ETA (Gauge)、リソース残量 (Gauge) の Prometheus メトリクス追加。
+  - `stats.go`: `StatsTracker` による EMA 所要時間平滑化、60秒ウィンドウによる分あたりスループット算出、キュー残量による ETA 算出、RAM/Disk 定期サンプラー。
+  - `dispatcher.go` & `main.go`: タスク/ファイル完了時の所要時間計測・報告、キュー長追跡の統合。
+  - `zig/dashboard.py`: Rich TUI / ANSI によるリアルタイム進捗・所要時間ダッシュボード。
+  - `zig/check_tag_consistency.py`: DB (`raw.library_flac`) と FLAC タグの双方向整合性検査・一括修復治具。
+  - `tests/test_blackwell_onnx.py`: Blackwell GPU / ONNX Runtime / PyTorch 動作検証テスト。
+- **Status**: Completed
+
 # Implementation Plan: ストレージ防護機能（Gatekeeper ディスク監視・中間JSON/キャッシュ自動GC・Tagger空き容量事前検証）
 
 - **Goal**: ストレージ不足（Disk Full）による解析クラッシュ、中間 JSON / 一時キャッシュの肥大化、および FLAC タグ書き込み時の空き容量枯渇によるファイル破壊を防止するため、Go Gatekeeper によるリアルタイムディスク監視・自動スロットリング、中間 JSON / 一時キャッシュの自動ガベージコレクション (Queue GC)、および FLAC Tagger の事前容量検証を実装。

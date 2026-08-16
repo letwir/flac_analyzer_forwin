@@ -155,18 +155,31 @@ PostgreSQL 送信失敗により `send_failed.db` へ一時退避（Dead Letter 
 .venv\Scripts\python.exe zig/retry_ingest.py
 ```
 
-#### ステップ 4: 既存楽曲のタグ補完・再焼き込み (独立治具 ./zig/)
-PostgreSQL DB に蓄積された過去の解析結果から、FLAC ファイル本体へ未焼き込みの不足タグ（`LIBROSA_*`, `ESSENTIA_*` 等）を自動検出し、CUE シート有無（`CUE_TRACKxx_` プレフィックス切り替え）を自動判定して安全に焼き込み補完します。
+#### ステップ 4: リアルタイム進捗ダッシュボード ＆ Prometheus メトリクス監視
+Orchestrator は `:2112/metrics` にて **1ファイルあたりの所要時間**、**1曲（トラック）あたりの所要時間**、**処理速度（files/min, tracks/min）**、**ETA（残り時間）**、**RAM/ディスク空き容量** の Prometheus メトリクスをリアルタイム配信しています。
+
+専用 TUI ダッシュボード治具を実行することで、ターミナル上で美麗に進捗と所要時間をライブ監視できます。
 
 ```powershell
-# プレビュー確認 (ドライランモード)
-.venv\Scripts\python.exe ./zig/repair_flac_tags.py --dry-run --limit 10
+# リアルタイム TUI 進捗ダッシュボードの起動
+.venv\Scripts\python.exe ./zig/dashboard.py
 
-# 実際に過去楽曲へのタグ焼き込み補完を実行
-.venv\Scripts\python.exe ./zig/repair_flac_tags.py
+# 1回のみ現在のステータスを出力して終了
+.venv\Scripts\python.exe ./zig/dashboard.py --once
+```
 
-# 特定ディレクトリ以下のファイルに限定して実行
-.venv\Scripts\python.exe ./zig/repair_flac_tags.py --dir "M:\Music\album"
+#### ステップ 5: DB ⇔ FLAC タグの双方向整合性検査 ＆ 一括修復 (./zig/)
+PostgreSQL DB と実 FLAC ファイルの間で、特徴量タグの未反映、メタデータの不一致、未インジェストファイルを双方向で高速クロスチェックし、安全に一括修復します。
+
+```powershell
+# 双方向差分検出 (Dry-run モード)
+.venv\Scripts\python.exe ./zig/check_tag_consistency.py --dir "M:\Music" --mode diff
+
+# 不足タグの一括修復（FLAC ファイルへの自動書き戻し）
+.venv\Scripts\python.exe ./zig/check_tag_consistency.py --dir "M:\Music" --repair
+
+# 差分レポートを JSON ファイルへ保存
+.venv\Scripts\python.exe ./zig/check_tag_consistency.py --dir "M:\Music" --output-json diff_report.json
 ```
 
 

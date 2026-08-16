@@ -1,3 +1,30 @@
+# Walkthrough: 残存 Issues (#7, #15, #16) の完全解決と Prometheus :2112/metrics 所要時間・進捗可視化
+
+- **Summary**: 未解決であった残存 Issues（#7 Blackwell GPU 動作検証、#15 DB ⇔ FLAC タグ双方向整合性チェッカー、#16 リアルタイム CLI 進捗ダッシュボード）をすべて解決し、1ファイルあたりおよび1曲（トラック）あたりの所要時間計測を Prometheus `:2112/metrics` に集約・可視化。
+- **Changes**:
+  - `orchestrator/metrics/metrics.go`:
+    - `analyzer_task_duration_seconds` (Histogram/Gauge), `analyzer_avg_task_duration_seconds` (Gauge: 1曲所要時間)
+    - `analyzer_file_duration_seconds` (Histogram/Gauge), `analyzer_avg_file_duration_seconds` (Gauge: 1ファイル所要時間)
+    - `analyzer_tasks_per_minute`, `analyzer_files_per_minute`, `analyzer_eta_seconds` (Gauge)
+    - `analyzer_disk_free_bytes`, `analyzer_ram_available_bytes`, `analyzer_files_total` (Gauge/Counter)
+  - `orchestrator/dispatcher/stats.go`:
+    - `StatsTracker`: 1トラック/1ファイルの完了所要時間を EMA（$\alpha = 0.15$）で集約。
+    - 60秒スライディングウィンドウによるスループット算出とキュー残量による ETA 算出。
+    - バックグラウンドでシステム空き RAM・空きディスクを定期ポーリングする `StartSystemResourceCollector`。
+  - `orchestrator/dispatcher/dispatcher.go` & `orchestrator/main.go`:
+    - タスク開始・完了時の所要時間計測と `StatsTracker` への報告、キュー長追跡、ファイルトラック数登録。
+  - `zig/dashboard.py`:
+    - Rich TUI / ANSI によるリアルタイム進捗・所要時間ダッシュボード。
+  - `zig/check_tag_consistency.py`:
+    - DB (`raw.library_flac`) と FLAC タグの双方向整合性検査・一括修復治具。
+  - `tests/test_blackwell_onnx.py`, `tests/test_tag_consistency.py`, `tests/test_dashboard_stats.py`, `orchestrator/dispatcher/stats_test.go`:
+    - 自動単体テスト新設。
+- **Verification**:
+  - `go test -v ./...`: 全件 PASS
+  - `pytest tests/ -v`: 全 28 テスト PASS
+  - `proof-checker.exe -path orchestrator`: Verdict PASS (0 Errors)
+  - Verifier Subagent: **Verdict: PASS**
+
 # Walkthrough: ストレージ防護機能（Gatekeeper ディスク監視・中間JSON/キャッシュ自動GC・Tagger空き容量事前検証）
 
 - **Summary**: ストレージ不足（Disk Full）による解析クラッシュ、中間 JSON / 一時キャッシュの肥大化、および FLAC タグ書き込み時の空き容量枯渇によるファイル破壊を防止するため、Go Gatekeeper によるリアルタイムディスク監視・自動スロットリング、中間 JSON / 一時キャッシュの自動ガベージコレクション (Queue GC)、および FLAC Tagger の事前容量検証を実装。
