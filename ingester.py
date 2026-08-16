@@ -171,7 +171,9 @@ def main():
     db_url = get_db_url()
 
     try:
+        t_conn_start = time.perf_counter()
         conn = psycopg2.connect(db_url)
+        t_conn_sec = time.perf_counter() - t_conn_start
         cur = conn.cursor()
         
         query = """
@@ -196,6 +198,7 @@ def main():
         
         filename = os.path.basename(args.flac_path)
         
+        t_query_start = time.perf_counter()
         cur.execute(query, (
             args.track_hash,
             args.flac_path,
@@ -211,6 +214,7 @@ def main():
         ))
         
         conn.commit()
+        t_query_sec = time.perf_counter() - t_query_start
         cur.close()
         conn.close()
         
@@ -234,6 +238,15 @@ def main():
                 logging.info(f"キャッシュディレクトリの削除が無事に完了いたしましたわ: {cache_dir}")
         except Exception as e:
             logging.warning(f"一時ファイルの削除中に問題が発生いたしましたわ: {e}")
+
+        # 出力 JSON に profile を含めて終了
+        print(json.dumps({
+            "status": "success",
+            "profile": {
+                "db_connect": t_conn_sec,
+                "db_query": t_query_sec
+            }
+        }))
             
     except Exception as e:
         logging.exception("PostgreSQLへのUPSERT中にエラーが発生いたしましたわ。DLQ (send_failed.db) へ退避いたしますわ！")

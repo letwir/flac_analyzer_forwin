@@ -62,3 +62,48 @@ func TestStatsTracker_QueueLengthAndETA(t *testing.T) {
 		t.Errorf("expected AnalyzerEtaSeconds=50.0, got %f", etaVal)
 	}
 }
+
+func TestStatsTracker_StagesAndWaits(t *testing.T) {
+	st := NewStatsTracker()
+
+	// 1. Record Stage Durations
+	st.RecordStageDuration("demucs", 12*time.Second)
+	st.RecordStageDuration("librosa", 4*time.Second)
+	st.RecordStageDuration("tensor", 2*time.Second)
+	st.RecordStageDuration("essentia", 3*time.Second)
+	st.RecordStageDuration("flac_tagger", 1*time.Second)
+	st.RecordStageDuration("db_ingest", 500*time.Millisecond)
+
+	demucsLastVal := testutil.ToFloat64(metrics.AnalyzerLastStageDurationSeconds.WithLabelValues("demucs"))
+	if demucsLastVal != 12.0 {
+		t.Errorf("expected AnalyzerLastStageDurationSeconds(demucs)=12.0, got %f", demucsLastVal)
+	}
+
+	// 2. Record Wait Contention Durations
+	st.RecordDemucsWait(2500 * time.Millisecond)
+	st.RecordTensorWait(150 * time.Millisecond)
+	st.RecordGatekeeperWait(10 * time.Second)
+	st.RecordShmAllocDuration(50 * time.Millisecond)
+
+	demucsWaitVal := testutil.ToFloat64(metrics.AnalyzerLastDemucsWaitSeconds)
+	if demucsWaitVal != 2.5 {
+		t.Errorf("expected AnalyzerLastDemucsWaitSeconds=2.5, got %f", demucsWaitVal)
+	}
+
+	gatekeeperWaitVal := testutil.ToFloat64(metrics.AnalyzerLastGatekeeperWaitSeconds)
+	if gatekeeperWaitVal != 10.0 {
+		t.Errorf("expected AnalyzerLastGatekeeperWaitSeconds=10.0, got %f", gatekeeperWaitVal)
+	}
+
+	// 3. Record Python Step Profiles
+	st.RecordPythonStepDuration("demucs", "decode", 0.35)
+	st.RecordPythonStepDuration("demucs", "inference", 8.5)
+	st.RecordPythonStepDuration("librosa", "extract", 3.2)
+	st.RecordPythonStepDuration("ingester", "db_query", 0.08)
+
+	pyDemucsInfVal := testutil.ToFloat64(metrics.AnalyzerPythonLastStageDurationSeconds.WithLabelValues("demucs", "inference"))
+	if pyDemucsInfVal != 8.5 {
+		t.Errorf("expected AnalyzerPythonLastStageDurationSeconds(demucs, inference)=8.5, got %f", pyDemucsInfVal)
+	}
+}
+

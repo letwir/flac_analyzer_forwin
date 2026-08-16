@@ -48,6 +48,7 @@ def main():
         sys.exit(1)
 
     logger.info(f"FLACファイルをロードしておりますわ: {args.flac_path}")
+    t_dec_start = time.perf_counter()
     try:
         from flac_decode import build_flac_handle, process_slice_with_seq_safety
         handle = build_flac_handle(args.flac_path)
@@ -61,10 +62,14 @@ def main():
             handle.sample_rate,
             handle.channels
         )
+        decode_duration = time.perf_counter() - t_dec_start
         if args.check_hash_only:
             metadata = {
                 "status": "hash_only",
-                "audio_hash": md5_hash
+                "audio_hash": md5_hash,
+                "profile": {
+                    "decode": decode_duration
+                }
             }
             print(json.dumps(metadata))
             sys.exit(0)
@@ -79,9 +84,10 @@ def main():
     models.init_global_demucs(use_dml=args.use_dml)
 
     logger.info("波形分離処理を開始いたしますわ！")
-    t_start = time.perf_counter()
+    t_inf_start = time.perf_counter()
     stem_context = models.GLOBAL_DEMUCS.separate(y, sr)
-    logger.info(f"波形分離処理が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
+    inference_duration = time.perf_counter() - t_inf_start
+    logger.info(f"波形分離処理が無事に完了いたしましたわ (経過: {inference_duration:.4f}s)")
 
     # 書き込んだ共有メモリのmmapオブジェクトを保持するリスト（終了するまでGCさせないため）
     shm_objects = []
@@ -91,10 +97,16 @@ def main():
         "status": "success",
         "audio_hash": md5_hash,
         "sr": sr,
-        "stems": {}
+        "stems": {},
+        "profile": {
+            "decode": decode_duration,
+            "inference": inference_duration,
+            "shm_write": 0.0
+        }
     }
 
     logger.info("共有メモリ (SHM) への書き込みを開始いたしますわ...")
+    t_shm_start = time.perf_counter()
     try:
         for stem_name, ctx in stem_context.stems.items():
             if stem_name not in shm_tags:
@@ -115,6 +127,7 @@ def main():
                 "dtype": str(ctx.y.dtype),
                 "file_size": file_size
             }
+        metadata["profile"]["shm_write"] = time.perf_counter() - t_shm_start
             
     except Exception as e:
         logger.exception("共有メモリへの書き込み中にエラーが発生いたしましたわ！")

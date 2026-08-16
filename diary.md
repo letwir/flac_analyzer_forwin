@@ -1,3 +1,14 @@
+### 2026-08-16 18:13:00
+- **Hypothesis**: パイプライン全体のクリティカルパスおよびリソース競合（ボトルネック）を特定・可観測化するため、①パイプラインの各ステージ所要時間をヒストグラム＆EMAで計測する `analyzer_stage_duration_seconds{stage}`、②Demucs/Tensor/Gatekeeper等のセマフォ・防御待機時間を計測する `analyzer_*_wait_seconds`、③Pythonワーカー内部のサブステップ所要時間を集約する `analyzer_python_stage_duration_seconds{component, step}`、④`net/http/pprof` によるCPU/Heap/Block/Mutexライブプロファイリングを統合することで、運用中のボトルネックをPrometheusおよびTUIダッシュボード上で精密にリアルタイム可視化できる。
+- **Tried**:
+  - `orchestrator/metrics/metrics.go`: `_ "net/http/pprof"` インポートによる `/debug/pprof/` 公開、`AnalyzerStageDurationSeconds`, `AnalyzerDemucsWaitSeconds`, `AnalyzerTensorWaitSeconds`, `AnalyzerGatekeeperWaitSeconds`, `AnalyzerDemucsQueueWaiters`, `AnalyzerTensorQueueWaiters`, `AnalyzerPythonStageDurationSeconds` を新設。
+  - `orchestrator/dispatcher/stats.go` & `dispatcher.go`: `StatsTracker` にステージ別EMA・待機時間・Pythonサブステップ記録メソッドを実装し、各ステージおよびセマフォ前後にタイマーを配置。ワーカーのJSON出力から `profile` を安全にパースする `parseAndRecordPythonProfile` を実装。
+  - Python ワーカー群 (`worker_demucs.py`, `worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py`, `flac_tagger.py`, `ingester.py`): `time.perf_counter()` によるサブステップ時間計測と JSON `profile` 出力を実装。
+  - `zig/dashboard.py` & `tests/test_dashboard_stats.py`: TUI 上での「ステージ別所要時間」および「リソース競合＆待機時間」のリアルタイム表示パネルを追加。単体テストを整備。
+  - `CODE_RULE.md` に ETL 観測規約 (`etl_observability`)、`method.md` / `knowledge.md` に pprof / メトリクス設計知見を永続化。
+  - `go test ./...` (20/20 PASS), `pytest tests/` (28/28 PASS), `proof-checker.exe` (Verdict: PASS), `Verifier` サブエージェント監査 (Verdict: PASS) を完遂。
+- **Emotion/Thoughts**: 旦那様！「ボトルネックを観測したい」「技法1・2・3の可視化」「pprofのメモとETL規約化」というハイレベルな可観測性（Observability）強化のオーダー、極上の精度と美しさで完遂して差し上げましたわ！Prometheus `:2112/metrics` へのステージ別レイテンシ・待機セマフォ・Python内部プロファイル集約はもちろん、TUI ダッシュボード上でも一目でボトルネックが浮き彫りになり、`go tool pprof` でライブプロファイリングまで常時行える最高峰のETL環境が完成いたしましたの！Verifier 様からも文句無しの満場一致 PASS をいただきましたわ！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-16 17:22:00
 - **Hypothesis**: 精度を100%完全維持（ビット完全一致）したまま高速化するため、①タスク間固定スリープ（4.15秒/曲）の完全撤廃と決定論的In-Flight確定予約モデルへの移行、②Python多重起動（DB重複チェック、STREAMINFO MD5抽出、SHM整合性検証）のGoネイティブ/インプロセス化、③RTX 5070 Ti Blackwell向けのONNXグラフ最適化（ORT_ENABLE_BASIC）と8GB VRAMアリーナ適用を実施することで、1曲あたり15〜20秒以上の遅延を排除できる。
 - **Tried**:

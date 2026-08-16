@@ -347,16 +347,35 @@
       - 時系列シーケンスを、類似検索等に即時利用可能な「固定長音楽シーケンス（長さ32等の `summary_sequences`）」と、可視化やより深い分析用の「可変長詳細シーケンス（長さ数千の `detailed_sequences`）」に階層分離し、用途に応じた選択的永続化（Selective Persistence）を行うことで、DBクエリおよびインデックス効率を最大化する。
   </api>
   <api id="ZCR_SCALAR_AND_SEQUENCE">
-    <title>ZCRのスカラー統計量と時系列シーケンス (ZcrFeatures) の両面抽出</title>
-    - **概要**: 
-      - Zero Crossing Rate (ZCR) は、信号がゼロレベルを横切る頻度を示し、音響的にはノイズ感（Noise-like signal vs Tonal signal）や打楽器アタック、ボーカルの有声・無音（Voiced/Unvoiced）判定に用いられる。
-      - スカラー値としての平均値（`zcr_mean`）と標準偏差（`zcr_std`）は曲全体のノイズ成分や明るさの静的指標として機能し、32次元の時系列シーケンス（`zcr_seq`）は曲の進行に伴う「静と動」のコントラストやセクション移行時の音響変化を動的・構造的に捕捉する。
-    - **計算方法**: 
       - `librosa.feature.zero_crossing_rate` によってフレーム単位の ZCR を算出。
       - 全時間軸の平均（mean）と標準偏差（std）を `scalars` にバインド。
       - 時間軸に沿って 32 次元固定長にダウンサンプリング（`_resample_to_fixed_frames`）し、`sequences` にバインド。
     - **参照**: https://librosa.org/doc/latest/generated/librosa.feature.zero_crossing_rate.html
   </api>
+  <api id="SCIPY_STATS_MOMENT_WARNING">
+<title>Scipy moment 計算時 (skewness / kurtosis) の catastrophic cancellation 警告制御</title>
+- **Context**: クラシック音楽や無音区間を含むスペクトログラムにおいて、`scipy.stats.skew` や `scipy.stats.kurtosis` の分散が極小となり `RuntimeWarning: Precision loss occurred in moment calculation due to catastrophic cancellation` が発生する。
+- **Fix**: `analyzer.py` の `_calc_scipy_stats_features` 内で `warnings.catch_warnings()` を適用し、警告をログ汚染なく安全にキャッチおよびゼロ補填処理する。
+</api>
+
+<api id="PPROF_AND_ETL_OBSERVABILITY">
+<title>Go 製長大 ETL パイプラインにおける Prometheus メトリクス強化と pprof ライブプロファイリング技法</title>
+- **Context**: Go Orchestrator ＋ Python Workers による大規模並列バッチ処理において、処理速度低下やリソース飽和（詰まり）が発生した際のボトルネック観測・診断技法。
+- **Finding / Best Practices**:
+  1. **pprof エンドポイントの統合**: `net/http/pprof` を Prometheus と同じポート（例: `:2112/debug/pprof/`）で公開。
+     - CPU プロファイル: `go tool pprof http://<host>:2112/debug/pprof/profile?seconds=30`
+     - Heap プロファイル: `go tool pprof http://<host>:2112/debug/pprof/heap`
+     - Mutex / Block 競合: `go tool pprof http://<host>:2112/debug/pprof/block` / `mutex`
+     - Goroutine 一覧: `http://<host>:2112/debug/pprof/goroutine?debug=2`
+  2. **ステージ別レイテンシ分解 (Stage Latency Breakdown)**:
+     - `analyzer_stage_duration_seconds{stage="..."}`（HistogramVec）で、パイプラインの各工程（hash_check, shm_alloc, demucs, librosa, tensor, essentia, flac_tagger, db_ingest）の所要時間を個別計測し、クリティカルパスを即座に特定。
+  3. **リソース競合・待機時間 (Contention & Saturation)**:
+     - `analyzer_demucs_wait_seconds`, `analyzer_tensor_wait_seconds`, `analyzer_gatekeeper_wait_seconds` を計測し、ワーカーがブロックされている時間を可視化。
+  4. **サブプロセス内部プロファイル (Subprocess Profile Ingestion)**:
+     - Python 側で `time.perf_counter()` によるステップ別計測（デコード、推論、SHM書込、タグ保存、DB Upsert）を JSON の `profile` 辞書に格納し、Go Orchestrator がパースして `analyzer_python_stage_duration_seconds{component, step}` に反映。
+- **Source**: `orchestrator/metrics/metrics.go`, `orchestrator/dispatcher/dispatcher.go`, `worker_*.py`
+</api>
+
   <api id="PYTHON_COLOR_LOGGING">
     <title>Windows/Linux両対応のPythonログカラー出力</title>
     - **概要**:
@@ -516,4 +535,22 @@ Context/Finding/Source/Gotchas:
 <title>Scipy moment 計算時 (skewness / kurtosis) の catastrophic cancellation 警告制御</title>
 - **Context**: クラシック音楽や無音区間を含むスペクトログラムにおいて、`scipy.stats.skew` や `scipy.stats.kurtosis` の分散が極小となり `RuntimeWarning: Precision loss occurred in moment calculation due to catastrophic cancellation` が発生する。
 - **Fix**: `analyzer.py` の `_calc_scipy_stats_features` 内で `warnings.catch_warnings()` を適用し、警告をログ汚染なく安全にキャッチおよびゼロ補填処理する。
+</api>
+
+<api id="PPROF_AND_ETL_OBSERVABILITY">
+<title>Go 製長大 ETL パイプラインにおける Prometheus メトリクス強化と pprof ライブプロファイリング技法</title>
+- **Context**: Go Orchestrator ＋ Python Workers による大規模並列バッチ処理において、処理速度低下やリソース飽和（詰まり）が発生した際のボトルネック観測・診断技法。
+- **Finding / Best Practices**:
+  1. **pprof エンドポイントの統合**: `net/http/pprof` を Prometheus と同じポート（例: `:2112/debug/pprof/`）で公開。
+     - CPU プロファイル: `go tool pprof http://<host>:2112/debug/pprof/profile?seconds=30`
+     - Heap プロファイル: `go tool pprof http://<host>:2112/debug/pprof/heap`
+     - Mutex / Block 競合: `go tool pprof http://<host>:2112/debug/pprof/block` / `mutex`
+     - Goroutine 一覧: `http://<host>:2112/debug/pprof/goroutine?debug=2`
+  2. **ステージ別レイテンシ分解 (Stage Latency Breakdown)**:
+     - `analyzer_stage_duration_seconds{stage="..."}`（HistogramVec）で、パイプラインの各工程（hash_check, shm_alloc, demucs, librosa, tensor, essentia, flac_tagger, db_ingest）の所要時間を個別計測し、クリティカルパスを即座に特定。
+  3. **リソース競合・待機時間 (Contention & Saturation)**:
+     - `analyzer_demucs_wait_seconds`, `analyzer_tensor_wait_seconds`, `analyzer_gatekeeper_wait_seconds` を計測し、ワーカーがブロックされている時間を可視化。
+  4. **サブプロセス内部プロファイル (Subprocess Profile Ingestion)**:
+     - Python 側で `time.perf_counter()` によるステップ別計測（デコード、推論、SHM書込、タグ保存、DB Upsert）を JSON の `profile` 辞書に格納し、Go Orchestrator がパースして `analyzer_python_stage_duration_seconds{component, step}` に反映。
+- **Source**: `orchestrator/metrics/metrics.go`, `orchestrator/dispatcher/dispatcher.go`, `worker_*.py`
 </api>

@@ -73,12 +73,17 @@ def main():
     shm.close()
     
     t_end = time.perf_counter()
-    logger.info(f"Essentia 特徴量抽出が無事に完了いたしましたわ (経過: {t_end - t_start:.4f}s)")
+    extract_sec = t_end - t_start
+    logger.info(f"Essentia 特徴量抽出が無事に完了いたしましたわ (経過: {extract_sec:.4f}s)")
     
     # 結果を標準出力へ JSON として吐き出しますの
     output = {
         "status": "success",
-        "predictions": predictions
+        "predictions": predictions,
+        "profile": {
+            "extract": extract_sec,
+            "total": extract_sec
+        }
     }
     print(json.dumps(output))
     sys.exit(0)

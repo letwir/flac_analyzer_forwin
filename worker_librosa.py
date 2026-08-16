@@ -66,6 +66,9 @@ def main():
     except Exception:
         pass
 
+    warmup_total_sec = 0.0
+    extract_total_sec = 0.0
+
     for stem_name, info in stems_info.items():
         tag_name = info["shm_tag"]
         shape = tuple(info["shape"])
@@ -83,16 +86,20 @@ def main():
                     ctx = AudioContext(y=y, sr=sr, source=stem_name, spectro_path=spectro_path)
                     
                     # config取得と Pre-warming
+                    t_w_start = time.perf_counter()
                     config = STEM_CONFIGS.get(stem_name, STEM_CONFIGS["other"])
                     for prop in config["warmup"]:
                         try:
                             _ = getattr(ctx, prop)
                         except Exception as e:
                             logger.warning(f"Pre-warming '{prop}' 実行中に問題が発生いたしましたわ: {e}")
+                    warmup_total_sec += time.perf_counter() - t_w_start
                     
                     # Librosa 抽出実行
+                    t_e_start = time.perf_counter()
                     logger.info(f"ステム [{stem_name}] の特徴量を抽出しておりますわ...")
                     raw_features = librosa_extractor.run(ctx)
+                    extract_total_sec += time.perf_counter() - t_e_start
                     
                     # 結果を辞書に変換（Postgresへの格納用などにシリアライズ）
                     if hasattr(raw_features, "to_postgres_dict"):
@@ -128,7 +135,8 @@ def main():
             import gc
             gc.collect()
             
-    logger.info(f"全ステムの Librosa 特徴量抽出が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
+    total_sec = time.perf_counter() - t_start
+    logger.info(f"全ステムの Librosa 特徴量抽出が無事に完了いたしましたわ (経過: {total_sec:.4f}s)")
     
     final_features = {"demucs": {}}
     for k, v in extracted_features.items():
@@ -138,7 +146,15 @@ def main():
             final_features["demucs"][k] = v
             
     # 成功したら stdout に特徴量をJSONで吐き出して終了
-    print(json.dumps({"status": "success", "features": final_features}))
+    print(json.dumps({
+        "status": "success",
+        "features": final_features,
+        "profile": {
+            "warmup": warmup_total_sec,
+            "extract": extract_total_sec,
+            "total": total_sec
+        }
+    }))
     sys.exit(0)
 
 if __name__ == "__main__":

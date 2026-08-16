@@ -68,4 +68,8 @@
     <why>To eliminate divergence between implementation and documentation, enforcing global Coderule.md (mega_docs_update_anchor rule) across all projects.</why>
     <how>Follow Coderule.md: apply git tag `mega-docs-update-YYYYMMDD` and commit prefix `docs(mega-docs-update):` on major documentation syncs.</how>
   </target>
+  <target id="ETL_PIPELINE_OBSERVABILITY_AND_PPROF">
+    <why>長大ETLパイプラインにおいて、パイプラインのボトルネック（クリティカルパス）、リソース競合（セマフォ/メモリ待ち）、サブプロセス実行内訳、Goランタイム内部のロック競合を完全可観測化（Observability）するためですわ。</why>
+    <how>① ステージ別レイテンシ分解 (`analyzer_stage_duration_seconds{stage="..."}`)、② リソース競合・待機時間 (`analyzer_demucs_wait_seconds`, `analyzer_tensor_wait_seconds`, `analyzer_gatekeeper_wait_seconds`)、③ サブプロセス内部プロファイル (`analyzer_python_stage_duration_seconds{component, step}`) を Prometheus に集約し、④ Go `net/http/pprof` を `:2112/debug/pprof/` に登録して `go tool pprof` によるライブプロファイリング（CPU, Heap, Mutex, Block, Goroutine）を常時可能といたしますの。</how>
+  </target>
 </methods>

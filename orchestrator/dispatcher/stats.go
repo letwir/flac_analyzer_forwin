@@ -46,16 +46,20 @@ type StatsTracker struct {
 
 	// キュー長・残り時間予測
 	queueLength int
+
+	// ステージ別 EMA (Exponential Moving Average: alpha=0.15)
+	avgStageDurationSec map[string]float64
 }
 
 // NewStatsTracker constructs a initialized StatsTracker instance.
 func NewStatsTracker() *StatsTracker {
 	return &StatsTracker{
-		fileTrackMap:   make(map[string]*FileProgressTracker),
-		taskDurations:  make([]float64, 0, 50),
-		fileDurations:  make([]float64, 0, 50),
-		taskTimestamps: make([]time.Time, 0, 100),
-		fileTimestamps: make([]time.Time, 0, 100),
+		fileTrackMap:        make(map[string]*FileProgressTracker),
+		taskDurations:       make([]float64, 0, 50),
+		fileDurations:       make([]float64, 0, 50),
+		taskTimestamps:      make([]time.Time, 0, 100),
+		fileTimestamps:      make([]time.Time, 0, 100),
+		avgStageDurationSec: make(map[string]float64),
 	}
 }
 
@@ -182,6 +186,61 @@ func (st *StatsTracker) cleanOldTimestamps(now time.Time) {
 	if idxFile > 0 {
 		st.fileTimestamps = st.fileTimestamps[idxFile:]
 	}
+}
+
+// RecordStageDuration records execution duration for a specific pipeline stage.
+func (st *StatsTracker) RecordStageDuration(stage string, duration time.Duration) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	durSec := duration.Seconds()
+	metrics.AnalyzerStageDurationSeconds.WithLabelValues(stage).Observe(durSec)
+	metrics.AnalyzerLastStageDurationSeconds.WithLabelValues(stage).Set(durSec)
+
+	currentAvg := st.avgStageDurationSec[stage]
+	if currentAvg == 0 {
+		currentAvg = durSec
+	} else {
+		currentAvg = (0.15 * durSec) + (0.85 * currentAvg)
+	}
+	st.avgStageDurationSec[stage] = currentAvg
+	metrics.AnalyzerAvgStageDurationSeconds.WithLabelValues(stage).Set(currentAvg)
+}
+
+// RecordDemucsWait records waiting duration for Demucs semaphore slot.
+func (st *StatsTracker) RecordDemucsWait(duration time.Duration) {
+	durSec := duration.Seconds()
+	metrics.AnalyzerDemucsWaitSeconds.Observe(durSec)
+	metrics.AnalyzerLastDemucsWaitSeconds.Set(durSec)
+}
+
+// RecordTensorWait records waiting duration for Tensor semaphore slot.
+func (st *StatsTracker) RecordTensorWait(duration time.Duration) {
+	durSec := duration.Seconds()
+	metrics.AnalyzerTensorWaitSeconds.Observe(durSec)
+	metrics.AnalyzerLastTensorWaitSeconds.Set(durSec)
+}
+
+// RecordGatekeeperWait records waiting duration blocked by Gatekeeper.
+func (st *StatsTracker) RecordGatekeeperWait(duration time.Duration) {
+	durSec := duration.Seconds()
+	metrics.AnalyzerGatekeeperWaitSeconds.Observe(durSec)
+	metrics.AnalyzerLastGatekeeperWaitSeconds.Set(durSec)
+}
+
+// RecordShmAllocDuration records SHM allocation and locking duration.
+func (st *StatsTracker) RecordShmAllocDuration(duration time.Duration) {
+	durSec := duration.Seconds()
+	metrics.AnalyzerShmAllocDurationSeconds.Observe(durSec)
+}
+
+// RecordPythonStepDuration records internal duration of a Python subprocess step.
+func (st *StatsTracker) RecordPythonStepDuration(component, step string, durSec float64) {
+	if durSec <= 0 {
+		return
+	}
+	metrics.AnalyzerPythonStageDurationSeconds.WithLabelValues(component, step).Observe(durSec)
+	metrics.AnalyzerPythonLastStageDurationSeconds.WithLabelValues(component, step).Set(durSec)
 }
 
 // updateThroughputAndEta recalculates throughput per minute and estimated time of arrival.

@@ -45,3 +45,15 @@
   - `run_batch.ps1`: `Test-Path` / `Resolve-Path` で `-LiteralPath` 優先フォールバックを実装
 - **Status**: Completed
 
+# Implementation Plan: Prometheus :2112/metrics ボトルネック観測・可観測性強化
+
+- **Goal**: パイプラインのクリティカルパスおよびリソース競合（ボトルネック）を精密に特定できるよう、Prometheus `:2112/metrics` のメトリクス群を大幅に強化・拡張し、`net/http/pprof` によるライブプロファイリングを統合する。
+- **Target**: `orchestrator/metrics/metrics.go`, `orchestrator/dispatcher/stats.go`, `orchestrator/dispatcher/dispatcher.go`, `worker_demucs.py`, `worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py`, `flac_tagger.py`, `ingester.py`, `zig/dashboard.py`, `tests/test_dashboard_stats.py`, `orchestrator/dispatcher/stats_test.go`.
+- **Feature**:
+  - `metrics.go`: ステージ別レイテンシ分解 (`analyzer_stage_duration_seconds{stage}`), リソース競合・待機時間 (`analyzer_demucs_wait_seconds`, `analyzer_tensor_wait_seconds`, `analyzer_gatekeeper_wait_seconds`), セマフォ待ちワーカー数 (`analyzer_demucs_queue_waiters`, `analyzer_tensor_queue_waiters`), Python サブステップ内部プロファイル (`analyzer_python_stage_duration_seconds{component, step}`), `_ "net/http/pprof"` 有効化。
+  - `stats.go` & `dispatcher.go`: `StatsTracker` にステージ別 EMA / 待機時間 / Python プロファイル記録メソッドを新設。パイプライン各工程の精密タイマーと JSON `profile` パースヘルパー `parseAndRecordPythonProfile` を実装。
+  - Python ワーカー群: `time.perf_counter()` によるサブステップ時間計測と JSON `profile` 出力対応。
+  - `zig/dashboard.py`: TUI 上での「ステージ別所要時間」および「リソース競合＆待機時間」のリアルタイム可視化テーブル新設。
+- **Status**: Completed
+
+

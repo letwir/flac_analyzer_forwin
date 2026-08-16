@@ -172,7 +172,8 @@ def main():
             import gc
             gc.collect()
 
-    logger.info(f"全ステムの PyTorch (Tensor) 特徴量抽出が無事に完了いたしましたわ (経過: {time.perf_counter() - t_start:.4f}s)")
+    total_sec = time.perf_counter() - t_start
+    logger.info(f"全ステムの PyTorch (Tensor) 特徴量抽出が無事に完了いたしましたわ (経過: {total_sec:.4f}s)")
     
     final_features = {"demucs": {}}
     for k, v in extracted_features.items():
@@ -182,7 +183,14 @@ def main():
             final_features["demucs"][k] = v
             
     # 結果を出力
-    print(json.dumps({"status": "success", "features": final_features}))
+    print(json.dumps({
+        "status": "success",
+        "features": final_features,
+        "profile": {
+            "extract": total_sec,
+            "total": total_sec
+        }
+    }))
     sys.exit(0)
 
 if __name__ == "__main__":

@@ -2,14 +2,17 @@ package metrics
 
 import (
 	"net/http"
+	_ "net/http/pprof" // ライブプロファイリング用 pprof ハンドラを http.DefaultServeMux に自動登録いたしますわ！
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Prometheus メトリクス定義（Prometheus Metric Collectors）
-// 1曲（トラック）および 1ファイルあたりの所要時間・スループット・システム残量を完全可視化いたしますわ！
+// Mor: PipelineState -> PrometheusStream
+// Functor: f_metrics ∘ g_observe
+// Semantics: ETL パイプライン・ボトルネック可観測性射（Stage Latency / Contention / Python Profiles）
+
 var (
 	AnalyzerTasksTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -101,6 +104,126 @@ var (
 		},
 	)
 
+	// ─── 技法①：パイプライン・ステージ別レイテンシ分解 (Stage Latency Breakdown) ───
+	// stages: "hash_check", "shm_alloc", "demucs", "librosa", "tensor", "essentia", "flac_tagger", "db_ingest"
+	AnalyzerStageDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "analyzer_stage_duration_seconds",
+			Help:    "Execution duration for each distinct pipeline stage in seconds",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120},
+		},
+		[]string{"stage"},
+	)
+
+	AnalyzerLastStageDurationSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "analyzer_last_stage_duration_seconds",
+			Help: "Most recent execution duration for each distinct pipeline stage in seconds",
+		},
+		[]string{"stage"},
+	)
+
+	AnalyzerAvgStageDurationSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "analyzer_avg_stage_duration_seconds",
+			Help: "Exponential moving average execution duration for each pipeline stage in seconds",
+		},
+		[]string{"stage"},
+	)
+
+	// ─── 技法②：リソース競合・待機時間 (Contention & Saturation) ───
+	// Demucs セマフォ待ち時間
+	AnalyzerDemucsWaitSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "analyzer_demucs_wait_seconds",
+			Help:    "Wait time spent waiting for Demucs execution semaphore slot in seconds",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300},
+		},
+	)
+
+	AnalyzerLastDemucsWaitSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_last_demucs_wait_seconds",
+			Help: "Most recent wait duration for Demucs semaphore slot in seconds",
+		},
+	)
+
+	// Tensor 排他セマフォ待ち時間
+	AnalyzerTensorWaitSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "analyzer_tensor_wait_seconds",
+			Help:    "Wait time spent waiting for Tensor (ONNX/PyTorch) semaphore slot in seconds",
+			Buckets: []float64{0.05, 0.1, 0.5, 1, 2, 5, 10, 20, 30, 60},
+		},
+	)
+
+	AnalyzerLastTensorWaitSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_last_tensor_wait_seconds",
+			Help: "Most recent wait duration for Tensor semaphore slot in seconds",
+		},
+	)
+
+	// Gatekeeper リソース（RAM/Disk）防御待機時間
+	AnalyzerGatekeeperWaitSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "analyzer_gatekeeper_wait_seconds",
+			Help:    "Wait time spent blocked by Gatekeeper resource defense in seconds",
+			Buckets: []float64{1, 5, 10, 20, 30, 60, 120, 300},
+		},
+	)
+
+	AnalyzerLastGatekeeperWaitSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_last_gatekeeper_wait_seconds",
+			Help: "Most recent wait duration blocked by Gatekeeper in seconds",
+		},
+	)
+
+	// 共有メモリ (SHM) 確保・初期化所要時間
+	AnalyzerShmAllocDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "analyzer_shm_alloc_duration_seconds",
+			Help:    "Duration required to allocate and lock Windows Shared Memory arenas in seconds",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5},
+		},
+	)
+
+	// セマフォ待機ワーカー数
+	AnalyzerDemucsQueueWaiters = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_demucs_queue_waiters",
+			Help: "Number of workers currently queued waiting for Demucs slot",
+		},
+	)
+
+	AnalyzerTensorQueueWaiters = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_tensor_queue_waiters",
+			Help: "Number of workers currently queued waiting for Tensor slot",
+		},
+	)
+
+	// ─── 技法③：Python サブプロセス内部ステップ別所要時間 (Subprocess Profile Ingestion) ───
+	// component: "demucs", "librosa", "tensor", "essentia", "tagger", "ingester"
+	// step: "decode", "inference", "shm_write", "warmup", "extract", "write", "db_query"
+	AnalyzerPythonStageDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "analyzer_python_stage_duration_seconds",
+			Help:    "Internal execution duration of Python worker sub-steps in seconds",
+			Buckets: []float64{0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60},
+		},
+		[]string{"component", "step"},
+	)
+
+	AnalyzerPythonLastStageDurationSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "analyzer_python_last_stage_duration_seconds",
+			Help: "Most recent internal duration of Python worker sub-steps in seconds",
+		},
+		[]string{"component", "step"},
+	)
+
 	// スループット (Tracks / Files per minute)
 	AnalyzerTasksPerMinute = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -140,8 +263,10 @@ var (
 	)
 )
 
-// InitMetricsServer starts the Prometheus metrics HTTP server.
+// InitMetricsServer starts the Prometheus metrics HTTP server with pprof enabled.
 func InitMetricsServer(addr string) error {
 	http.Handle("/metrics", promhttp.Handler())
+	// pprof はブランクインポート (_ "net/http/pprof") により /debug/pprof/ 下に自動登録されますわ！
 	return http.ListenAndServe(addr, nil)
 }
+

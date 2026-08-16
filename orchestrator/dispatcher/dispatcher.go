@@ -756,6 +756,7 @@ func (d *Dispatcher) worker(id int) {
 
 	for task := range d.taskQueue {
 		// Gatekeeper Pre-flight Decision (CUE/FLAC Demucs RAM Estimation)
+		gatekeeperStartTime := time.Now()
 		for {
 			isGo, waitDur := d.EvaluateGoNoGo(id, task)
 			if !isGo {
@@ -763,6 +764,9 @@ func (d *Dispatcher) worker(id int) {
 				continue
 			}
 			break
+		}
+		if d.statsTracker != nil {
+			d.statsTracker.RecordGatekeeperWait(time.Since(gatekeeperStartTime))
 		}
 
 		func(task TaskPayload) {
@@ -805,6 +809,7 @@ func (d *Dispatcher) worker(id int) {
 			}()
 			
 			if d.GetConfig().SkipDupByHash {
+				hashStageStart := time.Now()
 				isSingleTrack := task.StartSample == 0 && (task.EndSample <= 0 || task.EndSample == task.FileSize)
 				var fastMD5 string
 				var fastMD5Err error
@@ -836,14 +841,24 @@ func (d *Dispatcher) worker(id int) {
 
 					cleanHashOut := strings.TrimSpace(hashOut)
 					var hashMeta struct {
-						Status    string `json:"status"`
-						AudioHash string `json:"audio_hash"`
+						Status    string             `json:"status"`
+						AudioHash string             `json:"audio_hash"`
+						Profile   map[string]float64 `json:"profile"`
 					}
 					if err := json.Unmarshal([]byte(cleanHashOut), &hashMeta); err != nil || hashMeta.AudioHash == "" {
 						d.failTask(task, fmt.Sprintf("Failed to parse calculated hash (output: %s): %v", cleanHashOut, err))
 						return
 					}
 					trackHash = hashMeta.AudioHash
+					if d.statsTracker != nil && hashMeta.Profile != nil {
+						for step, dur := range hashMeta.Profile {
+							d.statsTracker.RecordPythonStepDuration("demucs", step, dur)
+						}
+					}
+				}
+
+				if d.statsTracker != nil {
+					d.statsTracker.RecordStageDuration("hash_check", time.Since(hashStageStart))
 				}
 
 				// 2.2 Query PostgreSQL directly via Go (1ms check) with ingester fallback
@@ -883,14 +898,21 @@ func (d *Dispatcher) worker(id int) {
 			estimatedSize := EstimateShmSizeForTaskWithRatio(task, ratio)
 
 			d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot (limit: %d)...", id, d.demucsSemaphore.GetLimit())
+			metrics.AnalyzerDemucsQueueWaiters.Inc()
+			demucsWaitStart := time.Now()
 			d.demucsSemaphore.Acquire()
+			metrics.AnalyzerDemucsQueueWaiters.Dec()
 			metrics.AnalyzerDemucsSlotsInUse.Inc()
+			if d.statsTracker != nil {
+				d.statsTracker.RecordDemucsWait(time.Since(demucsWaitStart))
+			}
 
 			delaySec := currentCfg.ShmAllocationDelaySec
 			if delaySec > 0 {
 				time.Sleep(time.Duration(delaySec) * time.Second)
 			}
 
+			shmAllocStart := time.Now()
 			arenaSet := d.arenaPool.GetWorkerArenaSet(id)
 			var allocError error
 
@@ -943,6 +965,11 @@ func (d *Dispatcher) worker(id int) {
 			}
 			d.allocMutex.Unlock()
 
+			if d.statsTracker != nil {
+				d.statsTracker.RecordShmAllocDuration(time.Since(shmAllocStart))
+				d.statsTracker.RecordStageDuration("shm_alloc", time.Since(shmAllocStart))
+			}
+
 			if allocError != nil {
 				d.demucsSemaphore.Release()
 				metrics.AnalyzerDemucsSlotsInUse.Dec()
@@ -967,6 +994,7 @@ func (d *Dispatcher) worker(id int) {
 			if endSampleParam == 0 {
 				endSampleParam = -1
 			}
+			demucsStageStart := time.Now()
 			demucsOut, err := d.runPythonScript("worker_demucs.py", []string{
 				"--flac-path", task.FlacPath, 
 				"--shm-tags", string(tagsJson), 
@@ -977,6 +1005,10 @@ func (d *Dispatcher) worker(id int) {
 			d.demucsSemaphore.Release()
 			metrics.AnalyzerDemucsSlotsInUse.Dec()
 
+			if d.statsTracker != nil {
+				d.statsTracker.RecordStageDuration("demucs", time.Since(demucsStageStart))
+			}
+
 			if err != nil {
 				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, err.Error())
@@ -984,8 +1016,9 @@ func (d *Dispatcher) worker(id int) {
 			}
 
 			var demucsMeta struct {
-				Status    string `json:"status"`
-				AudioHash string `json:"audio_hash"`
+				Status    string             `json:"status"`
+				AudioHash string             `json:"audio_hash"`
+				Profile   map[string]float64 `json:"profile"`
 			}
 			if err := json.Unmarshal([]byte(demucsOut), &demucsMeta); err != nil || demucsMeta.Status != "success" || demucsMeta.AudioHash == "" {
 				_ = arenaSet.UnfreezeAll()
@@ -993,6 +1026,11 @@ func (d *Dispatcher) worker(id int) {
 				return
 			}
 			trackHash = demucsMeta.AudioHash
+			if d.statsTracker != nil && demucsMeta.Profile != nil {
+				for step, dur := range demucsMeta.Profile {
+					d.statsTracker.RecordPythonStepDuration("demucs", step, dur)
+				}
+			}
 
 			// 4. Freeze Shared Memory (PAGE_READONLY)
 			if err := arenaSet.FreezeAll(); err != nil {
@@ -1022,10 +1060,15 @@ func (d *Dispatcher) worker(id int) {
 			wg.Add(3)
 			go func() {
 				defer wg.Done()
+				libStart := time.Now()
 				out, err := d.runPythonScript("worker_librosa.py", []string{
 					"--shm-metadata", demucsOut,
 					"--track-hash", trackHash,
 				}, id, "Librosa", ColorBlue, true)
+				if d.statsTracker != nil {
+					d.statsTracker.RecordStageDuration("librosa", time.Since(libStart))
+					parseAndRecordPythonProfile(d.statsTracker, "librosa", out)
+				}
 				if err != nil {
 					setWorkerErr(fmt.Errorf("Librosa failed: %w", err))
 					return
@@ -1037,16 +1080,27 @@ func (d *Dispatcher) worker(id int) {
 				defer wg.Done()
 
 				// Tensor (ONNX/PyTorch) Exclusive Execution Lock to prevent VRAM spikes across parallel workers
+				tensorWaitStart := time.Now()
+				metrics.AnalyzerTensorQueueWaiters.Inc()
 				d.tensorSemaphore <- struct{}{}
+				metrics.AnalyzerTensorQueueWaiters.Dec()
+				if d.statsTracker != nil {
+					d.statsTracker.RecordTensorWait(time.Since(tensorWaitStart))
+				}
 				defer func() {
 					time.Sleep(150 * time.Millisecond) // VRAM GC cleanup margin
 					<-d.tensorSemaphore
 				}()
 
+				tensorStart := time.Now()
 				out, err := d.runPythonScript("worker_tensor.py", []string{
 					"--shm-metadata", demucsOut,
 					"--track-hash", trackHash,
 				}, id, "Tensor", ColorPurple, true)
+				if d.statsTracker != nil {
+					d.statsTracker.RecordStageDuration("tensor", time.Since(tensorStart))
+					parseAndRecordPythonProfile(d.statsTracker, "tensor", out)
+				}
 				if err != nil {
 					setWorkerErr(fmt.Errorf("Tensor failed: %w", err))
 					return
@@ -1056,10 +1110,15 @@ func (d *Dispatcher) worker(id int) {
 
 			go func() {
 				defer wg.Done()
+				essStart := time.Now()
 				out, err := d.runPythonScript("worker_essentia.py", []string{
 					"--shm-metadata", demucsOut,
 					"--track-hash", trackHash,
 				}, id, "Essentia", ColorBlue, true)
+				if d.statsTracker != nil {
+					d.statsTracker.RecordStageDuration("essentia", time.Since(essStart))
+					parseAndRecordPythonProfile(d.statsTracker, "essentia", out)
+				}
 				if err != nil {
 					setWorkerErr(fmt.Errorf("Essentia failed: %w", err))
 					return
@@ -1138,15 +1197,19 @@ func (d *Dispatcher) worker(id int) {
 			if task.TrackNumber > 0 {
 				taggerArgs = append(taggerArgs, "--prefix", fmt.Sprintf("CUE_TRACK%02d", task.TrackNumber))
 			}
-			_, tagErr := d.runPythonScript("flac_tagger.py", taggerArgs, id, "FlacTagger", ColorGreen, true)
+			taggerStart := time.Now()
+			tagOut, tagErr := d.runPythonScript("flac_tagger.py", taggerArgs, id, "FlacTagger", ColorGreen, true)
+			if d.statsTracker != nil {
+				d.statsTracker.RecordStageDuration("flac_tagger", time.Since(taggerStart))
+				parseAndRecordPythonProfile(d.statsTracker, "tagger", tagOut)
+			}
 			if tagErr != nil {
 				d.LogWarn("[W-%d] FLAC tagger warned/failed for %s: %v", id, task.FlacPath, tagErr)
 			}
 
 			// 6.5 Ingester
-
-			// Ingester handles DB upsert and DLQ logic
-			_, err = d.runPythonScript("ingester.py", []string{
+			ingestStart := time.Now()
+			ingestOut, err := d.runPythonScript("ingester.py", []string{
 				"--flac-path", task.FlacPath,
 				"--json-path", outPath,
 				"--predictions-json-path", outPathEss,
@@ -1158,6 +1221,10 @@ func (d *Dispatcher) worker(id int) {
 				"--album", task.Album,
 				"--album-artist", task.AlbumArtist,
 			}, id, "Ingester", ColorGreen, true)
+			if d.statsTracker != nil {
+				d.statsTracker.RecordStageDuration("db_ingest", time.Since(ingestStart))
+				parseAndRecordPythonProfile(d.statsTracker, "ingester", ingestOut)
+			}
 			
 			if err != nil {
 				var exitErr *exec.ExitError
@@ -1246,4 +1313,20 @@ func (d *Dispatcher) InspectCue(flacPath string) (*CueInspectResult, error) {
 		return nil, fmt.Errorf("failed to parse CueInspect JSON: %w (raw: %s)", err, out)
 	}
 	return &res, nil
+}
+
+type pythonProfileEnvelope struct {
+	Profile map[string]float64 `json:"profile"`
+}
+
+func parseAndRecordPythonProfile(st *StatsTracker, component, jsonStr string) {
+	if st == nil || jsonStr == "" {
+		return
+	}
+	var env pythonProfileEnvelope
+	if err := json.Unmarshal([]byte(strings.TrimSpace(jsonStr)), &env); err == nil && env.Profile != nil {
+		for step, durSec := range env.Profile {
+			st.RecordPythonStepDuration(component, step, durSec)
+		}
+	}
 }

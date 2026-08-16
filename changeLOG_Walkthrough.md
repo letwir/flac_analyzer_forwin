@@ -113,3 +113,30 @@
   - `.\run_batch.ps1 -Dir 'flac_special_[2026] #1 (test)' -DryRun`: 特殊文字ディレクトリ正常動作
   - Verifier Subagent Review: **Verdict PASS**
 
+# Walkthrough: Prometheus :2112/metrics ボトルネック観測・可観測性強化
+
+- **Summary**: パイプラインのクリティカルパスおよびリソース競合（ボトルネック）を精密に特定できるよう、Prometheus `:2112/metrics` のメトリクス群を大幅に強化・拡張し、`net/http/pprof` によるライブプロファイリングを統合。
+- **Changes**:
+  - `orchestrator/metrics/metrics.go`:
+    - `_ "net/http/pprof"` インポートによる `/debug/pprof/` 自動公開。
+    - `analyzer_stage_duration_seconds{stage}` (HistogramVec), `analyzer_last_stage_duration_seconds{stage}`, `analyzer_avg_stage_duration_seconds{stage}`。
+    - `analyzer_demucs_wait_seconds` (Histogram/Gauge), `analyzer_tensor_wait_seconds` (Histogram/Gauge), `analyzer_gatekeeper_wait_seconds` (Histogram/Gauge), `analyzer_shm_alloc_duration_seconds` (Histogram)。
+    - `analyzer_demucs_queue_waiters`, `analyzer_tensor_queue_waiters` (Gauge)。
+    - `analyzer_python_stage_duration_seconds{component, step}`, `analyzer_python_last_stage_duration_seconds{component, step}`。
+  - `orchestrator/dispatcher/stats.go` & `dispatcher.go`:
+    - `StatsTracker` にステージ別 EMA（alpha=0.15）および待機時間記録メソッドを追加。各ステージ（hash_check, shm_alloc, demucs, librosa, tensor, essentia, flac_tagger, db_ingest）の前後にタイマーを配置し、Python JSON からの `profile` パースヘルパー `parseAndRecordPythonProfile` を実装。
+  - Python ワーカー群 (`worker_demucs.py`, `worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py`, `flac_tagger.py`, `ingester.py`):
+    - `time.perf_counter()` によるサブステップ（デコード、推論、SHM書き込み、タグ保存、DB Upsert）の時間を測定し、JSON レスポンスの `profile` フィールドに格納して標準出力に出力。
+  - `zig/dashboard.py`:
+    - TUI 上に「ボトルネック・ステージ別所要時間（平均/直近）」および「リソース競合＆待機時間（Demucs待ち/Tensor待ち/Gatekeeper待ち）」の専用テーブルパネルを追加。
+  - `tests/test_dashboard_stats.py` & `orchestrator/dispatcher/stats_test.go`:
+    - 新設メトリクスの単体テストを追加。
+  - `C:\Users\letwir\.gemini\CODE_RULE.md`, `method.md`, `knowledge.md`:
+    - Go ETL 観測規約 (`etl_observability`)、pprof ライブプロファイリング手順、ボトルネック観測知見を記録・永続化。
+- **Verification**:
+  - `go test ./... -v` (in `orchestrator`): 20/20 PASS (100%)
+  - `.\.venv\Scripts\python.exe -m pytest tests/ -v`: 28/28 PASS (100%)
+  - `proof-checker.exe`: Verdict: PASS (0 Errors)
+  - Verifier Subagent Review: **Verdict: PASS**
+
+

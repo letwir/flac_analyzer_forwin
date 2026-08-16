@@ -510,9 +510,11 @@ def main():
         except Exception as e:
             logger.warning(f"Tensor JSON のパースに失敗いたしました: {e}")
 
+    t_tag_start = time.perf_counter()
     expected_tags = build_flac_tags(librosa_data, essentia_data, tensor_data, prefix=args.prefix)
     if not expected_tags:
         logger.warning("書き込むべきタグ情報が生成されませんでした。")
+        print(json.dumps({"status": "skipped", "profile": {"write": 0.0}}))
         sys.exit(0)
 
     try:
@@ -527,6 +529,8 @@ def main():
         logger.exception("FLAC タグ書き込み中にエラーが発生いたしましたわ！")
         sys.exit(1)
 
+    tag_sec = time.perf_counter() - t_tag_start
+    print(json.dumps({"status": "success", "profile": {"write": tag_sec}}))
     sys.exit(0)
 
 if __name__ == "__main__":

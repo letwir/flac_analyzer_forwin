@@ -127,6 +127,49 @@ def render_rich_dashboard(console: Console, metrics: dict[str, float]) -> Panel:
     ram_gb = ram_bytes / (1024 ** 3)
     disk_gb = disk_bytes / (1024 ** 3)
 
+    # 5. ステージ別所要時間 (Stage Latency Breakdown)
+    stages = [
+        ("hash_check", "Fast MD5/重複確認"),
+        ("shm_alloc", "SHM確保/Lock"),
+        ("demucs", "Demucs分離 (GPU/ONNX)"),
+        ("librosa", "Librosa特徴量 (CPU)"),
+        ("tensor", "Tensor特徴量 (GPU)"),
+        ("essentia", "Essentia特徴量 (C++)"),
+        ("flac_tagger", "FLACタグ書き込み (Disk)"),
+        ("db_ingest", "DBインジェスト (Postgres)"),
+    ]
+    stage_table = Table(title="🔍 [bold cyan]ボトルネック・ステージ別所要時間 (Stage Breakdown)[/bold cyan]", expand=True)
+    stage_table.add_column("ステージ (Stage)", style="bold white")
+    stage_table.add_column("平均 (Avg)", style="green")
+    stage_table.add_column("直近 (Last)", style="yellow")
+
+    has_stage_data = False
+    for stg_key, stg_name in stages:
+        avg_v = metrics.get(f"analyzer_avg_stage_duration_seconds_stage_{stg_key}", 0.0)
+        last_v = metrics.get(f"analyzer_last_stage_duration_seconds_stage_{stg_key}", 0.0)
+        if avg_v > 0 or last_v > 0:
+            has_stage_data = True
+            stage_table.add_row(stg_name, format_duration(avg_v), format_duration(last_v))
+
+    if not has_stage_data:
+        stage_table.add_row("[dim]待機中 / 計測データ収集中[/dim]", "-", "-")
+
+    # 6. リソース待機・競合時間 (Contention & Wait)
+    demucs_wait = metrics.get("analyzer_last_demucs_wait_seconds", 0.0)
+    tensor_wait = metrics.get("analyzer_last_tensor_wait_seconds", 0.0)
+    gk_wait = metrics.get("analyzer_last_gatekeeper_wait_seconds", 0.0)
+    demucs_waiters = int(metrics.get("analyzer_demucs_queue_waiters", 0))
+    tensor_waiters = int(metrics.get("analyzer_tensor_queue_waiters", 0))
+
+    wait_table = Table(title="⏳ [bold cyan]リソース競合 ＆ 待機時間 (Contention & Wait)[/bold cyan]", expand=True)
+    wait_table.add_column("待機項目 (Resource)", style="bold white")
+    wait_table.add_column("直近待機時間 (Last Wait)", style="magenta")
+    wait_table.add_column("待機ワーカー数 (Queued)", style="cyan")
+
+    wait_table.add_row("Demucs 実行枠待ち", format_duration(demucs_wait), f"{demucs_waiters} workers")
+    wait_table.add_row("Tensor 排他枠待ち", format_duration(tensor_wait), f"{tensor_waiters} workers")
+    wait_table.add_row("Gatekeeper 防御待機", format_duration(gk_wait), "RAM/Disk 判定")
+
     # メインレイアウトテーブル
     main_table = Table.grid(expand=True, padding=(0, 2))
     main_table.add_column(ratio=1)
@@ -157,13 +200,14 @@ def render_rich_dashboard(console: Console, metrics: dict[str, float]) -> Panel:
         sys_table.add_row("総エラー発生回数", f"[bold red]{errors_total} 回[/bold red]")
 
     main_table.add_row(time_table, sys_table)
+    main_table.add_row(stage_table, wait_table)
 
     header_text = Text("🎵 FLAC Analyzer リアルタイム進捗ダッシュボード (Win32 Orchestrator Live)", style="bold bright_white on blue", justify="center")
     
     return Panel(
         main_table,
         title=header_text,
-        subtitle=f"[dim]Prometheus Metrics Endpoint: http://localhost:2112/metrics | Polling: {time.strftime('%H:%M:%S')}[/dim]",
+        subtitle=f"[dim]Prometheus: http://localhost:2112/metrics | pprof: /debug/pprof/ | Polling: {time.strftime('%H:%M:%S')}[/dim]",
         border_style="bright_blue"
     )
 
