@@ -10,8 +10,8 @@
 2. **フリーズフェーズ (Freeze Phase)**:
    - Go オーケストレーター (`shm_windows.go`) が Python プロセスからの書き込み完了を検知すると、`VirtualProtect` を呼び出して共有メモリのメモリ保護属性を `PAGE_READWRITE` から **`PAGE_READONLY`** へ変更（フリーズ）します。
 3. **並行読み取りフェーズ (Read-Many Phase)**:
-   - 後続の特徴量抽出ワーカー (`functor_precache.py`, `worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py`) は、`PAGE_READONLY` で保護された共有メモリ領域に `shm_interop.attach_shm_read_only()` 経由でアタッチします。
-   - `functor_precache.py` は、ディスクへの中間 `.npy` ファイル保存を完全に排除し、共有メモリのアタッチ性検証とメタデータ整合性の高速チェックのみを行います。
+   - Go オーケストレーターがインプロセスで SHM メモリ整合性を高速検証（`functor_precache.py` サブプロセス起動オーバーヘッドを完全排除）。
+   - 後続の特徴量抽出ワーカー (`worker_librosa.py`, `worker_tensor.py`, `worker_essentia.py`) は、`PAGE_READONLY` で保護された共有メモリ領域に `shm_interop.attach_shm_read_only()` 経由でアタッチします。
    - 各抽出ワーカーは、他のワーカーや自身の誤動作によって共有メモリ上の波形データが改変されるリスクから物理的に保護された状態で並行解析を実行します。
 
 ## 2. ShmArenaPool ＆ Producer-Consumer ゼロコピー IPC シーケンス (Mermaid)
@@ -24,7 +24,6 @@ sequenceDiagram
     participant Go as Go Orchestrator (shm_windows.go / ShmArenaPool)
     participant Producer as Producer (worker_demucs.py / shm_interop.py)
     participant SHM as Windows Shared Memory (ShmArenaPool)
-    participant Precache as Precache (zig/functor_precache.py)
     participant Consumers as Consumers (worker_librosa / tensor / essentia)
 
     Note over Go,SHM: 起動時: ShmArenaPool がワーカー単位に 7 ステム永続アリーナを事前確保 (VirtualLock 物理RAM固着)
@@ -35,9 +34,7 @@ sequenceDiagram
     Go->>SHM: FreezeAll(): 全ステムの Win32 API VirtualProtect(PAGE_READONLY)
     Note over SHM: 共有メモリ保護属性を PAGE_READONLY にロック (WORM化)
     
-    Go->>Precache: zig/functor_precache.py 起動
-    Precache->>SHM: attach_shm_read_only()<br/>(アタッチ性・メタデータ整合性チェック)
-    Precache-->>Go: 検証成功
+    Go->>Go: In-Process SHM Integrity Check (Go直接検証)
 
     par 3本同時並列実行 (Parallel Read-Many)
         Go->>Consumers: worker_librosa.py 起動

@@ -57,7 +57,7 @@ stateDiagram-v2
         ArenaAcquire: ShmArenaPool からワーカー専用アリーナセット取得<br/>(VirtualLock 物理RAM固着 ＆ ワーキングセット自動拡張)
         DemucsProcessing: worker_demucs.py 起動<br/>（波形スライスデコード・分離・SHM書き込み）
         FreezingSHM: Go側で全ステム共有メモリを PAGE_READONLY 化 (FreezeAll)
-        Precache: zig/functor_precache.py 起動<br/>（SHM read-only アタッチ・メタデータ整合性検証）
+        SHMVerification: Go インプロセス SHM メモリ整合性高速検証
     end
 
     subgraph Cat_ParallelProduct ["Phase 4: Parallel Product Morphisms (並列積射抽出)"]
@@ -161,7 +161,7 @@ stateDiagram-v2
         AllocatingSHM: Monitor RAM & concurrency limit
         DemucsProcessing: Execute worker_demucs.py
         FreezingSHM: Freeze SHM to PAGE_READONLY
-        Precache: Execute functor_precache.py
+        SHMVerification: In-Process SHM Integrity Check
     end
 
     subgraph Cat_ParallelProduct ["Phase 4: Parallel Product Morphisms"]

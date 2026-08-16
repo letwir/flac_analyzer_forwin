@@ -27,12 +27,42 @@ from analyzer import (
     DemucsFeatures,
     EssentiaFeatures,
     librosa_extractor,
-    stem_extractor,
-)
-from worker_analyzer import process_stem, process_stem_shm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import math
+
+
+def _process_stem(stem_name: str, y: np.ndarray, sr: int) -> Any:
+    """1つのステムに対する Pre-warming と特徴量抽出を実行しますわ！"""
+    from analyzer import AudioContext, STEM_CONFIGS, librosa_extractor
+
+    ctx = AudioContext(y=y, sr=sr, source=stem_name)
+    config = STEM_CONFIGS.get(stem_name, STEM_CONFIGS["other"])
+    for prop in config["warmup"]:
+        try:
+            _ = getattr(ctx, prop)
+        except Exception as e:
+            logging.warning(f"Pre-warming プロパティ '{prop}' 評価エラー: {e}")
+    raw_features = librosa_extractor.run(ctx)
+    ctx.clear()
+    return raw_features
+
+
+def _process_stem_shm(
+    stem_name: str, shm_name: str, shape: tuple[int, ...], dtype_name: str, sr: int
+) -> Any:
+    """共有メモリを介して波形データをアタッチし、特徴量抽出を実行しますわ！"""
+    import shm_interop
+
+    shm, y = shm_interop.attach_shm_read_only(shm_name, shape, dtype_name)
+    try:
+        return _process_stem(stem_name, y, sr)
+    finally:
+        try:
+            shm.close()
+        except Exception:
+            pass
+
 
 class SafeAudioJSONEncoder(json.JSONEncoder):
     def default(self, o):
@@ -162,7 +192,7 @@ def analyze_segment_pipeline(
             # 子プロセスには、共有メモリ名、形状、データ型の文字列、レートだけを渡しますわ！
             # これにより 400MB の IPC コピーを完全に葬り去ることができますの
             fut = pool.submit(
-                process_stem_shm,
+                _process_stem_shm,
                 name,
                 shm_name,
                 ctx.y.shape,
@@ -186,7 +216,7 @@ def analyze_segment_pipeline(
         # 直列フォールバック時は、共有メモリを使わずそのまま実行しますわ
         for name, ctx in stem_context.stems.items():
             try:
-                track_features[name] = process_stem(name, ctx.y, ctx.sr)
+                track_features[name] = _process_stem(name, ctx.y, ctx.sr)
             except Exception as e:
                 logging.error(f"ソース [{name}] のLibrosa解析エラー(直列): {e}", exc_info=True)
     finally:
