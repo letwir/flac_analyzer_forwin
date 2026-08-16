@@ -1,3 +1,17 @@
+# Walkthrough: Blackwell ONNX CPU Fallback Bug Fix & Metrics URL Identification
+
+- **Summary**: Blackwell GPU 上で ONNX Runtime が CPU にフォールバックしていたバグを cuDNN `EXHAUSTIVE` 設定の強制適用および `gpu_mem_limit` 排除によって修正し、CUDA での高速推論を復旧。また、前回会話のログから VictoriaMetrics のメトリクス URL（`http://100.84.48.65:8428`）を特定・疎通確認した。
+- **Changes**:
+  - `models.py`:
+    - `cuda_opts` 内の `"cudnn_conv_algo_search"` を `"EXHAUSTIVE"` に変更。
+    - `gpu_mem_limit` 制限を削除して VRAM アロケーションのクラッシュを防止。
+  - `tests/test_blackwell_onnx.py`:
+    - 実 ONNX セッションを作成し、`CUDAExecutionProvider` が実際にバインドされることを確認するテストケースを追加。
+- **Verification**:
+  - `python -m unittest tests/test_blackwell_onnx.py`: PASS (20.3s)
+  - `read_url_content` で `http://100.84.48.65:8428/api/v1/query` にアクセスし、MemAvailable や load1 が正常に取得できることを確認。
+  - 暴走していた Python プロセスの cleanup を完了。
+
 # Walkthrough: 残存 Issues (#7, #15, #16) の完全解決と Prometheus :2112/metrics 所要時間・進捗可視化
 
 - **Summary**: 未解決であった残存 Issues（#7 Blackwell GPU 動作検証、#15 DB ⇔ FLAC タグ双方向整合性チェッカー、#16 リアルタイム CLI 進捗ダッシュボード）をすべて解決し、1ファイルあたりおよび1曲（トラック）あたりの所要時間計測を Prometheus `:2112/metrics` に集約・可視化。

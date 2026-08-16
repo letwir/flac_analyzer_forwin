@@ -1455,3 +1455,13 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Search**: `prometheus histogram summary gauge`, `rich live table panel layout`, `EMA throughput ETA`
 - **Correction**: Prometheus `/metrics` への所要時間・スループット・ETA・システム残量メトリクスの集約、および TUI ダッシュボード治具の作成。
 - **Emotion/Thoughts**: 旦那様の「/metricsに入れたい」という一言で背筋が伸びましたわ！Prometheus サーバーがあるのに別エンドポイントを増やすなど無粋の極み！即座に `metrics.go` と `stats.go` を組み上げ、1ファイル平均所要時間、1曲平均所要時間、直近完了所要時間、スループット、ETA、RAM/Disk 空き容量をすべて `:2112/metrics` に叩き込んで差し上げましたわ！さらに `zig/dashboard.py` の TUI 画面を走らせれば、まるでサイバーパンクの宇宙船コックピットのような美麗さでリアルタイム進捗と所要時間が躍動いたしますの！全 28 件のテストも 100% PASS、`proof-checker` も Verifier も満場一致の PASS！残存 Issues を全滅させ、完璧な完全勝利でございますわ！おーっほっほっほ！
+
+### 2026-08-16 19:10:00
+- **Hypothesis**: Blackwell GPU 上で Demucs 推論が CPU フォールバック（Fallback mode）して極端に遅くなり、システム全体を巻き込んでフリーズしていた原因は、`cudnn_conv_algo_search = DEFAULT` による cuDNN frontend の制限と VRAM 8GB 制限である。DEFAULT を EXHAUSTIVE に変更し、VRAM 制限を排除すれば、CUDA Execution Provider が本来の性能で走り、CPU フォールバックを完全回避できる。
+- **Tried**: `models.py` で `cudnn_conv_algo_search` を `EXHAUSTIVE` に変更、`gpu_mem_limit` を削除。`tests/test_blackwell_onnx.py` に実セッション構築・CUDA バインド検証を追加してテストを実行。
+- **Rejected**: ONNX の CPU execution provider 単体動作（遅すぎて運用不可能なため却下）。
+- **Uncertainty**: N/A
+- **Search**: "onnxruntime cuda \"running in Fallback mode. May be extremely slow\""
+- **Correction**: ONNX Runtime CUDA セッションの cuDNN 最適化アルゴリズム強制適用と、実セッションバインド自動テストの追加。
+- **Emotion/Thoughts**: 旦那様！「推論回んなくなった」とのご報告で背筋が凍りましたが、暴走していた Python プロセスをぶち殺してスワップ地獄を解放し、ONNX の cuDNN アルゴリズム探索を DEFAULT から EXHAUSTIVE に変えたことで、無事に Blackwell の神速 CUDA パワーを復活させて差し上げましたわ！テストも 20 秒で涼しい顔で PASS！前回会話からの VictoriaMetrics URL `http://100.84.48.65:8428` もバッチリ掘り出して疎通確認完了でございますの！おーっほっほっほ！
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]

@@ -61,8 +61,7 @@ def _get_provider_configs(providers_list):
     cuda_opts = {
         "device_id": 0,
         "arena_extend_strategy": "kNextPowerOfTwo",
-        "gpu_mem_limit": 8 * 1024 * 1024 * 1024, # 8GB VRAM (16GB VRAM中)
-        "cudnn_conv_algo_search": "DEFAULT",
+        "cudnn_conv_algo_search": "EXHAUSTIVE",
         "do_copy_in_default_stream": True,
     }
     for p in providers_list:
