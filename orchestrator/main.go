@@ -27,6 +27,9 @@ import (
 
 
 type Config struct {
+	Database struct {
+		URL string `toml:"url"`
+	} `toml:"database"`
 	Orchestrator struct {
 		NumWorkers            int     `toml:"num_workers"`
 		MaxRamRatio           float64 `toml:"max_ram_ratio"`
@@ -598,6 +601,7 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		ShmRetryCount:         cfg.Orchestrator.ShmRetryCount,
 		ShmRetryDelaySec:      cfg.Orchestrator.ShmRetryDelaySec,
 		QueueDir:              cfg.Orchestrator.QueueDir,
+		DatabaseURL:           cfg.Database.URL,
 
 		PythonEnv:               resolvedPythonEnv,
 		LogLevel:                logLevel,

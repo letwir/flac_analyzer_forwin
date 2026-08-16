@@ -47,18 +47,43 @@ try:
 except Exception as e:
     logging.warning(f"models.py にて config.toml のロードに失敗いたしましたわ: {e}")
 
-# ─────────────────────────────────────────────
-# demucs-onnx のセッション作成フック (モンキーパッチ)
-# ─────────────────────────────────────────────
+def _get_onnx_opt_level():
+    opt_str = CONFIG.get("models", {}).get("graph_optimization_level", "basic").lower()
+    if opt_str in ("all", "extended"):
+        return ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    elif opt_str in ("basic", "standard"):
+        return ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+    return ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+
+def _get_provider_configs(providers_list):
+    """Blackwell / CUDA 最適化オプションを内包した provider リストを構築しますわ！"""
+    configured_providers = []
+    cuda_opts = {
+        "device_id": 0,
+        "arena_extend_strategy": "kNextPowerOfTwo",
+        "gpu_mem_limit": 8 * 1024 * 1024 * 1024, # 8GB VRAM (16GB VRAM中)
+        "cudnn_conv_algo_search": "DEFAULT",
+        "do_copy_in_default_stream": True,
+    }
+    for p in providers_list:
+        if isinstance(p, tuple):
+            configured_providers.append(p)
+        elif p == "CUDAExecutionProvider":
+            configured_providers.append(("CUDAExecutionProvider", cuda_opts))
+        else:
+            configured_providers.append(p)
+    return configured_providers
+
 def _custom_make_session(onnx_path, providers):
     sess_opts = ort.SessionOptions()
     sess_opts.log_severity_level = 3
     sess_opts.intra_op_num_threads = CONFIG.get("models", {}).get("intra_op_num_threads", 1)
     sess_opts.inter_op_num_threads = CONFIG.get("models", {}).get("inter_op_num_threads", 1)
     sess_opts.enable_cpu_mem_arena = False
-    sess_opts.enable_mem_pattern = False
-    sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
-    return ort.InferenceSession(str(onnx_path), sess_options=sess_opts, providers=list(providers))
+    sess_opts.enable_mem_pattern = True
+    sess_opts.graph_optimization_level = _get_onnx_opt_level()
+    configured_providers = _get_provider_configs(list(providers))
+    return ort.InferenceSession(str(onnx_path), sess_options=sess_opts, providers=configured_providers)
 
 demucs_onnx.inference._make_session = _custom_make_session
 
@@ -149,12 +174,15 @@ def init_global_onnx_sessions(models_dir: str, essentia_models: dict):
     opts.intra_op_num_threads = CONFIG.get("models", {}).get("intra_op_num_threads", 1)  # セグフォ防止
     opts.inter_op_num_threads = CONFIG.get("models", {}).get("inter_op_num_threads", 1)
     opts.enable_cpu_mem_arena = False  # OOM防止
-    opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+    opts.enable_mem_pattern = True
+    opts.graph_optimization_level = _get_onnx_opt_level()
+
+    configured_providers = _get_provider_configs(providers)
 
     effnet_path = os.path.join(models_dir, "discogs-effnet-bs64-1.onnx")
     effnet_sess = eff_in = eff_out = None
     if os.path.exists(effnet_path):
-        effnet_sess = ort.InferenceSession(effnet_path, opts, providers=providers)
+        effnet_sess = ort.InferenceSession(effnet_path, opts, providers=configured_providers)
         eff_in = effnet_sess.get_inputs()[0].name
         eff_out = effnet_sess.get_outputs()[0].name
 
@@ -162,7 +190,7 @@ def init_global_onnx_sessions(models_dir: str, essentia_models: dict):
     for key, info in essentia_models.items():
         m_path = os.path.join(models_dir, info["file"])
         if os.path.exists(m_path):
-            classifiers[key] = ort.InferenceSession(m_path, opts, providers=providers)
+            classifiers[key] = ort.InferenceSession(m_path, opts, providers=configured_providers)
 
     GLOBAL_ONNX_SESSIONS = {
         "effnet": effnet_sess,

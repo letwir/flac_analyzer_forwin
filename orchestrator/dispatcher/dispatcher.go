@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 	"flac_analyzer/orchestrator/metrics"
 	"flac_analyzer/orchestrator/state"
 	"flac_analyzer/orchestrator/sysinfo"
+
+	_ "github.com/lib/pq"
 )
 
 type LogLevel int
@@ -97,6 +100,7 @@ type Config struct {
 	ShmRetryCount         int
 	ShmRetryDelaySec      int
 	QueueDir              string
+	DatabaseURL           string
 	PythonEnv             map[string]string
 	LogLevel              LogLevel
 	EventLog              EventLogger
@@ -113,6 +117,7 @@ type Dispatcher struct {
 	configMu               sync.RWMutex
 	config                 Config
 	db                     *state.DB
+	pgDB                   *sql.DB
 	taskQueue              chan TaskPayload
 	allocMutex             sync.Mutex
 	demucsSemaphore        *DynamicSemaphore
@@ -148,9 +153,22 @@ const (
 )
 
 func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
+	var pgConn *sql.DB
+	if cfg.DatabaseURL != "" {
+		if conn, err := sql.Open("postgres", cfg.DatabaseURL); err == nil {
+			conn.SetMaxOpenConns(20)
+			conn.SetMaxIdleConns(5)
+			conn.SetConnMaxLifetime(5 * time.Minute)
+			pgConn = conn
+		} else {
+			log.Printf("[WARN] [Dispatcher] Failed to open PostgreSQL connection (%v), will fallback", err)
+		}
+	}
+
 	return &Dispatcher{
 		config:                 cfg,
 		db:                     db,
+		pgDB:                   pgConn,
 		taskQueue:              make(chan TaskPayload, 1000),
 		demucsSemaphore:        NewDynamicSemaphore(cfg.DemucsConcurrentLimit),
 		tensorSemaphore:        make(chan struct{}, 1),
@@ -161,6 +179,25 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		arenaPool:              NewShmArenaPool(cfg.EnableVirtualLock),
 		statsTracker:           NewStatsTracker(),
 	}
+}
+
+// CheckHashExistsInPostgres queries PostgreSQL directly in Go to check if audio_hash already exists.
+func (d *Dispatcher) CheckHashExistsInPostgres(trackHash string) (bool, error) {
+	if d.pgDB == nil || trackHash == "" {
+		return false, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var exists int
+	err := d.pgDB.QueryRowContext(ctx, "SELECT 1 FROM raw_library_flac WHERE audio_hash = $1 LIMIT 1", trackHash).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return exists == 1, nil
 }
 
 // GetConfig returns a thread-safe copy of the current configuration.
@@ -314,6 +351,9 @@ func (d *Dispatcher) Stop() {
 	d.wg.Wait()
 	if d.arenaPool != nil {
 		d.arenaPool.Close()
+	}
+	if d.pgDB != nil {
+		_ = d.pgDB.Close()
 	}
 }
 
@@ -756,79 +796,95 @@ func (d *Dispatcher) worker(id int) {
 			}()
 			
 			if d.GetConfig().SkipDupByHash {
-				// 2.1 Calculate MD5 hash only (Lightweight decoding)
-				endSampleParam = task.EndSample
-				if endSampleParam == 0 {
-					endSampleParam = -1
+				isSingleTrack := task.StartSample == 0 && (task.EndSample <= 0 || task.EndSample == task.FileSize)
+				var fastMD5 string
+				var fastMD5Err error
+				if isSingleTrack {
+					fastMD5, fastMD5Err = ExtractFlacStreaminfoMD5(task.FlacPath)
 				}
-				hashOut, err := d.runPythonScript("worker_demucs.py", []string{
-					"--flac-path", task.FlacPath,
-					"--shm-tags", "{}",
-					"--start-sample", fmt.Sprintf("%d", task.StartSample),
-					"--end-sample", fmt.Sprintf("%d", endSampleParam),
-					"--check-hash-only",
-				}, id, "HashCheck", ColorCyan, true)
-				
-				if err != nil {
-					d.failTask(task, fmt.Sprintf("Hash calculation failed: %v", err))
-					return
-				}
-				
-				cleanHashOut := strings.TrimSpace(hashOut)
-				var hashMeta struct {
-					Status    string `json:"status"`
-					AudioHash string `json:"audio_hash"`
-				}
-				if err := json.Unmarshal([]byte(cleanHashOut), &hashMeta); err != nil || hashMeta.AudioHash == "" {
-					d.failTask(task, fmt.Sprintf("Failed to parse calculated hash (output: %s): %v", cleanHashOut, err))
-					return
-				}
-				trackHash = hashMeta.AudioHash
-				
-				// 2.2 Query PostgreSQL via ingester.py --check-hash
-				checkOut, err := d.runPythonScript("ingester.py", []string{
-					"--flac-path", task.FlacPath,
-					"--json-path", "dummy",
-					"--track-hash", trackHash,
-					"--check-hash",
-				}, id, "DBCheck", ColorGreen, true)
-				
-				if err == nil {
-					cleanCheckOut := strings.TrimSpace(checkOut)
-					var checkMeta struct {
-						Exists bool `json:"exists"`
+
+				if isSingleTrack && fastMD5Err == nil && fastMD5 != "" {
+					trackHash = fastMD5
+					d.LogDebug("[W-%d] [FastPath] Extracted STREAMINFO MD5 directly: %s", id, trackHash)
+				} else {
+					// 2.1 Calculate MD5 hash only (Lightweight decoding)
+					endSampleParam = task.EndSample
+					if endSampleParam == 0 {
+						endSampleParam = -1
 					}
-					if parseErr := json.Unmarshal([]byte(cleanCheckOut), &checkMeta); parseErr != nil {
-						d.LogWarn("[W-%d] DB check JSON parse failed for hash %s: %v (raw output: %s)", id, trackHash, parseErr, cleanCheckOut)
-					} else if checkMeta.Exists {
-						d.LogInfo("[W-%d] [IO Monad] Skip processing: Hash %s already exists in PostgreSQL", id, trackHash)
-						d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
-						metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
-						metrics.AnalyzerActiveWorkers.Dec()
-						taskSuccess = true
+					hashOut, err := d.runPythonScript("worker_demucs.py", []string{
+						"--flac-path", task.FlacPath,
+						"--shm-tags", "{}",
+						"--start-sample", fmt.Sprintf("%d", task.StartSample),
+						"--end-sample", fmt.Sprintf("%d", endSampleParam),
+						"--check-hash-only",
+					}, id, "HashCheck", ColorCyan, true)
+
+					if err != nil {
+						d.failTask(task, fmt.Sprintf("Hash calculation failed: %v", err))
 						return
 					}
-				} else {
-					d.LogWarn("[W-%d] DB check failed (will proceed anyway): %v", id, err)
+
+					cleanHashOut := strings.TrimSpace(hashOut)
+					var hashMeta struct {
+						Status    string `json:"status"`
+						AudioHash string `json:"audio_hash"`
+					}
+					if err := json.Unmarshal([]byte(cleanHashOut), &hashMeta); err != nil || hashMeta.AudioHash == "" {
+						d.failTask(task, fmt.Sprintf("Failed to parse calculated hash (output: %s): %v", cleanHashOut, err))
+						return
+					}
+					trackHash = hashMeta.AudioHash
+				}
+
+				// 2.2 Query PostgreSQL directly via Go (1ms check) with ingester fallback
+				exists, dbErr := d.CheckHashExistsInPostgres(trackHash)
+				if dbErr != nil {
+					d.LogWarn("[W-%d] Go PostgreSQL check error, trying ingester fallback: %v", id, dbErr)
+					checkOut, err := d.runPythonScript("ingester.py", []string{
+						"--flac-path", task.FlacPath,
+						"--json-path", "dummy",
+						"--track-hash", trackHash,
+						"--check-hash",
+					}, id, "DBCheck", ColorGreen, true)
+					if err == nil {
+						cleanCheckOut := strings.TrimSpace(checkOut)
+						var checkMeta struct {
+							Exists bool `json:"exists"`
+						}
+						if parseErr := json.Unmarshal([]byte(cleanCheckOut), &checkMeta); parseErr == nil {
+							exists = checkMeta.Exists
+						}
+					}
+				}
+
+				if exists {
+					d.LogInfo("[W-%d] [IO Monad] Skip processing: Hash %s already exists in PostgreSQL", id, trackHash)
+					d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
+					metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
+					metrics.AnalyzerActiveWorkers.Dec()
+					taskSuccess = true
+					return
 				}
 			}
-			
+
 			currentCfg := d.GetConfig()
 			ratio := currentCfg.ShmExpansionRatio
 			if ratio <= 0 { ratio = 3.5 }
 			estimatedSize := EstimateShmSizeForTaskWithRatio(task, ratio)
-			
+
 			d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot (limit: %d)...", id, d.demucsSemaphore.GetLimit())
 			d.demucsSemaphore.Acquire()
 			metrics.AnalyzerDemucsSlotsInUse.Inc()
-			
+
 			delaySec := currentCfg.ShmAllocationDelaySec
-			if delaySec <= 0 { delaySec = 2 }
-			time.Sleep(time.Duration(delaySec) * time.Second)
-			
+			if delaySec > 0 {
+				time.Sleep(time.Duration(delaySec) * time.Second)
+			}
+
 			arenaSet := d.arenaPool.GetWorkerArenaSet(id)
 			var allocError error
-			
+
 			d.allocMutex.Lock()
 			for {
 				availPhys, err := GetAvailableMemory()
@@ -846,7 +902,7 @@ func (d *Dispatcher) worker(id int) {
 				time.Sleep(3 * time.Second)
 				d.allocMutex.Lock()
 			}
-			
+
 			retryCount := currentCfg.ShmRetryCount
 			if retryCount <= 0 {
 				retryCount = 5
@@ -876,7 +932,6 @@ func (d *Dispatcher) worker(id int) {
 					d.allocMutex.Lock()
 				}
 			}
-			time.Sleep(2 * time.Second)
 			d.allocMutex.Unlock()
 
 			if allocError != nil {
@@ -887,7 +942,7 @@ func (d *Dispatcher) worker(id int) {
 				metrics.AnalyzerTasksTotal.WithLabelValues("oom_failed").Inc()
 				return
 			}
-			
+
 			tagsMap := arenaSet.GetTagsMap()
 			tagsJson, err := json.Marshal(tagsMap)
 			if err != nil {
@@ -897,7 +952,7 @@ func (d *Dispatcher) worker(id int) {
 				d.failTask(task, fmt.Sprintf("Failed to marshal tagsMap: %v", err))
 				return
 			}
-			
+
 			// 3. Demucs
 			endSampleParam = task.EndSample
 			if endSampleParam == 0 {
@@ -909,16 +964,16 @@ func (d *Dispatcher) worker(id int) {
 				"--start-sample", fmt.Sprintf("%d", task.StartSample), 
 				"--end-sample", fmt.Sprintf("%d", endSampleParam),
 			}, id, "Demucs", ColorCyan, true)
-			
+
 			d.demucsSemaphore.Release()
 			metrics.AnalyzerDemucsSlotsInUse.Dec()
-			
+
 			if err != nil {
 				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, err.Error())
 				return
 			}
-			
+
 			var demucsMeta struct {
 				Status    string `json:"status"`
 				AudioHash string `json:"audio_hash"`
@@ -929,24 +984,19 @@ func (d *Dispatcher) worker(id int) {
 				return
 			}
 			trackHash = demucsMeta.AudioHash
-			
+
 			// 4. Freeze Shared Memory (PAGE_READONLY)
 			if err := arenaSet.FreezeAll(); err != nil {
 				d.LogWarn("[Worker %d] Failed to freeze SHM arenas: %v", id, err)
 			}
 
-			// 4.5 Precache Functor
-			precacheOut, err := d.runPythonScript("functor_precache.py", []string{
-				"--shm-metadata", demucsOut,
-				"--track-hash", trackHash,
-			}, id, "Precache", ColorCyan, true)
-			
-			if err != nil {
+			// 4.5 Go In-Process SHM Integrity Verification (eliminates functor_precache.py python startup)
+			if err := arenaSet.VerifyIntegrity(stems); err != nil {
 				_ = arenaSet.UnfreezeAll()
-				d.failTask(task, err.Error())
+				d.failTask(task, fmt.Sprintf("SHM integrity verification failed: %v", err))
 				return
 			}
-			
+
 			// 5. Parallel Feature Extraction (Librosa, Tensor, Essentia)
 			var wg sync.WaitGroup
 			var workerErr error
@@ -964,7 +1014,7 @@ func (d *Dispatcher) worker(id int) {
 			go func() {
 				defer wg.Done()
 				out, err := d.runPythonScript("worker_librosa.py", []string{
-					"--shm-metadata", precacheOut,
+					"--shm-metadata", demucsOut,
 					"--track-hash", trackHash,
 				}, id, "Librosa", ColorBlue, true)
 				if err != nil {
@@ -985,7 +1035,7 @@ func (d *Dispatcher) worker(id int) {
 				}()
 
 				out, err := d.runPythonScript("worker_tensor.py", []string{
-					"--shm-metadata", precacheOut,
+					"--shm-metadata", demucsOut,
 					"--track-hash", trackHash,
 				}, id, "Tensor", ColorPurple, true)
 				if err != nil {
@@ -998,7 +1048,7 @@ func (d *Dispatcher) worker(id int) {
 			go func() {
 				defer wg.Done()
 				out, err := d.runPythonScript("worker_essentia.py", []string{
-					"--shm-metadata", precacheOut,
+					"--shm-metadata", demucsOut,
 					"--track-hash", trackHash,
 				}, id, "Essentia", ColorBlue, true)
 				if err != nil {

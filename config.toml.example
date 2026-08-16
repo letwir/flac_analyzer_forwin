@@ -16,8 +16,8 @@ tagger_disk_margin_ratio = 1.5   # FLAC タグ書き込み時の一時ファイ�
 
 # Demucs ONNX 推論の同時実行数制限 (GPU/VRAM 保護のため通常 1)
 demucs_concurrent_limit = 1
-# 共有メモリ (SHM) 割り当てインターバル (秒)
-shm_allocation_delay_sec = 2
+# 共有メモリ (SHM) 割り当てインターバル (秒: ゼロで即時ディスパッチ)
+shm_allocation_delay_sec = 0
 # 共有メモリ (SHM) の FLAC ファイルに対する PCM 展開マージン比率 (デフォルト: 3.5)
 shm_expansion_ratio = 3.5
 # 共有メモリ確保失敗時の最大リトライ回数およびバックオフスリープ秒数
@@ -63,6 +63,7 @@ memory_retry_delay_sec = "6"
 
 [models]
 # ONNX / ステム分離・特徴量抽出モデル用パラメータ
+graph_optimization_level = "basic"    # ONNX グラフ最適化 (basic / all / disable)
 intra_op_num_threads = 1
 inter_op_num_threads = 1
 patch_size = 128

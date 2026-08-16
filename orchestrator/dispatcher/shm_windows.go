@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"syscall"
 	"unsafe"
@@ -384,6 +385,61 @@ func (w *WorkerArenaSet) UnfreezeAll() error {
 		}
 	}
 	return nil
+}
+
+func (w *WorkerArenaSet) VerifyIntegrity(stems []string) error {
+	for _, stem := range stems {
+		shm, exists := w.arenas[stem]
+		if !exists {
+			return fmt.Errorf("stem %s arena does not exist for worker %d", stem, w.WorkerID)
+		}
+		if shm.handle == 0 || shm.addr == 0 || shm.Size == 0 {
+			return fmt.Errorf("stem %s arena is invalid (handle: %v, addr: 0x%x, size: %d)", stem, shm.handle, shm.addr, shm.Size)
+		}
+	}
+	return nil
+}
+
+// ExtractFlacStreaminfoMD5 extracts PCM MD5 signature directly from FLAC STREAMINFO header (34-byte block).
+// Returns empty string with error if file is invalid, not FLAC, or MD5 is all zeroes.
+func ExtractFlacStreaminfoMD5(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	header := make([]byte, 42) // 4 byte magic + 4 byte block header + 34 byte STREAMINFO
+	n, err := f.Read(header)
+	if err != nil || n < 42 {
+		return "", fmt.Errorf("failed to read FLAC header: %w", err)
+	}
+
+	// Verify "fLaC" magic (0x66, 0x4C, 0x61, 0x43)
+	if header[0] != 'f' || header[1] != 'L' || header[2] != 'a' || header[3] != 'C' {
+		return "", fmt.Errorf("not a valid FLAC file (magic mismatch)")
+	}
+
+	// Check block type (first 7 bits of byte 4 should be 0 for STREAMINFO)
+	blockType := header[4] & 0x7F
+	if blockType != 0 {
+		return "", fmt.Errorf("first metadata block is not STREAMINFO (type: %d)", blockType)
+	}
+
+	// STREAMINFO MD5 signature is bytes 26 to 41 (16 bytes)
+	md5Bytes := header[26:42]
+	allZero := true
+	for _, b := range md5Bytes {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return "", fmt.Errorf("STREAMINFO MD5 is uninitialized (all zeros)")
+	}
+
+	return fmt.Sprintf("%x", md5Bytes), nil
 }
 
 func (w *WorkerArenaSet) GetTagsMap() map[string]string {
