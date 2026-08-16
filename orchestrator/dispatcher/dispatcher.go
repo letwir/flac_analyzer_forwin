@@ -190,7 +190,7 @@ func (d *Dispatcher) CheckHashExistsInPostgres(trackHash string) (bool, error) {
 	defer cancel()
 
 	var exists int
-	err := d.pgDB.QueryRowContext(ctx, "SELECT 1 FROM raw_library_flac WHERE audio_hash = $1 LIMIT 1", trackHash).Scan(&exists)
+	err := d.pgDB.QueryRowContext(ctx, "SELECT 1 FROM raw.library_flac WHERE audio_hash = $1 LIMIT 1", trackHash).Scan(&exists)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
