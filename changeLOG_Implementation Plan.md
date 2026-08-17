@@ -1,3 +1,18 @@
+# Implementation Plan: 音響解析パイプラインの高速化 & 圏論的リファクタリング (Phase 1〜3)
+
+- **Goal**: 命題1〜3（1: 分析精度の完全維持、2: Go OS管理 + Python GPU Tensor、3: 9年長期安定言語）を厳格に遵守し、事前リリース（v1.3.1）から Phase 1（Go直接DB Ingest & 常駐ワーカー化）、Phase 2（PyTorch GPU Tensor DSP & 2Nゼロパディング cuFFT HNR/NAP）、Phase 3（回帰テスト & CI Gate）を完遂する。
+- **Target**: `orchestrator/dispatcher/ingest_pgx.go`, `orchestrator/dispatcher/dispatcher.go`, `worker_daemon.py`, `analyzer/tensor_dsp.py`, `analyzer/librosa_dsp.py`, `tests/test_gpu_dsp_equivalence.py`, `tests/test_worker_daemon.py`.
+- **Feature**:
+  - `gh release create v1.3.1`: ベースラインリリース作成。
+  - `ingest_pgx.go` [NEW]: Go 内製 PostgreSQL Direct UPSERT および SQLite DLQ (`send_failed.db`) フォールバック。
+  - `dispatcher.go`: `ingester.py` サブプロセス起動と中間 JSON ファイル生成の撤廃。
+  - `worker_daemon.py` [NEW]: 常駐型ワーカーデーモン (NDJSON IPC / Advisory 2 遵守 `try...finally: shm.close()`)。
+  - `analyzer/tensor_dsp.py`: $2N$ ゼロパディング Wiener-Khinchin cuFFT HNR/NAP (Advisory 1)、7ステム一括バッチ STFT、Spectral Centroid/Rolloff/Flatness/ZCR/Key 推定の GPU テンソル純粋射。
+  - `analyzer/librosa_dsp.py`: `_calc_hnr_nap` の `tensor_dsp` 委譲。
+  - `tests/test_gpu_dsp_equivalence.py` [NEW]: 数学的精度等価性回帰テストスイート。
+  - `tests/test_worker_daemon.py` [NEW]: ワーカーデーモン単体テスト。
+- **Status**: Completed
+
 # Implementation Plan: 計測器 (analyzer/*) の圏論的完全分離および分岐器・射 (worker_*.py) 再配置と重複ファイル一掃
 
 - **Goal**: 音響特徴量の数理計算・DSP演算（計測器）をすべて `analyzer/*` パッケージに完全分離・局所化し、各ワーカー（`worker_tensor.py`, `worker_essentia.py` 等）をオーケストレーターとの入出力を媒介する純粋な分岐器・射へと純化し、ルートの重複治具フォワーダー群（7ファイル）と旧 `load_wave.py` を一掃する。

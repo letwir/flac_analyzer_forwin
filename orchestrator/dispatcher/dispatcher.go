@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -1207,54 +1206,50 @@ func (d *Dispatcher) worker(id int) {
 				d.LogWarn("[W-%d] FLAC tagger warned/failed for %s: %v", id, task.FlacPath, tagErr)
 			}
 
-			// 6.5 Ingester
+			// 6. Direct PostgreSQL Ingestion (Zero Python subprocess overhead)
 			ingestStart := time.Now()
-			ingestOut, err := d.runPythonScript("ingester.py", []string{
-				"--flac-path", task.FlacPath,
-				"--json-path", outPath,
-				"--predictions-json-path", outPathEss,
-				"--tensor-json-path", outPathTensor,
-				"--track-hash", trackHash,
-				"--track-number", fmt.Sprintf("%d", task.TrackNumber),
-				"--title", task.Title,
-				"--artist", task.Artist,
-				"--album", task.Album,
-				"--album-artist", task.AlbumArtist,
-			}, id, "Ingester", ColorGreen, true)
+			ingestPayload := IngestPayload{
+				TrackHash:    trackHash,
+				Task:         task,
+				LibrosaJSON:  json.RawMessage(libOut),
+				EssentiaJSON: json.RawMessage(essOut),
+				TensorJSON:   json.RawMessage(tensorOut),
+			}
+			ingestRes := d.UpsertTrackDirectly(context.Background(), ingestPayload)
 			if d.statsTracker != nil {
 				d.statsTracker.RecordStageDuration("db_ingest", time.Since(ingestStart))
-				parseAndRecordPythonProfile(d.statsTracker, "ingester", ingestOut)
 			}
-			
-			if err != nil {
-				var exitErr *exec.ExitError
-				if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
-					d.LogWarn("[W-%d] DLQ fallback detected (Exit code 2) for %s (Track %d). Scheduled retry in 10 minutes.", id, task.FlacPath, task.TrackNumber)
-					d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusRunning, "DLQ fallback: Retry scheduled in 10m")
-					metrics.AnalyzerActiveWorkers.Dec()
 
-					go func(t TaskPayload) {
-						time.Sleep(10 * time.Minute)
-						d.LogInfo("[DLQ-Retry] Running retry_ingest.py for %s (Track %d)...", t.FlacPath, t.TrackNumber)
-						_, retryErr := d.runPythonScript("retry_ingest.py", []string{}, 0, "RetryIngest", ColorYellow, true)
-						if retryErr == nil {
-							d.LogInfo("[DLQ-Retry] Retry succeeded for %s (Track %d)", t.FlacPath, t.TrackNumber)
-							d.db.UpdateStatus(t.FlacPath, t.TrackNumber, state.StatusCompleted, "")
-							metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
-						} else {
-							d.LogError("[DLQ-Retry] Retry failed for %s (Track %d): %v. Keeping in DLQ and marking FAILED.", t.FlacPath, t.TrackNumber, retryErr)
-							d.db.UpdateStatus(t.FlacPath, t.TrackNumber, state.StatusFailed, fmt.Sprintf("DLQ retry failed after 10m: %v", retryErr))
-							metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
-						}
-					}(task)
-					return
-				}
+			// Clean up intermediate JSON files immediately
+			cleanupQueueFiles(queueDir, trackHash, baseName)
 
-				cleanupQueueFiles(queueDir, trackHash, baseName)
-				d.failTask(task, fmt.Sprintf("Ingester failed: %v", err))
+			if !ingestRes.Success {
+				d.failTask(task, fmt.Sprintf("Direct Ingestion failed: %s", ingestRes.ErrorMessage))
 				return
 			}
-			
+
+			if ingestRes.SavedToDLQ {
+				d.LogWarn("[W-%d] DLQ fallback triggered for %s (Track %d). Scheduled retry in 10 minutes.", id, task.FlacPath, task.TrackNumber)
+				d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusRunning, "DLQ fallback: Retry scheduled in 10m")
+				metrics.AnalyzerActiveWorkers.Dec()
+
+				go func(t TaskPayload) {
+					time.Sleep(10 * time.Minute)
+					d.LogInfo("[DLQ-Retry] Running retry_ingest.py for %s (Track %d)...", t.FlacPath, t.TrackNumber)
+					_, retryErr := d.runPythonScript("retry_ingest.py", []string{}, 0, "RetryIngest", ColorYellow, true)
+					if retryErr == nil {
+						d.LogInfo("[DLQ-Retry] Retry succeeded for %s (Track %d)", t.FlacPath, t.TrackNumber)
+						d.db.UpdateStatus(t.FlacPath, t.TrackNumber, state.StatusCompleted, "")
+						metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
+					} else {
+						d.LogError("[DLQ-Retry] Retry failed for %s (Track %d): %v. Keeping in DLQ and marking FAILED.", t.FlacPath, t.TrackNumber, retryErr)
+						d.db.UpdateStatus(t.FlacPath, t.TrackNumber, state.StatusFailed, fmt.Sprintf("DLQ retry failed after 10m: %v", retryErr))
+						metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
+					}
+				}(task)
+				return
+			}
+
 			d.LogInfo("[W-%d] Successfully processed entire pipeline: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
 			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
 			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()

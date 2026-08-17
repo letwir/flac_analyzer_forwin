@@ -94,23 +94,32 @@ logger = logging.getLogger("analyzer.librosa_dsp")
 # ─────────────────────────────────────────────
 def _calc_hnr_nap(ctx: AudioContext) -> float:
     """Wiener-Khinchin 定理に基づく正規化自己相関ピーク (NAP, 0.0〜1.0) を算出しますわ！"""
-    if len(ctx.y) == 0:
+    if ctx.y is None or len(ctx.y) == 0:
         return 0.0
-    r = np.correlate(ctx.y, ctx.y, mode="full")
-    r = r[len(r) // 2 :]
-    r0 = float(r[0])
-    if r0 < 1e-9:
-        return 0.0
-    norm_r = r / r0
-    min_lag = int(ctx.sr / 500) if ctx.sr > 0 else 44
-    max_lag = int(ctx.sr / 50) if ctx.sr > 0 else 441
-    if len(norm_r) <= min_lag:
-        return 0.0
-    search_r = norm_r[min_lag : min(len(norm_r), max_lag)]
-    if len(search_r) == 0:
-        return 0.0
-    nap_val = float(np.max(search_r))
-    return float(np.clip(nap_val, 0.0, 1.0))
+
+    try:
+        import torch
+        from .tensor_dsp import calc_hnr_nap_tensor
+        y_t = torch.from_numpy(ctx.y)
+        nap_val, _ = calc_hnr_nap_tensor(y_t, ctx.sr)
+        return nap_val
+    except Exception:
+        # 安全フォールバック (NumPy correlate)
+        r = np.correlate(ctx.y, ctx.y, mode="full")
+        r = r[len(r) // 2 :]
+        r0 = float(r[0])
+        if r0 < 1e-9:
+            return 0.0
+        norm_r = r / r0
+        min_lag = int(ctx.sr / 500) if ctx.sr > 0 else 44
+        max_lag = int(ctx.sr / 50) if ctx.sr > 0 else 441
+        if len(norm_r) <= min_lag:
+            return 0.0
+        search_r = norm_r[min_lag : min(len(norm_r), max_lag)]
+        if len(search_r) == 0:
+            return 0.0
+        nap_val = float(np.max(search_r))
+        return float(np.clip(nap_val, 0.0, 1.0))
 
 
 def _calc_hnr_db(nap: float) -> float:

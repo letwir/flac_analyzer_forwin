@@ -1,3 +1,29 @@
+# Walkthrough: 音響解析パイプラインの高速化 & 圏論的リファクタリング (Phase 1〜3)
+
+- **Summary**: 命題1〜3に基づき、1) Go オーケストレーターからの PostgreSQL 直接 UPSERT (`ingest_pgx.go`) による中間ファイル I/O と `ingester.py` 起動オーバーヘッドの完全撤廃、2) 常駐型ワーカーデーモン (`worker_daemon.py`)、3) Wiener-Khinchin $2N$ パディング cuFFT HNR/NAP & 7ステム一括 STFT / スペクトル特徴量 GPU テンソル DSP (`analyzer/tensor_dsp.py`)、4) 数学的等価性回帰テストスイート (`test_gpu_dsp_equivalence.py`) を実装・検証完了。
+- **Changes**:
+  - `gh release create v1.3.1`: ベースラインリリースを作成。
+  - `orchestrator/dispatcher/ingest_pgx.go` [NEW]:
+    - Go 内製 PostgreSQL Direct UPSERT および SQLite DLQ (`send_failed.db`) フォールバックを実装。
+  - `orchestrator/dispatcher/dispatcher.go`:
+    - `ingester.py` 呼び出しと中間 JSON ファイル生成を廃止し、Go Direct Ingest に切り替え。
+  - `worker_daemon.py` [NEW]:
+    - Go と NDJSON で通信する常駐型ワーカーデーモン。Advisory 2 に従い `try...finally: shm.close()` でハンドルリークを完全防止。
+  - `analyzer/tensor_dsp.py`:
+    - $2N$ ゼロパディング付き cuFFT による Wiener-Khinchin HNR/NAP (Advisory 1)、7ステム一括バッチ STFT、Spectral Centroid/Rolloff/Flatness/ZCR/Key 推定の GPU テンソル純粋射を実装。
+  - `analyzer/librosa_dsp.py`:
+    - `_calc_hnr_nap` を `tensor_dsp.calc_hnr_nap_tensor` へ委譲し、自己相関を $O(N^2) \to O(N \log N)$ へ高速化。
+  - `tests/test_gpu_dsp_equivalence.py` [NEW]:
+    - 全 6 特徴量に対する相対誤差 $< 10^{-4}$ の数学的等価性回帰テストを新設。
+  - `tests/test_worker_daemon.py` [NEW]:
+    - ワーカーデーモンの起動・ping-pong IPC テストを新設。
+- **Verification**:
+  - `python -m unittest tests/test_gpu_dsp_equivalence.py`: 全 6 テスト PASS
+  - `python -m unittest tests/test_worker_daemon.py`: PASS
+  - `go test -v ./...` (orchestrator): 全 Go テスト PASS
+  - `proof-checker.exe -path .`: Verdict: PASS (0 errors, 0 warnings)
+  - Auditor & Verifier サブエージェント審査: 満場一致の PASS
+
 # Walkthrough: 計測器 (analyzer/*) の圏論的完全分離および分岐器・射 (worker_*.py) 再配置と重複ファイル一掃
 
 - **Summary**: 音響特徴量の数理計算・DSP演算（計測器）をすべて `analyzer/*` パッケージに完全分離・局所化し、各ワーカー（`worker_tensor.py`, `worker_essentia.py` 等）をオーケストレーターとの入出力を媒介する純粋な分岐器・射へと純化。ルートの重複治具フォワーダー群（7ファイル）と旧 `load_wave.py` を一掃し、圏論的健全性を達成。

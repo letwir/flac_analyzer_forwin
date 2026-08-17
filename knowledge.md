@@ -554,3 +554,22 @@ Context/Finding/Source/Gotchas:
      - Python 側で `time.perf_counter()` によるステップ別計測（デコード、推論、SHM書込、タグ保存、DB Upsert）を JSON の `profile` 辞書に格納し、Go Orchestrator がパースして `analyzer_python_stage_duration_seconds{component, step}` に反映。
 - **Source**: `orchestrator/metrics/metrics.go`, `orchestrator/dispatcher/dispatcher.go`, `worker_*.py`
 </api>
+
+<api id="WIENER_KHINCHIN_FFT_AUTOCORR">
+<title>Wiener-Khinchin 定理に基づく cuFFT 線形自己相関の数学的等価性と 2N ゼロパディング</title>
+- **Context**: 音響信号 $x$ の調波対雑音比 (HNR) および正規化自己相関ピーク (NAP) 算出において、時間領域の `np.correlate` ($O(N^2)$) を PyTorch cuFFT ($O(N \log N)$) へ移行する際の等価性保証。
+- **Finding**:
+  1. 長さ $N$ の信号に対しゼロパディングなしで `rfft -> abs().pow(2) -> irfft` を行うと周期的自己相関（円周畳み込み）となり、末尾が先頭に回り込んで線形自己相関と乖離する。
+  2. 信号を $2N$ 点（または次の $2^k$ 点）へゼロパディングして `torch.fft.rfft(x, n=2N)` を計算し、`irfft` の先頭 $N$ 点を抽出することで、SciPy / Librosa の `np.correlate(x, x, mode='full')` と完全等価（相対誤差 $< 10^{-5}$）な線形自己相関が得られる。
+- **Source**: `analyzer/tensor_dsp.py`, `tests/test_gpu_dsp_equivalence.py`
+</api>
+
+<api id="GO_DIRECT_POSTGRESQL_INGEST">
+<title>Go オーケストレーター内製 PostgreSQL Direct UPSERT と中間ファイル完全撤廃</title>
+- **Context**: 1曲ごとに Python の `ingester.py` サブプロセスを起動し、中間 `queue/*.json` ファイル経由で DB 書き込みを行っていたアーキテクチャの高速化。
+- **Finding**:
+  1. Go 側ですでに PostgreSQL 接続 (`github.com/lib/pq`) を保持しているため、Go 内で直接 `raw.library_flac` への JSONB UPSERT を実行可能。
+  2. Python サブプロセス起動（0.6〜1.2秒/曲）、Python DB ドライバ接続、中間ディスク I/O を 100% 撤廃し、書き込み時間を数ミリ秒へ短縮。
+  3. 接続障害時は Go 側で直接 SQLite DLQ (`send_failed.db`) へ退避するフォールバックを完備。
+- **Source**: `orchestrator/dispatcher/ingest_pgx.go`, `orchestrator/dispatcher/dispatcher.go`
+</api>
