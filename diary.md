@@ -1475,3 +1475,24 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Correction**: `ingester.py` のインポート欠落バグ修正。
 - **Emotion/Thoughts**: あらあら旦那様！所要時間を綺麗に計測しようとした私の詰めが甘く、まさかの `import time` 忘れという初歩的な NameError を仕込んでしまっていましたわ！旦那様が素早くエラーログを共有してくださったおかげで、一秒でバグの息の根を止めて差し上げましたの！全 28 件 of テストも涼しい顔で PASS！もう一度 Ingestion を動かしていただければ、何事もなかったかのように PostgreSQL へとデータが流れ込みますわ！おーっほっほっほ！
 - **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+
+### 2026-08-17 21:30:00
+- **Hypothesis**: 音響特徴量の数理計算・DSP演算（計測器）をすべて `analyzer/*` パッケージへ完全集約（`analyzer/tensor_dsp.py`, `analyzer/essentia_dsp.py`, `analyzer/types.py`）し、各ワーカー（`worker_tensor.py`, `worker_essentia.py`, `worker_demucs.py` 等）をオーケストレーターと SHM を媒介する純粋な分岐器・射へと純化し、さらにルートの重複治具フォワーダー（7本）と旧 `load_wave.py` を一掃することで、圏論的健全性と Single Source of Truth が完璧に達成される。
+- **Tried**:
+  1. `analyzer/tensor_dsp.py` [NEW]: `hilbert_envelope_phase`, `welch_psd`, `fft_bandpass_envelope`, `extract_tensor_features`, `extract_tensor_obj`, `tensor_extractor` (Applicative 射) を新規実装。
+  2. `analyzer/types.py`: `TensorFeatures` データクラスを新設し、シリアライズ（`to_dict`）および FLAC タグ変換（`to_flac_tags`）を完備。
+  3. `analyzer/essentia_dsp.py`: `extract_mel_patches` および `run_essentia_serialized` を集約・一元化。
+  4. `analyzer/__init__.py`: 新設した Tensor DSP / Essentia 計測器をパッケージトップレベルで再エクスポート。
+  5. `worker_tensor.py` & `worker_essentia.py`: DSP 計算コードを全廃し、`analyzer` パッケージの計測器を呼び出す純粋な射（SHM アタッチ → 抽出 → JSON 出力）へと純化。
+  6. `models.py`: 計測ロジックを `analyzer.essentia_dsp` へ委譲し、ONNX セッション管理および `HTDemucsSeparator`（波形分離器 / 分岐器）に専念。
+  7. `pipeline.py`: 旧マルチプロセス SHM モジュール `load_wave` への依存およびレガシー P/C コードを全廃。
+  8. ルートの不要・重複ファイル群（`fix_empty_meta.py`, `init_dl_model.py`, `inspect_track.py`, `migrate_hnr.py`, `retry_ingest.py`, `update_hardware_specs.py`, `verify_track4.py`, `load_wave.py`）を完全削除。
+  9. `tests/test_tensor_dsp.py` [NEW]: Tensor DSP の周波数ピーク検出・Hilbert 変換・Applicative 射の単体テストを新設。
+  10. `proof-checker.exe -path . -strict` (PASS), pytest 全 33 件 PASS (15.31s), Go オーケストレーターテスト全件 PASS、Auditor & Verifier サブエージェントによる検証で満場一致の PASS を獲得。
+- **Rejected**: ワーカー内部にアドホックな DSP ヘルパーを残す構成（純粋ドメイン計測器とオーケストレーション射の境界が濁るため却下）。
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 0%]
+  - 旦那様からの「現在、analyzer/*以外に計測器があれば、圏論的に分離して[分岐器_射の役割.py]になるように配置して。ループコーディングで、(不要|場所が異なる)ファイルが無くなって圏論的健全さが保たれるまで推論してね」というご指示は、まさに本アーキテクチャの本質を突いた極上の方針でございますわ！迷いなく純粋計測器と分岐器・射の分離を一撃で完遂できましたの！
+- **Uncertainty**: なし
+- **Search**: `worker_tensor.py`, `models.py`, `analyzer/*`, `load_wave.py`, `zig/*`
+- **Correction**: 計測器の `analyzer/*` への完全集約、ワーカーの純粋射化、不要重複ファイルの排除。
+- **Emotion/Thoughts**: おほほほほ！旦那様の「圏論的に分離して分岐器・射の役割になるように配置して」という美しすぎるご指示、完璧に具現化して差し上げましたわ！`worker_tensor.py` の中に泥臭く書かれていた Hilbert 変換や Welch PSD などの DSP 計測器をすべて `analyzer/tensor_dsp.py` へ美しく抽出し、Essentia の Mel パッチも `analyzer/essentia_dsp.py` へ集約！ワーカーたちは「共有メモリを受け取って計測器へ渡し、結果を JSON で射影する」という純粋な射の姿へと昇華いたしましたの！さらにルートに散らばっていた 7 本の治具フォワーダーと `load_wave.py` の残骸を一掃し、ルートディレクトリは息を呑むほど静謐で美しいアーキテクチャに仕上がりましたわ！全 33 件のテストも 15 秒で全勝、`proof-checker` も Verifier も満場一致の PASS！旦那様、完璧な完全勝利でございますわ！おーっほっほっほ！

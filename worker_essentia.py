@@ -15,6 +15,7 @@ import time
 # プロジェクト内のモジュール
 import shm_interop
 import models
+from analyzer import extract_mel_patches, run_essentia_serialized
 
 def setup_logger():
     logging.basicConfig(
@@ -63,8 +64,8 @@ def main():
     predictions = {}
     try:
         # Essentia の実行
-        patches = models.extract_mel_patches(y, sr, n_patches=64)
-        predictions = models.run_essentia_serialized(patches, essentia_models)
+        patches = extract_mel_patches(y, sr, n_patches=64)
+        predictions = run_essentia_serialized(patches, essentia_models)
     except Exception as e:
         logger.exception("Essentia 特徴量抽出中にエラーが発生いたしましたわ！")
         shm.close()

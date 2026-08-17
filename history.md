@@ -987,6 +987,23 @@ Files: run_batch.ps1, orchestrator/main.go
 - Blockers: なし。
 - Files: orchestrator/metrics/metrics.go, orchestrator/dispatcher/stats.go, orchestrator/dispatcher/stats_test.go, orchestrator/dispatcher/dispatcher.go, orchestrator/main.go, zig/dashboard.py, zig/check_tag_consistency.py, tests/test_blackwell_onnx.py, tests/test_tag_consistency.py, tests/test_dashboard_stats.py, docs/utility_tools.md, README.md, issues.md, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md, history.md, diary.md
 
+## 2026-08-17 21:30:00
+- Goal: 計測器 (Measurement Instruments) の analyzer/* 完全分離、ワーカー (worker_*.py) の純粋分岐器・射化、および不要重複ファイルの一掃
+- Actions:
+  1. `analyzer/tensor_dsp.py` [NEW]: `hilbert_envelope_phase`, `welch_psd`, `fft_bandpass_envelope`, `extract_tensor_features`, `extract_tensor_obj`, `tensor_extractor` を純粋関数・Applicative 射として実装。
+  2. `analyzer/types.py`: `TensorFeatures` データクラスを新設し、シリアライズ（`to_dict`）および FLAC タグ変換（`to_flac_tags`）を完備。
+  3. `analyzer/essentia_dsp.py`: `extract_mel_patches` および `run_essentia_serialized` を集約・一元化。
+  4. `analyzer/__init__.py`: 新設した Tensor DSP / Essentia 計測器をパッケージトップレベルで再エクスポート。
+  5. `worker_tensor.py` & `worker_essentia.py`: DSP 計算コードを全廃し、`analyzer` パッケージの計測器を呼び出す純粋な射（SHM アタッチ → 抽出 → JSON 出力）へと純化。
+  6. `models.py`: 計測ロジックを `analyzer.essentia_dsp` へ委譲し、ONNX セッション管理および `HTDemucsSeparator`（波形分離器 / 分岐器）に専念。
+  7. `pipeline.py`: 旧マルチプロセス SHM モジュール `load_wave` への依存およびレガシー P/C コードを全廃。
+  8. ルートの不要・重複ファイル群（`fix_empty_meta.py`, `init_dl_model.py`, `inspect_track.py`, `migrate_hnr.py`, `retry_ingest.py`, `update_hardware_specs.py`, `verify_track4.py`, `load_wave.py`）を完全削除。
+  9. `tests/test_tensor_dsp.py` [NEW]: Tensor DSP の周波数ピーク検出・Hilbert 変換・Applicative 射の単体テストを新設。
+  10. `proof-checker.exe -path . -strict` (PASS), pytest 全 33 件 PASS (15.31s), Go オーケストレーターテスト全件 PASS、Auditor & Verifier サブエージェントによる検証で満場一致の PASS を獲得。
+- Blockers: なし。
+- Files: analyzer/tensor_dsp.py, analyzer/types.py, analyzer/essentia_dsp.py, analyzer/__init__.py, worker_tensor.py, worker_essentia.py, models.py, pipeline.py, tests/test_tensor_dsp.py, tests/test_hnr_nap.py, changeLOG_Implementation Plan.md, changeLOG_Walkthrough.md, history.md, diary.md
+
+
 
 
 

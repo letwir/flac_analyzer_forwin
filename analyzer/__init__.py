@@ -18,6 +18,16 @@ from .core import (
 from .essentia_dsp import (
     _calc_chord_sequence,
     _calc_vocal_f0_seq,
+    extract_mel_patches,
+    run_essentia_serialized,
+)
+from .tensor_dsp import (
+    extract_tensor_features,
+    extract_tensor_obj,
+    fft_bandpass_envelope,
+    hilbert_envelope_phase,
+    tensor_extractor,
+    welch_psd,
 )
 from .librosa_dsp import (
     STEM_CONFIGS,
@@ -87,6 +97,7 @@ from .types import (
     StemFeatures,
     TempogramFeatures,
     TemporalSeqFeatures,
+    TensorFeatures,
     TonnetzFeatures,
     ZcrFeatures,
     _safe_float_str,
@@ -106,6 +117,7 @@ __all__ = [
     "_resample_to_fixed_frames",
     "RawFeatures",
     "StemFeatures",
+    "TensorFeatures",
     "TonnetzFeatures",
     "SectionFeatures",
     "GrooveFeatures",
@@ -146,6 +158,14 @@ __all__ = [
     "extract_temporal_seq",
     "extract_tonnetz",
     "extract_zcr",
+    "extract_tensor_features",
+    "extract_tensor_obj",
+    "tensor_extractor",
+    "hilbert_envelope_phase",
+    "welch_psd",
+    "fft_bandpass_envelope",
+    "extract_mel_patches",
+    "run_essentia_serialized",
     "librosa_extractor",
     "librosa_extractor_v4",
     "stem_extractor",

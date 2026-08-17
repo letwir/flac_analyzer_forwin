@@ -1,3 +1,17 @@
+# Implementation Plan: 計測器 (analyzer/*) の圏論的完全分離および分岐器・射 (worker_*.py) 再配置と重複ファイル一掃
+
+- **Goal**: 音響特徴量の数理計算・DSP演算（計測器）をすべて `analyzer/*` パッケージに完全分離・局所化し、各ワーカー（`worker_tensor.py`, `worker_essentia.py` 等）をオーケストレーターとの入出力を媒介する純粋な分岐器・射へと純化し、ルートの重複治具フォワーダー群（7ファイル）と旧 `load_wave.py` を一掃する。
+- **Target**: `analyzer/tensor_dsp.py`, `analyzer/types.py`, `analyzer/essentia_dsp.py`, `analyzer/__init__.py`, `worker_tensor.py`, `worker_essentia.py`, `models.py`, `pipeline.py`, `tests/test_tensor_dsp.py`.
+- **Feature**:
+  - `analyzer/tensor_dsp.py` [NEW]: `hilbert_envelope_phase`, `welch_psd`, `fft_bandpass_envelope`, `extract_tensor_features`, `extract_tensor_obj`, `tensor_extractor` の実装。
+  - `analyzer/types.py`: `TensorFeatures` データクラス新設。
+  - `analyzer/essentia_dsp.py`: `extract_mel_patches`, `run_essentia_serialized` 集約。
+  - `worker_tensor.py` & `worker_essentia.py`: DSP ロジックを排除し `analyzer` 呼び出しの純粋射化。
+  - `models.py`: 計測ロジックを `analyzer.essentia_dsp` へ委譲。
+  - ルートの不要ファイル群（`fix_empty_meta.py`, `init_dl_model.py`, `inspect_track.py`, `migrate_hnr.py`, `retry_ingest.py`, `update_hardware_specs.py`, `verify_track4.py`, `load_wave.py`）の削除。
+  - `tests/test_tensor_dsp.py` [NEW]: PyTorch Tensor DSP 単体テスト。
+- **Status**: Completed
+
 # Implementation Plan: 残存 Issues (#7, #15, #16) の完全解決と Prometheus /metrics への所要時間・進捗メトリクス統合
 
 - **Goal**: 未解決であった残存 Issues（#7 Blackwell GPU 動作検証、#15 DB ⇔ FLAC タグ双方向整合性チェッカー、#16 リアルタイム CLI 進捗ダッシュボード）をすべて解決し、1ファイルあたりおよび1曲（トラック）あたりの所要時間計測を Prometheus `:2112/metrics` に集約・可視化する。

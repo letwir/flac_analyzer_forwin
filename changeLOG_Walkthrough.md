@@ -1,3 +1,28 @@
+# Walkthrough: 計測器 (analyzer/*) の圏論的完全分離および分岐器・射 (worker_*.py) 再配置と重複ファイル一掃
+
+- **Summary**: 音響特徴量の数理計算・DSP演算（計測器）をすべて `analyzer/*` パッケージに完全分離・局所化し、各ワーカー（`worker_tensor.py`, `worker_essentia.py` 等）をオーケストレーターとの入出力を媒介する純粋な分岐器・射へと純化。ルートの重複治具フォワーダー群（7ファイル）と旧 `load_wave.py` を一掃し、圏論的健全性を達成。
+- **Changes**:
+  - `analyzer/tensor_dsp.py` [NEW]:
+    - PyTorch テンソル DSP 演算（`hilbert_envelope_phase`, `welch_psd`, `fft_bandpass_envelope`, `extract_tensor_features`, `extract_tensor_obj`, `tensor_extractor`）を純粋関数・Applicative 射として新設。
+  - `analyzer/types.py`:
+    - `TensorFeatures` データクラスを新設し、シリアライズ（`to_dict`）および FLAC タグ変換（`to_flac_tags`）を実装。
+  - `analyzer/essentia_dsp.py`:
+    - `extract_mel_patches` および `run_essentia_serialized` を集約・一元化。
+  - `worker_tensor.py` & `worker_essentia.py`:
+    - DSP 計算ロジックを排除し、`analyzer` パッケージの計測器を呼び出す純粋な射（SHM アタッチ → 抽出 → JSON 出力）へと純化。
+  - `models.py`:
+    - 計測ロジックを `analyzer.essentia_dsp` へ委譲し、ONNX セッション管理および `HTDemucsSeparator`（波形分離器 / 分岐器）に専念。
+  - `pipeline.py`:
+    - 旧マルチプロセス SHM モジュール `load_wave` への依存およびレガシー P/C コードを全廃。
+  - ルートの不要・重複ファイル群（`fix_empty_meta.py`, `init_dl_model.py`, `inspect_track.py`, `migrate_hnr.py`, `retry_ingest.py`, `update_hardware_specs.py`, `verify_track4.py`, `load_wave.py`）を削除。
+  - `tests/test_tensor_dsp.py` [NEW]:
+    - PyTorch Tensor DSP の周波数ピーク検出・Hilbert 変換・Applicative 射の単体テストを新設。
+- **Verification**:
+  - `pytest tests/`: 全 33 テスト PASS (15.31s)
+  - `proof-checker.exe -path . -strict`: Verdict PASS (0 errors, 0 warnings)
+  - `go test -v ./...`: 全 Go テスト PASS
+  - Auditor & Verifier サブエージェントによる検証: 満場一致の Verdict PASS
+
 # Walkthrough: Ingester `NameError: name 'time' is not defined` Bug Fix
 
 - **Summary**: PostgreSQL への UPSERT 処理時間計測のために追加された `time.perf_counter()` 呼び出しにおいて、`ingester.py` に `import time` が欠落していた NameError バグを修正いたしました。

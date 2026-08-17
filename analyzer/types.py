@@ -299,6 +299,36 @@ class EssentiaFeatures:
 
 
 @dataclass
+class TensorFeatures:
+    """PyTorch / Tensor 高次音響特徴量を保持するデータクラスですわ！"""
+
+    spectral_flux_mean: float = 0.0
+    spectral_flux_std: float = 0.0
+    psd_peak_freq: float = 0.0
+    psd_peak_val: float = 0.0
+    subbass_env_mean: float = 0.0
+
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "spectral_flux_mean": float(self.spectral_flux_mean),
+            "spectral_flux_std": float(self.spectral_flux_std),
+            "psd_peak_freq": float(self.psd_peak_freq),
+            "psd_peak_val": float(self.psd_peak_val),
+            "subbass_env_mean": float(self.subbass_env_mean),
+        }
+
+    def to_flac_tags(self, prefix: str = "") -> dict[str, str]:
+        p = f"{prefix}_" if prefix else ""
+        return {
+            f"{p}SPECTRAL_FLUX_MEAN": _safe_float_str(self.spectral_flux_mean),
+            f"{p}SPECTRAL_FLUX_STD": _safe_float_str(self.spectral_flux_std),
+            f"{p}PSD_PEAK_FREQ": _safe_float_str(self.psd_peak_freq),
+            f"{p}PSD_PEAK_VAL": _safe_float_str(self.psd_peak_val),
+            f"{p}SUBBASS_ENV_MEAN": _safe_float_str(self.subbass_env_mean),
+        }
+
+
+@dataclass
 class StemFeatures:
     """各ステムから抽出する最小限の特徴量を保持するデータクラスですわ。"""
 

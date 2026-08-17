@@ -200,128 +200,39 @@ def init_global_onnx_sessions(models_dir: str, essentia_models: dict):
     logging.info(f"ONNXセッション直列化ロード完了！ (分類器数: {len(classifiers)})")
 
 
-def _resample_to_16k(audio: np.ndarray, sr: int) -> np.ndarray:
-    target_sr = CONFIG.get("models", {}).get("resample_sr", 16000)
-    return audio if sr == target_sr else soxr.resample(audio, sr, target_sr)
-
-
 def extract_mel_patches(audio: np.ndarray, sr: int, n_patches: int = 64) -> np.ndarray:
-    # 多次元波形（ステレオ等）の場合は、チャンネル次元を平均化してモノラル（1次元）にするの
-    if audio.ndim > 1:
-        if audio.shape[0] == 2:      # channels-first
-            audio = np.mean(audio, axis=0)
-        elif audio.shape[-1] == 2:   # channels-last
-            audio = np.mean(audio, axis=-1)
-        else:
-            audio = np.mean(audio, axis=0)  # フォールバック
-
-    target_sr = CONFIG.get("models", {}).get("resample_sr", 16000)
+    """[Delegation] Essentia EffNet Mel パッチ計測器 (analyzer.essentia_dsp へ委譲)"""
+    from analyzer.essentia_dsp import extract_mel_patches as _emp
+    resample_sr = CONFIG.get("models", {}).get("resample_sr", 16000)
     n_fft = CONFIG.get("models", {}).get("n_fft", 512)
     hop_length = CONFIG.get("models", {}).get("hop_length", 256)
     n_mels = CONFIG.get("models", {}).get("n_mels", 96)
-    
-    audio_16k = _resample_to_16k(audio, sr)
-    mel = librosa.feature.melspectrogram(
-        y=audio_16k,
-        sr=target_sr,
+    patch_size = CONFIG.get("models", {}).get("patch_size", 128)
+    patch_hop = CONFIG.get("models", {}).get("patch_hop", 62)
+    return _emp(
+        audio=audio,
+        sr=sr,
+        n_patches=n_patches,
+        resample_sr=resample_sr,
         n_fft=n_fft,
         hop_length=hop_length,
         n_mels=n_mels,
-        power=2.0,
+        patch_size=patch_size,
+        patch_hop=patch_hop,
     )
-    log_mel = np.log10(10000.0 * mel + 1.0).T
-
-    patch_size = CONFIG.get("models", {}).get("patch_size", 128)
-    patch_hop = CONFIG.get("models", {}).get("patch_hop", 62)
-
-    if log_mel.shape[0] < patch_size:
-        log_mel = np.pad(log_mel, ((0, patch_size - log_mel.shape[0]), (0, 0)))
-
-    idxs = range(0, log_mel.shape[0] - patch_size + 1, patch_hop)
-    raw = np.stack(
-        [log_mel[i : i + patch_size] for i in idxs] or [log_mel[:patch_size]]
-    )
-    M = len(raw)
-
-    if M < n_patches:
-        raw = np.tile(raw, ((n_patches // M) + 1, 1, 1))
-        raw = raw[:n_patches]
-    elif M > n_patches:
-        idx = np.linspace(0, M - 1, n_patches, dtype=int)
-        raw = raw[idx]
-
-    return raw.astype(np.float32)
 
 
 def run_essentia_serialized(
     patches: np.ndarray, essentia_models: dict
 ) -> dict[str, float]:
-    """ONNX(Essentia)による分類結果の生確率 dict を直列実行で抽出しますの。"""
-    predictions: dict[str, float] = {}
-    effnet = GLOBAL_ONNX_SESSIONS.get("effnet")
-    if effnet is None:
-        return predictions
-
-    with ONNX_LOCK:
-        try:
-            embeddings = effnet.run(
-                [GLOBAL_ONNX_SESSIONS["eff_out"]],
-                {GLOBAL_ONNX_SESSIONS["eff_in"]: patches},
-            )[0]
-            embeddings = np.asarray(embeddings, dtype=np.float32)
-            emb_mean = embeddings.mean(axis=0).astype(np.float32)
-            emb_2d = emb_mean.reshape(1, -1)
-        except Exception as e:
-            logging.error(f"effnet backbone エラー: {e}", exc_info=True)
-            return predictions
-
-        for key, clf_sess in GLOBAL_ONNX_SESSIONS["classifiers"].items():
-            if key not in essentia_models:
-                continue
-            classes = essentia_models[key]["classes"]
-            try:
-                clf_input = clf_sess.get_inputs()[0]
-                clf_output = clf_sess.get_outputs()[0]
-                clf_in_name = clf_input.name
-                clf_out_name = clf_output.name
-                clf_shape = clf_input.shape
-
-                if len(clf_shape) == 1:
-                    inp = emb_mean
-                else:
-                    batch_dim = clf_shape[0]
-                    if isinstance(batch_dim, int) and batch_dim > 1:
-                        n = embeddings.shape[0]
-                        if n < batch_dim:
-                            inp = np.tile(embeddings, ((batch_dim // n) + 1, 1))[
-                                :batch_dim
-                            ]
-                        else:
-                            idx = np.linspace(0, n - 1, batch_dim, dtype=int)
-                            inp = embeddings[idx]
-                        inp = inp.astype(np.float32)
-                    else:
-                        inp = emb_2d
-
-                preds = clf_sess.run([clf_out_name], {clf_in_name: inp})[0]
-                preds = np.asarray(preds)
-
-                if preds.ndim > 1:
-                    prob = preds.mean(axis=0)
-                else:
-                    prob = preds
-
-                for i, cls_name in enumerate(classes):
-                    cls_name = CLASS_ALIAS.get(cls_name, cls_name)
-                    if len(cls_name) <= 3:
-                        continue
-                    safe = re.sub(r"[^a-zA-Z0-9_]", "_", cls_name).upper()
-                    predictions[f"ESSENTIA_{key.upper()}_{safe}"] = float(prob[i])
-
-            except Exception as e:
-                logging.error(f"分類器 [{key}] エラー: {e}", exc_info=True)
-
-    return predictions
+    """[Delegation] Essentia ONNX 推論計測器 (analyzer.essentia_dsp へ委譲)"""
+    from analyzer.essentia_dsp import run_essentia_serialized as _res
+    return _res(
+        patches=patches,
+        essentia_models=essentia_models,
+        sessions=GLOBAL_ONNX_SESSIONS,
+        lock=ONNX_LOCK,
+    )
 
 
 # DummyDemucsSeparator has been removed per user request for fail-fast behavior
