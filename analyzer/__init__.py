@@ -77,14 +77,15 @@ from .stats import (
     _calc_scipy_stats_features,
     _calc_time_entropy,
 )
-from .tensor_dsp import (
-    extract_tensor_features,
-    extract_tensor_obj,
-    fft_bandpass_envelope,
-    hilbert_envelope_phase,
-    tensor_extractor,
-    welch_psd,
-)
+# 遅延インポート用定義 (PyTorch / CUDA DLL の早期衝突防止)
+_LAZY_TENSOR_EXPORTS = {
+    "extract_tensor_features",
+    "extract_tensor_obj",
+    "fft_bandpass_envelope",
+    "hilbert_envelope_phase",
+    "tensor_extractor",
+    "welch_psd",
+}
 from .types_features import (
     AudioCutoffLufsFeatures,
     ChromaFeatures,
@@ -199,7 +200,21 @@ __all__ = [
     "_calc_time_entropy",
     "_calc_scipy_stats_features",
     "_calc_hilbert_features",
-    "_calc_peak_features",
     "_calc_chord_sequence",
     "_calc_vocal_f0_seq",
 ]
+
+
+def __getattr__(name: str):
+    """PyTorch / Tensor DSP 関数のオンデマンド遅延インポートですわ！"""
+    if name in _LAZY_TENSOR_EXPORTS:
+        from . import tensor_dsp
+
+        val = getattr(tensor_dsp, name)
+        globals()[name] = val
+        return val
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+def __dir__():
+    return sorted(list(globals().keys()) + list(_LAZY_TENSOR_EXPORTS))

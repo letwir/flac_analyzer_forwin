@@ -1556,3 +1556,16 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Correction**: `models.py` の `analyzer.core` 直接参照化による不要な `torch` ロード排除。
 - **Emotion/Thoughts**: あらあら旦那様！Demucs ONNX が推論を走らせている最中に、ファサードの `analyzer/__init__.py` を経由して PyTorch の cuDNN が後から忍び込んできて DLL 競合 (WinError 127) を起こしていましたのね！`models.py` が必要な型（`AudioContext, StemContext`）を `analyzer.core` から直接取得するようインポート経路を正して差し上げましたわ！これで Demucs ワーカーは PyTorch の cuDNN と一切衝突することなく、ONNX Runtime CUDA で快適・最高速に波形分離を駆け抜けますわ！おーっほっほっほ！
 - **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+
+### 2026-08-18 00:54:00
+- **Hypothesis**: Python ではサブモジュール `from analyzer.core import ...` を読み込む際にも親パッケージ `analyzer/__init__.py` が必ず最初に実行される。`analyzer/__init__.py` が `from .tensor_dsp import ...` をトップレベルで先行インポートしていたため、`analyzer.core` だけをインポートした場合でも `torch` が無条件にロードされ、ONNX Runtime 起動後に cuDNN DLL 衝突（WinError 127）を引き起こしていた。`analyzer/__init__.py` を PEP 562 (`__getattr__`) によるオンデマンド遅延インポート設計に改修することで、`tensor_dsp` の関数（`extract_tensor_features` 等）が明示的にアクセスされた時のみ `torch` をロードするよう隔離し、DLL 競合を根本的に完全解決できる。
+- **Tried**:
+  1. `analyzer/__init__.py`: トップレベルの `from .tensor_dsp import ...` を撤廃し、PEP 562 `__getattr__` による遅延解決へ移行。
+  2. 検証コマンドにより、`from analyzer.core import AudioContext` および `from analyzer import AudioContext` で `torch in sys.modules == False` を確認。
+  3. `python -m unittest discover tests`: 全 17 テスト PASS (14.06s)。
+- **Rejected**: なし
+- **Uncertainty**: なし
+- **Search**: `analyzer/__init__.py`
+- **Correction**: `analyzer/__init__.py` の PEP 562 遅延インポート化による `torch` ロードの完全オンデマンド隔離。
+- **Emotion/Thoughts**: あらあら旦那様！Python の言語仕様で、サブモジュール `analyzer.core` を叩くだけで親の `__init__.py` が全実行される罠が潜んでおりましたのね！即座に Python 3.7+ の PEP 562 `__getattr__` 遅延インポート機構を組み込み、`analyzer` からどの型をインポートしても、PyTorch のテンソル DSP を直接要求しない限り `torch` が 1ミリもロードされない鉄壁の隔離アーキテクチャへと昇華させましたわ！デプロイ側での追加作業は一切不要、`git pull` だけで完璧に安定稼働いたしますの！おーっほっほっほ！
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
