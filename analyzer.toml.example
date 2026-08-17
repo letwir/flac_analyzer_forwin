@@ -1,0 +1,52 @@
+# ==============================================================================
+# FLAC Analyzer Plugin Configuration (analyzer.toml.example)
+# ==============================================================================
+# 【安全確認】解析を実行するには execute を true に変更してください。
+execute = false
+
+# ─────────────────────────────────────────────
+# 現行解析機 (Current Active Analyzers)
+# ─────────────────────────────────────────────
+[plugins.librosa_dynamics]
+enabled = true
+
+[plugins.librosa_spectral]
+enabled = true
+
+[plugins.librosa_tonal]
+enabled = true
+
+[plugins.librosa_rhythm]
+enabled = true
+
+[plugins.librosa_timbre]
+enabled = true
+
+[plugins.librosa_vocalpitch]
+enabled = true
+
+[plugins.scipy_stats]
+enabled = true
+
+# ─────────────────────────────────────────────
+# 追加分析器 (Additional Analyzers: 治具または個別有効化用)
+# ─────────────────────────────────────────────
+[plugins.psychoacoustics]
+enabled = false
+calc_sharpness = true
+calc_roughness = true
+calc_tonality = true
+
+[plugins.structure]
+enabled = false
+calc_chorus = true
+calc_drop = true
+
+[plugins.voice_cpp]
+enabled = false
+
+[plugins.audio_cutoff_lufs]
+enabled = false
+detect_cutoff = true
+calc_true_peak = true
+calc_ebur128 = true

@@ -21,14 +21,6 @@ from .essentia_dsp import (
     extract_mel_patches,
     run_essentia_serialized,
 )
-from .tensor_dsp import (
-    extract_tensor_features,
-    extract_tensor_obj,
-    fft_bandpass_envelope,
-    hilbert_envelope_phase,
-    tensor_extractor,
-    welch_psd,
-)
 from .librosa_dsp import (
     STEM_CONFIGS,
     LibrosaFeatures,
@@ -67,10 +59,17 @@ from .librosa_dsp import (
     extract_tempogram,
     extract_temporal_seq,
     extract_tonnetz,
+    extract_vocal_f0,
     extract_zcr,
     librosa_extractor,
     librosa_extractor_v4,
     stem_extractor,
+)
+from .registry_plugins import (
+    BasePlugin,
+    PluginMetadata,
+    PluginRegistry,
+    register_plugin,
 )
 from .stats import (
     _calc_hilbert_features,
@@ -78,7 +77,16 @@ from .stats import (
     _calc_scipy_stats_features,
     _calc_time_entropy,
 )
-from .types import (
+from .tensor_dsp import (
+    extract_tensor_features,
+    extract_tensor_obj,
+    fft_bandpass_envelope,
+    hilbert_envelope_phase,
+    tensor_extractor,
+    welch_psd,
+)
+from .types_features import (
+    AudioCutoffLufsFeatures,
     ChromaFeatures,
     DemucsFeatures,
     EssentiaFeatures,
@@ -88,6 +96,7 @@ from .types import (
     MfccFeatures,
     OnsetFeatures,
     PeakFeatures,
+    PsychoacousticsFeatures,
     RawFeatures,
     RmsFeatures,
     ScipyStatsFeatures,
@@ -95,10 +104,12 @@ from .types import (
     SpectralCentroidFeatures,
     SpectralRolloffFeatures,
     StemFeatures,
+    StructureSsmFeatures,
     TempogramFeatures,
     TemporalSeqFeatures,
     TensorFeatures,
     TonnetzFeatures,
+    VoiceCppFeatures,
     ZcrFeatures,
     _safe_float_str,
     _safe_int,
@@ -136,6 +147,14 @@ __all__ = [
     "HilbertFeatures",
     "PeakFeatures",
     "EssentiaFeatures",
+    "PsychoacousticsFeatures",
+    "StructureSsmFeatures",
+    "VoiceCppFeatures",
+    "AudioCutoffLufsFeatures",
+    "PluginRegistry",
+    "BasePlugin",
+    "PluginMetadata",
+    "register_plugin",
     "extract_hnr",
     "extract_hnr_db",
     "extract_nap",
@@ -157,6 +176,7 @@ __all__ = [
     "extract_tempogram",
     "extract_temporal_seq",
     "extract_tonnetz",
+    "extract_vocal_f0",
     "extract_zcr",
     "extract_tensor_features",
     "extract_tensor_obj",

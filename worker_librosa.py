@@ -15,6 +15,7 @@ import time
 # プロジェクト内のモジュール
 import shm_interop
 from analyzer import AudioContext, STEM_CONFIGS, librosa_extractor
+from analyzer.config_generator import load_analyzer_toml
 
 def setup_logger():
     logging.basicConfig(
@@ -41,6 +42,14 @@ def main():
         sys.exit(1)
 
     logger.info("共有メモリからの Librosa 特徴量抽出を開始いたしますわ！")
+    
+    # analyzer.toml の安全弁チェック
+    try:
+        load_analyzer_toml()
+    except Exception as e:
+        logger.error(f"[SafetyGuard] {e}")
+        sys.exit(1)
+
     t_start = time.perf_counter()
     
     extracted_features = {}
