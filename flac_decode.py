@@ -271,6 +271,41 @@ def parse_wav_header(wav_bytes: bytes) -> tuple[int, int, int, int, int, int]:
         
     return wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size
 
+def decode_flac_range_fallback(
+    filepath: str, start_sample: int, end_sample: int
+) -> tuple[bytes, int, int, int, int]:
+    """
+    flac CLI が SEEKTABLE 欠落などで FLAC__STREAM_DECODER_SEEK_ERROR を起こした際の
+    libsndfile (soundfile) による高精度ストリームデコード・フォールバックですわ！
+    """
+    import soundfile as sf
+    with sf.SoundFile(filepath) as f:
+        total = len(f)
+        actual_start = max(0, min(start_sample, total))
+        actual_end = max(actual_start, min(end_sample, total))
+        frames = actual_end - actual_start
+
+        f.seek(actual_start)
+        subtype = getattr(f, "subtype", "")
+        if "PCM_24" in subtype or "PCM_32" in subtype:
+            pcm_data = f.read(frames=frames, dtype="int32")
+            pcm_bytes = pcm_data.tobytes()
+            wFormatTag = 1
+            bitsPerSample = 32
+        elif "PCM_16" in subtype:
+            pcm_data = f.read(frames=frames, dtype="int16")
+            pcm_bytes = pcm_data.tobytes()
+            wFormatTag = 1
+            bitsPerSample = 16
+        else:
+            pcm_data = f.read(frames=frames, dtype="float32")
+            pcm_bytes = pcm_data.tobytes()
+            wFormatTag = 3
+            bitsPerSample = 32
+
+        return pcm_bytes, wFormatTag, f.channels, f.samplerate, bitsPerSample
+
+
 def decode_flac_range(
     filepath: str, 
     start_sample: int, 
@@ -305,13 +340,26 @@ def decode_flac_range(
             raw_pcm = wav_bytes[data_offset : data_offset + data_size]
             return raw_pcm, wFormatTag, numChannels, sampleRate, bitsPerSample
             
-        # I/O競合や一時的なファイルロックを考慮して指数バックオフで再試行
         err_msg = stderr_bytes.decode('utf-8', errors='replace').strip() if stderr_bytes else ""
         last_error_context = f"rc={rc}, stderr='{err_msg}', bytes_len={len(wav_bytes)}, cmd={cmd}"
+
+        # SEEKTABLE欠落や破損ストリームによるシークエラー（FLAC__STREAM_DECODER_SEEK_ERROR等）を検知した場合は、
+        # 即座に libsndfile (soundfile) による直接デコードへ安全にフォールバックいたしますわ！
+        if "SEEK_ERROR" in err_msg or "ERROR seeking" in err_msg or rc == 1:
+            try:
+                return decode_flac_range_fallback(filepath, start_sample, end_sample)
+            except Exception as fb_exc:
+                last_error_context += f" | soundfile_fallback_err='{fb_exc}'"
+
+        # I/O競合や一時的なファイルロックを考慮して指数バックオフで再試行
         if attempt < max_retries:
             time.sleep(0.5 * (2 ** (attempt - 1)))
             
-    raise RuntimeError(f"flac範囲デコードに失敗いたしましたわ（試行回数: {max_retries}）: {last_error_context}")
+    # 最終リトライ失敗時も soundfile フォールバックを再試行
+    try:
+        return decode_flac_range_fallback(filepath, start_sample, end_sample)
+    except Exception:
+        raise RuntimeError(f"flac範囲デコードに失敗いたしましたわ（試行回数: {max_retries}）: {last_error_context}")
 
 
 def pcm_bytes_to_float32(
@@ -380,62 +428,82 @@ def process_slice_with_seq_safety(
         return audio_44100, md5_hash
 
     # 10分以上の長尺（DJミックスなど）の場合は、ストリーミングで読み出しながらその場でダウンサンプリング
-    cmd = [
-        'flac', '-d', '-c',
-        '-F',
-        f'--skip={start_sample}',
-        f'--until={end_sample}',
-        '--silent',
-        filepath
-    ]
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    
-    # ヘッダ情報が完全に読めるまで最初の4096バイトをバッファリングしますわ
-    header_buffer = proc.stdout.read(4096)
-    wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size = parse_wav_header(header_buffer)
-    
-    md5_engine = hashlib.md5()
-    
-    # ヘッダバッファ内の余剰PCMデータを処理
-    initial_pcm = header_buffer[data_offset:]
-    if len(initial_pcm) > 0:
-        md5_engine.update(initial_pcm)
+    try:
+        cmd = [
+            'flac', '-d', '-c',
+            '-F',
+            f'--skip={start_sample}',
+            f'--until={end_sample}',
+            '--silent',
+            filepath
+        ]
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
         
-    # ストリームから残りの生PCMブロックを順次読み込みますの
-    # 384kHz, 2ch, 32bit の 1秒分 = 3,072,000 bytes
-    bytes_per_sample = bitsPerSample // 8
-    frame_size = numChannels * bytes_per_sample
-    block_size = int(sampleRate * 2.0 * frame_size)  # 2秒分バッファ
-    
-    pcm_chunks = [initial_pcm]
-    
-    while True:
-        block = proc.stdout.read(block_size)
-        if not block:
-            break
-        md5_engine.update(block)
-        pcm_chunks.append(block)
+        # ヘッダ情報が完全に読めるまで最初の4096バイトをバッファリングしますわ
+        header_buffer = proc.stdout.read(4096)
+        wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size = parse_wav_header(header_buffer)
         
-    rc = proc.wait()
-    if rc != 0:
-        stderr_bytes = proc.stderr.read()
-        err_msg = stderr_bytes.decode('utf-8', errors='replace').strip() if stderr_bytes else ""
-        raise RuntimeError(f"長尺flacストリーミングデコードに失敗いたしましたわ: rc={rc}, stderr='{err_msg}', cmd={cmd}")
-    
-    # すべてのPCMバイトをマージ
-    all_pcm = b"".join(pcm_chunks)
-    final_md5 = md5_engine.hexdigest()
-    
-    # 一括で float32 変換と 44.1kHz リサンプリングを実行
-    # (ディスクキャッシュ退避方式のため、ダウンサンプリング処理自体のRAM蓄積は44.1kHzへ変換後に行われます)
-    chunk_float = pcm_bytes_to_float32(all_pcm, wFormatTag, bitsPerSample, numChannels)
-    if sampleRate != 44100:
-        audio_44100 = soxr.resample(chunk_float, sampleRate, 44100)
-    else:
-        audio_44100 = chunk_float
+        md5_engine = hashlib.md5()
         
-    return audio_44100, final_md5
+        # ヘッダバッファ内の余剰PCMデータを処理
+        initial_pcm = header_buffer[data_offset:]
+        if len(initial_pcm) > 0:
+            md5_engine.update(initial_pcm)
+            
+        # ストリームから残りの生PCMブロックを順次読み込みますの
+        # 384kHz, 2ch, 32bit の 1秒分 = 3,072,000 bytes
+        bytes_per_sample = bitsPerSample // 8
+        frame_size = numChannels * bytes_per_sample
+        block_size = int(sampleRate * 2.0 * frame_size)  # 2秒分バッファ
+        
+        pcm_chunks = [initial_pcm]
+        
+        while True:
+            block = proc.stdout.read(block_size)
+            if not block:
+                break
+            md5_engine.update(block)
+            pcm_chunks.append(block)
+            
+        rc = proc.wait()
+        if rc != 0:
+            stderr_bytes = proc.stderr.read()
+            err_msg = stderr_bytes.decode('utf-8', errors='replace').strip() if stderr_bytes else ""
+            raise RuntimeError(f"長尺flacストリーミングデコードに失敗いたしましたわ: rc={rc}, stderr='{err_msg}', cmd={cmd}")
+        
+        # すべてのPCMバイトをマージ
+        all_pcm = b"".join(pcm_chunks)
+        final_md5 = md5_engine.hexdigest()
+        
+        # 一括で float32 変換と 44.1kHz リサンプリングを実行
+        chunk_float = pcm_bytes_to_float32(all_pcm, wFormatTag, bitsPerSample, numChannels)
+        if sampleRate != 44100:
+            audio_44100 = soxr.resample(chunk_float, sampleRate, 44100)
+        else:
+            audio_44100 = chunk_float
+            
+        return audio_44100, final_md5
+
+    except Exception:
+        # flac CLI ストリーミングがシークエラー等で失敗した場合は soundfile で確実に読み込み
+        import soundfile as sf
+        with sf.SoundFile(filepath) as f:
+            total = len(f)
+            actual_start = max(0, min(start_sample, total))
+            actual_end = max(actual_start, min(end_sample, total))
+            f.seek(actual_start)
+            frames = actual_end - actual_start
+            chunk_float = f.read(frames=frames, dtype="float32", always_2d=True)
+            sr_read = f.samplerate
+
+        # ハッシュ計算用の byte 列
+        final_md5 = hashlib.md5(chunk_float.tobytes()).hexdigest()
+        if sr_read != 44100:
+            audio_44100 = soxr.resample(chunk_float, sr_read, 44100)
+        else:
+            audio_44100 = chunk_float
+        return audio_44100, final_md5

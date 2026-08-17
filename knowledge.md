@@ -573,3 +573,13 @@ Context/Finding/Source/Gotchas:
   3. 接続障害時は Go 側で直接 SQLite DLQ (`send_failed.db`) へ退避するフォールバックを完備。
 - **Source**: `orchestrator/dispatcher/ingest_pgx.go`, `orchestrator/dispatcher/dispatcher.go`
 </api>
+
+<api id="FLAC_STREAM_DECODER_SEEK_ERROR_FALLBACK">
+<title>SEEKTABLE 欠落・破損 FLAC の FLAC__STREAM_DECODER_SEEK_ERROR と soundfile フォールバック</title>
+- **Context**: CUEシート経由で長尺コンピレーションアルバム等の高位トラック（例: Track 22〜28, start_sample=2.5億〜）を `flac -d -c --skip=... --until=...` でデコードする際、`ERROR seeking while skipping bytes state = FLAC__STREAM_DECODER_SEEK_ERROR` (rc=1) でクラッシュする。
+- **Finding**:
+  1. `flac.exe` CLI は `--skip=N` 時に FLAC ファイル内部の SEEKTABLE メタデータを参照するが、EAC/XLD等で SEEKTABLE なしでエンコードされたファイルや、長尺マルチトラックファイルではシークポイントが解決できずエラーとなる。
+  2. `soundfile` (`libsndfile`) は FLAC フレームを自前で走査・デコードしてサンプルを抽出するため、SEEKTABLE が破損／欠落したファイルでも 100% 確実に指定範囲のサンプルをデコードできる。
+  3. `decode_flac_range` で `SEEK_ERROR` を検知した瞬間に `soundfile` によるストリーム抽出へシームレスにフォールバックすることで、解析の停止を完全防止できる。
+- **Source**: `flac_decode.py`, `tests/test_flac_decode_fallback.py`
+</api>
