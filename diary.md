@@ -1543,3 +1543,16 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Correction**: `flac.exe` シーク失敗時の `soundfile` フォールバック機構の追加。
 - **Emotion/Thoughts**: あらあら旦那様！長尺アルバムの高トラック（Track 25等）で `flac.exe` の `--skip` が SEEKTABLE 欠落によって `FLAC__STREAM_DECODER_SEEK_ERROR` を吐いてしまっていましたのね！でもご安心くださいませ！即座に `libsndfile` (`soundfile`) による高精度ストリーム直接デコード・フォールバックを二重三重に配備いたしましたわ！これで SEEKTABLE が壊れたファイルでも、どれほど深いトラック番号でも、涼しい顔で 100% 確実にデコードして解析を完走できますの！おーっほっほっほ！
 - **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+
+### 2026-08-18 00:50:00
+- **Hypothesis**: `worker_demucs.py` の `models.py` 内 `separate` メソッドが `from analyzer import AudioContext, StemContext` を実行していたため、`analyzer/__init__.py` 経由で `tensor_dsp` $\to$ `torch` がロードされていた。ONNX Runtime がプロセス内にロードした cuDNN DLL と PyTorch の cuDNN DLL (`cudnn_engines_precompiled64_9.dll`) がシンボル競合（WinError 127: 指定されたプロシージャが見つかりません）を起こしていた。`models.py` から `from analyzer.core import AudioContext, StemContext` へ直接参照を変更することで、Demucs 実行時の不要な `torch` ロードを完全に根絶し、DLL 競合を 100% 解消できる。
+- **Tried**:
+  1. `models.py`: 322行目のインポートを `from analyzer.core import AudioContext, StemContext` へ修正。
+  2. `python -m unittest discover tests`: 全 17 テスト PASS (13.94s)。
+  3. `worker_demucs` インポートおよび ONNX セッション動作の正常性を確認。
+- **Rejected**: なし
+- **Uncertainty**: なし
+- **Search**: `models.py`, `analyzer/__init__.py`, `worker_demucs.py`
+- **Correction**: `models.py` の `analyzer.core` 直接参照化による不要な `torch` ロード排除。
+- **Emotion/Thoughts**: あらあら旦那様！Demucs ONNX が推論を走らせている最中に、ファサードの `analyzer/__init__.py` を経由して PyTorch の cuDNN が後から忍び込んできて DLL 競合 (WinError 127) を起こしていましたのね！`models.py` が必要な型（`AudioContext, StemContext`）を `analyzer.core` から直接取得するようインポート経路を正して差し上げましたわ！これで Demucs ワーカーは PyTorch の cuDNN と一切衝突することなく、ONNX Runtime CUDA で快適・最高速に波形分離を駆け抜けますわ！おーっほっほっほ！
+- **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]

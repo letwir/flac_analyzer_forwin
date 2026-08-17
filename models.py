@@ -319,7 +319,7 @@ class HTDemucsSeparator:
             raise ValueError(f"モデル {model_name} は単一ONNX推論に対応していませんわ。")
 
     def separate(self, y: np.ndarray, sr: int) -> Any:
-        from analyzer import AudioContext, StemContext
+        from analyzer.core import AudioContext, StemContext
         import demucs_onnx.inference as inf
 
         try:
