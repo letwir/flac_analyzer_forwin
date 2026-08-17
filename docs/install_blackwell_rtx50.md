@@ -55,7 +55,7 @@ pip install -r requirements-blackwell.txt
 pip uninstall -y onnxruntime onnxruntime-directml onnxruntime-gpu
 
 # 2. Blackwell 対応 PyTorch (CUDA 13.2) のインストール
-pip install torch torchaudio torchvision --extra-index-url https://download.pytorch.org/whl/nightly/cu132
+pip install torch torchaudio --extra-index-url https://download.pytorch.org/whl/nightly/cu132
 
 # 3. ONNX Runtime GPU のインストール
 pip install onnxruntime-gpu
