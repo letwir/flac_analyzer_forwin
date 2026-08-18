@@ -43,6 +43,7 @@
 
 ### 4. コード品質・テスト整備 (`goal:quality`)
 - [x]DONE [#12 [Quality] pytest カバレッジ計測とレポート出力設定](https://github.com/letwir/flac_analyzer_forwin/issues/12)
+- [x]DONE [#22 [Quality] ADV-A1: Ping() における json.Marshal エラーハンドリング (¬SilentSwallow 準拠)](https://github.com/letwir/flac_analyzer_forwin/issues/22)
 - [x]CLOSED [#11 [CI] test_integration.py および単体テストを GitHub Actions に組み込む (対象外のためクローズ)](https://github.com/letwir/flac_analyzer_forwin/issues/11)
 
 ### 5. ドキュメント整備 (`goal:docs`)
