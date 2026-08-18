@@ -227,6 +227,30 @@
   - `go test ./... -v` (in `orchestrator`): 20/20 PASS (100%)
   - `.\.venv\Scripts\python.exe -m pytest tests/ -v`: 28/28 PASS (100%)
   - `proof-checker.exe`: Verdict: PASS (0 Errors)
-  - Verifier Subagent Review: **Verdict: PASS**
+# Walkthrough: CUE範囲外デコードエラー & WorkerDaemonPool Thundering Herd 修正
 
-
+- **Summary**: 1) マルチディスクCUEシート配下の範囲外トラックによる `FLAC__STREAM_DECODER_SEEK_ERROR` / `LibsndfileError` の根絶、2) `WorkerDaemonPool` のスロット事前予約（`spawningCount`）、起動時 `Prewarm`、および Step 5 での Acquire/Extract タイムアウト完全分離による Thundering Herd（多重起動競合）と `context deadline exceeded` タイムアウトの根絶。
+- **Changes**:
+  - `flac_decode.py`:
+    - `parse_cue_text_to_slices` および `build_flac_handle` に `start >= total_samples` および `clamped_end <= start` の境界ガードを追加し、警告ログを出力して範囲外トラックを安全にスキップ。
+    - `decode_flac_range` に `start >= end` の早期引数検証を追加。
+    - `decode_flac_range_fallback` に `frames <= 0` / `actual_start >= total` のガードを追加。
+  - `tests/test_flac_decode.py`:
+    - `test_parse_cue_text_out_of_bounds_filtering` および `test_decode_flac_range_invalid_bounds` を新設。
+  - `orchestrator/dispatcher/daemon_pool.go`:
+    - `spawningCount int` によるスロット事前予約を導入し、同時多重起動を `maxDaemons` 以内に完全に抑止。
+    - `spawningCount--` を RAII `defer` ブロック内で実行し、コンテキストキャンセル時にも確実にデクリメントされることを保証（ADV-1 準拠）。
+    - `Prewarm(ctx context.Context, count int)` を実装。
+  - `orchestrator/dispatcher/dispatcher.go`:
+    - `daemonCap` を最大 8 基まで動的に拡大可能に改善。
+    - `Dispatcher.Start()` 時にバックグラウンドで `daemonPool.Prewarm(2)` を実行。
+    - Step 5 において、Acquire 用タイムアウト（120s）と Extract 用タイムアウト（90s）を完全に分離。
+  - `orchestrator/dispatcher/daemon_test.go`:
+    - `TestDaemonPoolThunderingHerd`（8 goroutine 同時 Acquire 並行ストレステスト）を新設。
+- **Verification**:
+  - `pytest tests/test_flac_decode.py`: 5/5 PASSED (3.33s)
+  - `go test -v -timeout 180s ./dispatcher/...`: ALL PASSED (58.089s)
+  - `TestDaemonPoolThunderingHerd`: PASS (13.11s, `totalSpawned <= 2 ∧ spawningCount == 0`)
+  - `proof-checker.exe`: Verdict: PASS (0 Errors, 0 Warnings)
+  - `go build -o orchestrator.exe .`: SUCCESS (Exit 0)
+  - Verifier Gate (Claude Sonnet 4.6): **Verdict: PASS**

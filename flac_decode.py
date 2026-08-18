@@ -90,10 +90,19 @@ def build_flac_handle(filepath: str) -> FlacHandle:
         for i, t in enumerate(raw_tracks):
             start = t["start"]
             end = raw_tracks[i+1]["start"] if i+1 < len(raw_tracks) else total_samples
+            if start >= total_samples:
+                import logging
+                logging.getLogger("flac_decode").warning(
+                    f"CUEブロックトラック {t['track']} の開始サンプル ({start}) がファイル総サンプル数 ({total_samples}) を超過しているため除外いたしますわ"
+                )
+                continue
+            clamped_end = int(min(end, total_samples))
+            if clamped_end <= start:
+                continue
             slices.append(TrackSlice(
                 track_number=t["track"],
                 start_sample=start,
-                end_sample=int(min(end, total_samples)),
+                end_sample=clamped_end,
                 title=f"Track {t['track']}",
                 artist=raw_tags.get("artist", "Unknown")
             ))
@@ -216,10 +225,19 @@ def parse_cue_text_to_slices(cue_text: str, total_samples: int, sr: int) -> tupl
     for i, t in enumerate(tracks):
         start = t["start"]
         end = tracks[i+1]["start"] if i+1 < len(tracks) else total_samples
+        if start >= total_samples:
+            import logging
+            logging.getLogger("flac_decode").warning(
+                f"CUEトラック {t['track']} ({t['title']}) の開始サンプル ({start}) がファイル総サンプル数 ({total_samples}) を超過しているためスキップいたしますわ"
+            )
+            continue
+        clamped_end = int(min(end, total_samples))
+        if clamped_end <= start:
+            continue
         slices.append(TrackSlice(
             track_number=t["track"],
             start_sample=start,
-            end_sample=int(min(end, total_samples)),
+            end_sample=clamped_end,
             title=t["title"],
             artist=t["artist"]
         ))
@@ -282,8 +300,11 @@ def decode_flac_range_fallback(
     with sf.SoundFile(filepath) as f:
         total = len(f)
         actual_start = max(0, min(start_sample, total))
-        actual_end = max(actual_start, min(end_sample, total))
+        actual_end = max(actual_start, min(end_sample if end_sample > 0 else total, total))
         frames = actual_end - actual_start
+
+        if frames <= 0 or actual_start >= total:
+            raise ValueError(f"デコード対象フレーム数が不正ですわ (frames={frames}, actual_start={actual_start}, total={total})")
 
         f.seek(actual_start)
         subtype = getattr(f, "subtype", "")
@@ -313,6 +334,9 @@ def decode_flac_range(
     max_retries: int = 3
 ) -> tuple[bytes, int, int, int, int]:
     """指定されたサンプル範囲のみを flac CLI でデコードし、生PCMデータとフォーマット情報を返しますの"""
+    if start_sample < 0 or (end_sample > 0 and start_sample >= end_sample):
+        raise ValueError(f"無効なサンプル範囲指定でございますわ: start_sample={start_sample}, end_sample={end_sample}")
+
     # -F (--decode-through-errors): ストリーム境界の軽微な不整合を許容して完走
     # --silent: 進行状況のみ非表示にし、重大なstderrメッセージは温存
     cmd = [

@@ -2,8 +2,10 @@ package dispatcher
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -73,3 +75,60 @@ func TestDaemonPoolAcquireRelease(t *testing.T) {
 	}
 	pool.Release(daemon2)
 }
+
+func TestDaemonPoolThunderingHerd(t *testing.T) {
+	parentDir := findProjectRoot()
+	pythonPath := "python.exe"
+	venvPython := filepath.Join(parentDir, ".venv", "Scripts", "python.exe")
+	if _, err := os.Stat(venvPython); err == nil {
+		pythonPath = venvPython
+	}
+
+	// Max 2 daemons in pool
+	pool := NewWorkerDaemonPool(2, pythonPath, parentDir, nil, func(format string, v ...interface{}) {
+		t.Logf(format, v...)
+	})
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	const numCallers = 8
+	var wg sync.WaitGroup
+	errCh := make(chan error, numCallers)
+
+	for i := 0; i < numCallers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			daemon, err := pool.Acquire(ctx)
+			if err != nil {
+				errCh <- fmt.Errorf("worker %d acquire failed: %w", workerID, err)
+				return
+			}
+			// Simulate small work
+			time.Sleep(50 * time.Millisecond)
+			pool.Release(daemon)
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("Thundering herd caller error: %v", err)
+	}
+
+	pool.mu.Lock()
+	totalSpawned := len(pool.allDaemons)
+	spawning := pool.spawningCount
+	pool.mu.Unlock()
+
+	if totalSpawned > 2 {
+		t.Errorf("Thundering herd violation: spawned %d daemons (max was 2)", totalSpawned)
+	}
+	if spawning != 0 {
+		t.Errorf("Leaked spawning count: %d", spawning)
+	}
+}
+

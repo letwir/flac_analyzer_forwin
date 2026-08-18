@@ -181,11 +181,11 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		envVars = append(envVars, fmt.Sprintf("%s=%s", strings.ToUpper(k), v))
 	}
 	daemonCap := cfg.NumWorkers
-	if daemonCap > 4 {
-		daemonCap = 4
-	}
 	if daemonCap <= 0 {
 		daemonCap = 2
+	}
+	if daemonCap > 8 {
+		daemonCap = 8
 	}
 	daemonPool := NewWorkerDaemonPool(daemonCap, pythonPath, parentDir, envVars, func(format string, v ...interface{}) {
 		log.Printf(format, v...)
@@ -345,6 +345,13 @@ func (d *Dispatcher) LogError(format string, v ...interface{}) {
 func (d *Dispatcher) Start() {
 	if d.statsTracker != nil {
 		d.statsTracker.StartSystemResourceCollector(context.Background(), d.config.QueueDir, 5*time.Second)
+	}
+	if d.daemonPool != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			_ = d.daemonPool.Prewarm(ctx, 2)
+		}()
 	}
 	for i := 1; i <= d.config.NumWorkers; i++ {
 		d.wg.Add(1)
@@ -1081,10 +1088,10 @@ func (d *Dispatcher) worker(id int) {
 
 			// 5. Feature Extraction via WorkerDaemonPool (Librosa, Tensor, Essentia in single in-memory call)
 			daemonStageStart := time.Now()
-			ctxExtract, cancelExtract := context.WithTimeout(context.Background(), 90*time.Second)
-			defer cancelExtract()
+			ctxAcquire, cancelAcquire := context.WithTimeout(context.Background(), 120*time.Second)
+			daemonClient, daemonErr := d.daemonPool.Acquire(ctxAcquire)
+			cancelAcquire()
 
-			daemonClient, daemonErr := d.daemonPool.Acquire(ctxExtract)
 			if daemonErr != nil {
 				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, fmt.Sprintf("Failed to acquire worker daemon: %v", daemonErr))
@@ -1096,7 +1103,9 @@ func (d *Dispatcher) worker(id int) {
 				TrackHash: trackHash,
 				Stems:     demucsMeta.Stems,
 			}
+			ctxExtract, cancelExtract := context.WithTimeout(context.Background(), 90*time.Second)
 			daemonResp, daemonExtractErr := daemonClient.ExtractAll(ctxExtract, extractPayload)
+			cancelExtract()
 			d.daemonPool.Release(daemonClient)
 
 			if daemonExtractErr != nil {

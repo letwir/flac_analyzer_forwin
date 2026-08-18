@@ -9,16 +9,17 @@ import (
 
 // WorkerDaemonPool manages a thread-safe connection pool of persistent worker_daemon.py clients.
 type WorkerDaemonPool struct {
-	maxDaemons int
-	pythonPath string
-	parentDir  string
-	env        []string
-	logger     func(format string, v ...interface{})
-	daemons    chan *WorkerDaemonClient
-	allDaemons []*WorkerDaemonClient
-	mu         sync.Mutex
-	closed     bool
-	nextID     int
+	maxDaemons    int
+	spawningCount int
+	pythonPath    string
+	parentDir     string
+	env           []string
+	logger        func(format string, v ...interface{})
+	daemons       chan *WorkerDaemonClient
+	allDaemons    []*WorkerDaemonClient
+	mu            sync.Mutex
+	closed        bool
+	nextID        int
 }
 
 // NewWorkerDaemonPool creates a new pool with the specified maximum capacity.
@@ -33,78 +34,133 @@ func NewWorkerDaemonPool(
 		maxDaemons = 2
 	}
 	return &WorkerDaemonPool{
-		maxDaemons: maxDaemons,
-		pythonPath: pythonPath,
-		parentDir:  parentDir,
-		env:        env,
-		logger:     logger,
-		daemons:    make(chan *WorkerDaemonClient, maxDaemons),
-		allDaemons: make([]*WorkerDaemonClient, 0, maxDaemons),
-		nextID:     1,
+		maxDaemons:    maxDaemons,
+		spawningCount: 0,
+		pythonPath:    pythonPath,
+		parentDir:     parentDir,
+		env:           env,
+		logger:        logger,
+		daemons:       make(chan *WorkerDaemonClient, maxDaemons),
+		allDaemons:    make([]*WorkerDaemonClient, 0, maxDaemons),
+		nextID:        1,
 	}
+}
+
+// Prewarm warms up count daemons at startup.
+func (p *WorkerDaemonPool) Prewarm(ctx context.Context, count int) error {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return fmt.Errorf("worker daemon pool is closed")
+	}
+	target := count
+	if target > p.maxDaemons {
+		target = p.maxDaemons
+	}
+	p.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for i := 0; i < target; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			client, err := p.spawnSlot(ctx)
+			if err != nil {
+				if p.logger != nil {
+					p.logger("[DaemonPool] Prewarm spawn note: %v", err)
+				}
+				return
+			}
+			p.Release(client)
+		}()
+	}
+	wg.Wait()
+	return nil
 }
 
 // Acquire retrieves a healthy daemon from the pool, spawning a new one if necessary.
 func (p *WorkerDaemonPool) Acquire(ctx context.Context) (*WorkerDaemonClient, error) {
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
-		return nil, fmt.Errorf("worker daemon pool is closed")
-	}
-
-	// Case 1: An idle daemon is available in the channel
-	select {
-	case client := <-p.daemons:
-		p.mu.Unlock()
-		if client.IsHealthy() {
-			return client, nil
+	for {
+		p.mu.Lock()
+		if p.closed {
+			p.mu.Unlock()
+			return nil, fmt.Errorf("worker daemon pool is closed")
 		}
-		// Retired/dead daemon: recycle it
-		_ = client.Close()
-		p.removeDaemon(client)
-		return p.spawnNew(ctx)
-	default:
-	}
 
-	// Case 2: Pool capacity is not reached yet
-	if len(p.allDaemons) < p.maxDaemons {
+		// Case 1: An idle daemon is available in the channel
+		select {
+		case client := <-p.daemons:
+			p.mu.Unlock()
+			if client.IsHealthy() {
+				return client, nil
+			}
+			// Retired/dead daemon: recycle it
+			_ = client.Close()
+			p.removeDaemon(client)
+			continue
+		default:
+		}
+
+		// Case 2: Pool capacity is not reached yet (including currently spawning daemons)
+		if len(p.allDaemons)+p.spawningCount < p.maxDaemons {
+			// Reserve slot under lock to prevent thundering herd
+			p.spawningCount++
+			id := p.nextID
+			p.nextID++
+			p.mu.Unlock()
+
+			return p.doSpawn(ctx, id)
+		}
 		p.mu.Unlock()
-		return p.spawnNew(ctx)
-	}
-	p.mu.Unlock()
 
-	// Case 3: Pool is full, wait for an idle daemon or context cancellation
-	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("timeout waiting for idle worker daemon: %w", ctx.Err())
-	case client, ok := <-p.daemons:
-		if !ok {
-			return nil, fmt.Errorf("worker daemon pool channel closed")
+		// Case 3: Pool is full or slots are reserved, wait for an idle daemon or context cancellation
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timeout waiting for idle worker daemon: %w", ctx.Err())
+		case client, ok := <-p.daemons:
+			if !ok {
+				return nil, fmt.Errorf("worker daemon pool channel closed")
+			}
+			if client.IsHealthy() {
+				return client, nil
+			}
+			_ = client.Close()
+			p.removeDaemon(client)
+			continue
 		}
-		if client.IsHealthy() {
-			return client, nil
-		}
-		_ = client.Close()
-		p.removeDaemon(client)
-		return p.spawnNew(ctx)
 	}
 }
 
-func (p *WorkerDaemonPool) spawnNew(ctx context.Context) (*WorkerDaemonClient, error) {
+func (p *WorkerDaemonPool) spawnSlot(ctx context.Context) (*WorkerDaemonClient, error) {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
 		return nil, fmt.Errorf("worker daemon pool is closed")
 	}
+	if len(p.allDaemons)+p.spawningCount >= p.maxDaemons {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("pool capacity reached")
+	}
+	p.spawningCount++
 	id := p.nextID
 	p.nextID++
 	p.mu.Unlock()
+
+	return p.doSpawn(ctx, id)
+}
+
+func (p *WorkerDaemonPool) doSpawn(ctx context.Context, id int) (*WorkerDaemonClient, error) {
+	// ADV-1: spawningCount decrement MUST be in a defer block for strict RAII
+	defer func() {
+		p.mu.Lock()
+		p.spawningCount--
+		p.mu.Unlock()
+	}()
 
 	if p.logger != nil {
 		p.logger("[DaemonPool] Spawning new WorkerDaemon-%d...", id)
 	}
 
-	// Spawn with context-based cancellation
 	type spawnResult struct {
 		client *WorkerDaemonClient
 		err    error
@@ -124,6 +180,11 @@ func (p *WorkerDaemonPool) spawnNew(ctx context.Context) (*WorkerDaemonClient, e
 			return nil, res.err
 		}
 		p.mu.Lock()
+		if p.closed {
+			p.mu.Unlock()
+			_ = res.client.Close()
+			return nil, fmt.Errorf("pool closed during spawn")
+		}
 		p.allDaemons = append(p.allDaemons, res.client)
 		p.mu.Unlock()
 		return res.client, nil

@@ -97,5 +97,14 @@
   - Python ワーカー群: `time.perf_counter()` によるサブステップ時間計測と JSON `profile` 出力対応。
   - `zig/dashboard.py`: TUI 上での「ステージ別所要時間」および「リソース競合＆待機時間」のリアルタイム可視化テーブル新設。
 - **Status**: Completed
+# Implementation Plan: CUE範囲外デコードエラー & WorkerDaemonPool Thundering Herd 修正
 
-
+- **Goal**: 1) マルチディスクCUEシート配下の範囲外トラックによる `FLAC__STREAM_DECODER_SEEK_ERROR` / `LibsndfileError` の根絶、2) `WorkerDaemonPool` のスロット事前予約（`spawningCount`）、起動時 `Prewarm`、および Step 5 での Acquire/Extract タイムアウト完全分離による Thundering Herd（多重起動競合）と `context deadline exceeded` タイムアウトの根絶。
+- **Target**: `flac_decode.py`, `tests/test_flac_decode.py`, `orchestrator/dispatcher/daemon_pool.go`, `orchestrator/dispatcher/dispatcher.go`, `orchestrator/dispatcher/daemon_test.go`.
+- **Feature**:
+  - `flac_decode.py`: `parse_cue_text_to_slices` および `build_flac_handle` に `start >= total_samples` および `clamped_end <= start` の境界ガードを追加。`decode_flac_range` に `start >= end` の早期引数検証、`decode_flac_range_fallback` に `frames <= 0` / `actual_start >= total` のガードを追加。
+  - `tests/test_flac_decode.py`: 範囲外トラック除外テストおよび逆転範囲引数検証テストを新設。
+  - `orchestrator/dispatcher/daemon_pool.go`: `spawningCount int` によるスロット事前予約、RAII `defer` デクリメント（ADV-1 準拠）、および `Prewarm` メソッドを実装。
+  - `orchestrator/dispatcher/dispatcher.go`: `daemonCap` の動的拡大、`Start()` 時の非同期 `Prewarm(2)`、および Step 5 における `ctxAcquire` (120s) と `ctxExtract` (90s) の完全分離。
+  - `orchestrator/dispatcher/daemon_test.go`: `TestDaemonPoolThunderingHerd`（8 goroutine 同時 Acquire 並行ストレステスト）を新設。
+- **Status**: Completed
