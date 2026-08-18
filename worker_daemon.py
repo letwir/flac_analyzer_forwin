@@ -45,6 +45,10 @@ def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: A
 
     import torch
 
+    librosa_total_sec = 0.0
+    tensor_total_sec = 0.0
+    essentia_total_sec = 0.0
+
     # 1. 各ステムの処理 (Advisory 2: try...finally shm.close() を徹底)
     for stem_name, info in stems_info.items():
         tag_name = info["shm_tag"]
@@ -55,16 +59,10 @@ def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: A
 
         shm, y_np = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name, file_size=file_size)
         try:
-            # A. Librosa 特徴量抽出
             ctx = AudioContext(y=y_np, sr=sr, source=stem_name, spectro_path=spectro_path)
             try:
-                config = STEM_CONFIGS.get(stem_name, STEM_CONFIGS["other"])
-                for prop in config["warmup"]:
-                    try:
-                        _ = getattr(ctx, prop)
-                    except Exception:
-                        pass
-
+                # A. Librosa 特徴量抽出 (オンデマンド評価により 49s の無駄な CPU Warmup を完全排除)
+                t_lib_start = time.perf_counter()
                 raw_features = librosa_extractor.run(ctx)
                 if hasattr(raw_features, "to_postgres_dict"):
                     extracted_librosa[stem_name] = raw_features.to_postgres_dict(track_id=track_hash)
@@ -74,26 +72,29 @@ def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: A
                         extracted_librosa[stem_name] = dataclasses.asdict(raw_features)
                     else:
                         extracted_librosa[stem_name] = str(raw_features)
+                librosa_total_sec += time.perf_counter() - t_lib_start
+
+                # B. PyTorch Tensor 特徴量抽出 (GPU cuFFT Wiener-Khinchin HNR/NAP & Bulk STFT)
+                t_ten_start = time.perf_counter()
+                with torch.no_grad():
+                    y_tensor = torch.from_numpy(y_np)
+                    stem_feats = extract_tensor_features(y_tensor, sr, device, spectro_path=spectro_path)
+                    extracted_tensor[stem_name] = stem_feats
+                tensor_total_sec += time.perf_counter() - t_ten_start
+
+                # C. Essentia 特徴量抽出 (mix ステムのみ)
+                if stem_name == "mix" and essentia_models:
+                    t_ess_start = time.perf_counter()
+                    patches = extract_mel_patches(y_np, sr, n_patches=64)
+                    extracted_essentia = run_essentia_serialized(patches, essentia_models)
+                    essentia_total_sec += time.perf_counter() - t_ess_start
             finally:
+                # ADV-03: Tensor / Essentia 処理完了後に AudioContext を安全にクリア (use-after-free 防止)
                 ctx.clear()
-
-            # B. PyTorch Tensor 特徴量抽出
-            with torch.no_grad():
-                y_tensor = torch.from_numpy(y_np)
-                stem_feats = extract_tensor_features(y_tensor, sr, device, spectro_path=spectro_path)
-                extracted_tensor[stem_name] = stem_feats
-
-            # C. Essentia 特徴量抽出 (mix ステムのみ)
-            if stem_name == "mix" and essentia_models:
-                patches = extract_mel_patches(y_np, sr, n_patches=64)
-                extracted_essentia = run_essentia_serialized(patches, essentia_models)
 
         finally:
             # Advisory 2: Windows 共有メモリハンドルをタスク毎に確実に解放 (1450防止)
             shm.close()
-
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
 
     total_sec = time.perf_counter() - t_start
 
@@ -118,7 +119,10 @@ def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: A
         "tensor": final_tensor,
         "essentia": extracted_essentia,
         "profile": {
-            "extract_total_sec": total_sec
+            "extract_total_sec": total_sec,
+            "librosa_sec": librosa_total_sec,
+            "tensor_sec": tensor_total_sec,
+            "essentia_sec": essentia_total_sec,
         }
     }
 
@@ -188,10 +192,12 @@ def main():
         sys.stdout.write(json.dumps(resp) + "\n")
         sys.stdout.flush()
 
-        # メモリ健全性のための定期 GC
+        # メモリ健全性のための定期 GC & VRAM キャッシュ解放 (ADV-02: 副作用をメインループ層へ集約)
         if task_count > 0 and task_count % 10 == 0:
             import gc
             gc.collect()
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
 
         # Graceful Recycling の通知
         if task_count >= max_tasks_before_recycle:

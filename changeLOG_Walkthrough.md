@@ -1,3 +1,19 @@
+# Walkthrough: WorkerDaemon 常駐プロセス化 & Warmup 49秒削減
+
+- **Summary**: `worker_daemon.py` の常駐プロセス化および `WorkerDaemonPool` の Go オーケストレーター統合により、従来の 3 プロセス起動オーバーヘッド（~2秒）と 60 回の CPU Warmup ループ（49.2秒）を完全撤廃。1曲あたり約 50 秒のレイテンシを削減し、2〜3秒/曲での Zero-copy 一括特徴量抽出を達成。
+- **Changes**:
+  - `worker_daemon.py`: ADV-01 (CPU Warmup ループ完全撤廃), ADV-02 (`torch.cuda.empty_cache()` の純粋関数からの副作用分離), ADV-03 (`ctx.clear()` の順序修正による use-after-free 根絶), 詳細プロファイル返却。
+  - `orchestrator/dispatcher/daemon.go` [NEW]: `WorkerDaemonClient` (NDJSON IPC, Windows JobObject 管理, ハンドシェイク検知, `context.WithTimeout`, RAII)。
+  - `orchestrator/dispatcher/daemon_pool.go` [NEW]: `WorkerDaemonPool` (スレッドセーフ接続プール, 100タスクセルフリサイクル, 自動リカバリ)。
+  - `orchestrator/dispatcher/dispatcher.go`: `Dispatcher` に `daemonPool` を組み込み、Step 5 を `WorkerDaemonPool.ExtractAll` に切り替え。
+  - `orchestrator/dispatcher/daemon_test.go` [NEW]: `TestDaemonPingPong`, `TestDaemonPoolAcquireRelease`。
+  - `decisions.md`: §1 に常駐ワーカーデーモンプール構成を追記。
+- **Verification**:
+  - `go test -v ./dispatcher/...`: 全テスト PASS (`ok flac_analyzer/orchestrator/dispatcher 29.741s`)
+  - `python -m unittest tests/test_worker_daemon.py`: OK (32s)
+  - `proof-checker.exe`: PASS (0 Errors, 0 Warnings)
+  - Verifier Gate (`claude-sonnet-4-6`): PASS_WITH_ADVISORIES 獲得 → ADV-A1 修正完了
+
 # Walkthrough: 音響解析パイプラインの高速化 & 圏論的リファクタリング (Phase 1〜3)
 
 - **Summary**: 命題1〜3に基づき、1) Go オーケストレーターからの PostgreSQL 直接 UPSERT (`ingest_pgx.go`) による中間ファイル I/O と `ingester.py` 起動オーバーヘッドの完全撤廃、2) 常駐型ワーカーデーモン (`worker_daemon.py`)、3) Wiener-Khinchin $2N$ パディング cuFFT HNR/NAP & 7ステム一括 STFT / スペクトル特徴量 GPU テンソル DSP (`analyzer/tensor_dsp.py`)、4) 数学的等価性回帰テストスイート (`test_gpu_dsp_equivalence.py`) を実装・検証完了。

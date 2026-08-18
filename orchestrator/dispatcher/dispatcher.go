@@ -129,6 +129,7 @@ type Dispatcher struct {
 	inFlightMutex          sync.Mutex
 	arenaPool              *ShmArenaPool
 	statsTracker           *StatsTracker
+	daemonPool             *WorkerDaemonPool
 }
 
 const (
@@ -164,6 +165,32 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		}
 	}
 
+	parentDir := findProjectRoot()
+	pythonPath := "python.exe"
+	venvPython := filepath.Join(parentDir, ".venv", "Scripts", "python.exe")
+	if _, err := os.Stat(venvPython); err == nil {
+		pythonPath = venvPython
+	} else {
+		venvPythonUnix := filepath.Join(parentDir, ".venv", "bin", "python")
+		if _, err := os.Stat(venvPythonUnix); err == nil {
+			pythonPath = venvPythonUnix
+		}
+	}
+	var envVars []string
+	for k, v := range cfg.PythonEnv {
+		envVars = append(envVars, fmt.Sprintf("%s=%s", strings.ToUpper(k), v))
+	}
+	daemonCap := cfg.NumWorkers
+	if daemonCap > 4 {
+		daemonCap = 4
+	}
+	if daemonCap <= 0 {
+		daemonCap = 2
+	}
+	daemonPool := NewWorkerDaemonPool(daemonCap, pythonPath, parentDir, envVars, func(format string, v ...interface{}) {
+		log.Printf(format, v...)
+	})
+
 	return &Dispatcher{
 		config:                 cfg,
 		db:                     db,
@@ -177,6 +204,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		activeInFlightRamBytes: 0,
 		arenaPool:              NewShmArenaPool(cfg.EnableVirtualLock),
 		statsTracker:           NewStatsTracker(),
+		daemonPool:             daemonPool,
 	}
 }
 
@@ -348,6 +376,9 @@ func (d *Dispatcher) GetStatsTracker() *StatsTracker {
 func (d *Dispatcher) Stop() {
 	close(d.taskQueue)
 	d.wg.Wait()
+	if d.daemonPool != nil {
+		_ = d.daemonPool.Close()
+	}
 	if d.arenaPool != nil {
 		d.arenaPool.Close()
 	}
@@ -1015,9 +1046,11 @@ func (d *Dispatcher) worker(id int) {
 			}
 
 			var demucsMeta struct {
-				Status    string             `json:"status"`
-				AudioHash string             `json:"audio_hash"`
-				Profile   map[string]float64 `json:"profile"`
+				Status    string              `json:"status"`
+				SR        int                 `json:"sr"`
+				AudioHash string              `json:"audio_hash"`
+				Stems     map[string]StemInfo `json:"stems"`
+				Profile   map[string]float64  `json:"profile"`
 			}
 			if err := json.Unmarshal([]byte(demucsOut), &demucsMeta); err != nil || demucsMeta.Status != "success" || demucsMeta.AudioHash == "" {
 				_ = arenaSet.UnfreezeAll()
@@ -1025,6 +1058,9 @@ func (d *Dispatcher) worker(id int) {
 				return
 			}
 			trackHash = demucsMeta.AudioHash
+			if demucsMeta.SR == 0 {
+				demucsMeta.SR = 44100
+			}
 			if d.statsTracker != nil && demucsMeta.Profile != nil {
 				for step, dur := range demucsMeta.Profile {
 					d.statsTracker.RecordPythonStepDuration("demucs", step, dur)
@@ -1043,96 +1079,71 @@ func (d *Dispatcher) worker(id int) {
 				return
 			}
 
-			// 5. Parallel Feature Extraction (Librosa, Tensor, Essentia)
-			var wg sync.WaitGroup
-			var workerErr error
-			var errOnce sync.Once
+			// 5. Feature Extraction via WorkerDaemonPool (Librosa, Tensor, Essentia in single in-memory call)
+			daemonStageStart := time.Now()
+			ctxExtract, cancelExtract := context.WithTimeout(context.Background(), 90*time.Second)
+			defer cancelExtract()
 
-			setWorkerErr := func(e error) {
-				errOnce.Do(func() {
-					workerErr = e
-				})
-			}
-
-			var libOut, tensorOut, essOut string
-
-			wg.Add(3)
-			go func() {
-				defer wg.Done()
-				libStart := time.Now()
-				out, err := d.runPythonScript("worker_librosa.py", []string{
-					"--shm-metadata", demucsOut,
-					"--track-hash", trackHash,
-				}, id, "Librosa", ColorBlue, true)
-				if d.statsTracker != nil {
-					d.statsTracker.RecordStageDuration("librosa", time.Since(libStart))
-					parseAndRecordPythonProfile(d.statsTracker, "librosa", out)
-				}
-				if err != nil {
-					setWorkerErr(fmt.Errorf("Librosa failed: %w", err))
-					return
-				}
-				libOut = out
-			}()
-
-			go func() {
-				defer wg.Done()
-
-				// Tensor (ONNX/PyTorch) Exclusive Execution Lock to prevent VRAM spikes across parallel workers
-				tensorWaitStart := time.Now()
-				metrics.AnalyzerTensorQueueWaiters.Inc()
-				d.tensorSemaphore <- struct{}{}
-				metrics.AnalyzerTensorQueueWaiters.Dec()
-				if d.statsTracker != nil {
-					d.statsTracker.RecordTensorWait(time.Since(tensorWaitStart))
-				}
-				defer func() {
-					time.Sleep(150 * time.Millisecond) // VRAM GC cleanup margin
-					<-d.tensorSemaphore
-				}()
-
-				tensorStart := time.Now()
-				out, err := d.runPythonScript("worker_tensor.py", []string{
-					"--shm-metadata", demucsOut,
-					"--track-hash", trackHash,
-				}, id, "Tensor", ColorPurple, true)
-				if d.statsTracker != nil {
-					d.statsTracker.RecordStageDuration("tensor", time.Since(tensorStart))
-					parseAndRecordPythonProfile(d.statsTracker, "tensor", out)
-				}
-				if err != nil {
-					setWorkerErr(fmt.Errorf("Tensor failed: %w", err))
-					return
-				}
-				tensorOut = out
-			}()
-
-			go func() {
-				defer wg.Done()
-				essStart := time.Now()
-				out, err := d.runPythonScript("worker_essentia.py", []string{
-					"--shm-metadata", demucsOut,
-					"--track-hash", trackHash,
-				}, id, "Essentia", ColorBlue, true)
-				if d.statsTracker != nil {
-					d.statsTracker.RecordStageDuration("essentia", time.Since(essStart))
-					parseAndRecordPythonProfile(d.statsTracker, "essentia", out)
-				}
-				if err != nil {
-					setWorkerErr(fmt.Errorf("Essentia failed: %w", err))
-					return
-				}
-				essOut = out
-			}()
-
-			wg.Wait()
-
-			if workerErr != nil {
+			daemonClient, daemonErr := d.daemonPool.Acquire(ctxExtract)
+			if daemonErr != nil {
 				_ = arenaSet.UnfreezeAll()
-				d.failTask(task, workerErr.Error())
+				d.failTask(task, fmt.Sprintf("Failed to acquire worker daemon: %v", daemonErr))
 				return
 			}
-			
+
+			extractPayload := ExtractAllPayload{
+				SR:        demucsMeta.SR,
+				TrackHash: trackHash,
+				Stems:     demucsMeta.Stems,
+			}
+			daemonResp, daemonExtractErr := daemonClient.ExtractAll(ctxExtract, extractPayload)
+			d.daemonPool.Release(daemonClient)
+
+			if daemonExtractErr != nil {
+				_ = arenaSet.UnfreezeAll()
+				d.failTask(task, fmt.Sprintf("Worker daemon extraction failed: %v", daemonExtractErr))
+				return
+			}
+
+			daemonStageDuration := time.Since(daemonStageStart)
+			if d.statsTracker != nil {
+				d.statsTracker.RecordStageDuration("daemon_extract", daemonStageDuration)
+				if daemonResp.Profile != nil {
+					if libSec, ok := daemonResp.Profile["librosa_sec"]; ok {
+						d.statsTracker.RecordStageDuration("librosa", time.Duration(libSec*float64(time.Second)))
+					}
+					if tenSec, ok := daemonResp.Profile["tensor_sec"]; ok {
+						d.statsTracker.RecordStageDuration("tensor", time.Duration(tenSec*float64(time.Second)))
+					}
+					if essSec, ok := daemonResp.Profile["essentia_sec"]; ok {
+						d.statsTracker.RecordStageDuration("essentia", time.Duration(essSec*float64(time.Second)))
+					}
+				}
+			}
+
+			libOutBytes, err := json.Marshal(daemonResp.Librosa)
+			if err != nil {
+				_ = arenaSet.UnfreezeAll()
+				d.failTask(task, fmt.Sprintf("Failed to marshal Librosa features: %v", err))
+				return
+			}
+			tensorOutBytes, err := json.Marshal(daemonResp.Tensor)
+			if err != nil {
+				_ = arenaSet.UnfreezeAll()
+				d.failTask(task, fmt.Sprintf("Failed to marshal Tensor features: %v", err))
+				return
+			}
+			essOutBytes, err := json.Marshal(daemonResp.Essentia)
+			if err != nil {
+				_ = arenaSet.UnfreezeAll()
+				d.failTask(task, fmt.Sprintf("Failed to marshal Essentia features: %v", err))
+				return
+			}
+
+			libOut := string(libOutBytes)
+			tensorOut := string(tensorOutBytes)
+			essOut := string(essOutBytes)
+
 			// 共有メモリアリーナを次回タスクのために Unfreeze (PAGE_READWRITE 復元) してプールへ維持しますわ！
 			_ = arenaSet.UnfreezeAll()
 			

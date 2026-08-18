@@ -9,12 +9,12 @@
 - **Go (Orchestrator & IO Monad)**: 
   - ファイルパスの内部情報（メタデータ等）には関与せず、単なるタスク識別子として扱う。
   - Windows API (`CreateFileMapping`) を用いて波形引き渡し用の共有メモリ領域を確保し、その「ポインタ名（所有権）」をPythonワーカーへメッセージパッシングとして渡す。
-  - `demucs_worker.py` を起動し、完了ステータス (`exit 0`) を確認したのち、共有メモリ領域に対して `Freeze()`（PAGE_READONLY 化）の射を適用する。
-  - その後、`librosa_worker.py` を起動し、Freeze済みの共有メモリから並列に特徴量を抽出させる（完全疎結合アーキテクチャ）。
-  - DBアクセス（PostgreSQLへの INSERT / UPSERT）を非同期の Goroutine で完全に引き受け、Pythonプロセスのブロッキングを排除する。
+  - `worker_demucs.py` を起動し、完了ステータス (`exit 0`) を確認したのち、共有メモリ領域に対して `Freeze()`（PAGE_READONLY 化）の射を適用する。
+  - 常駐型ワーカーデーモンプール (`WorkerDaemonPool`) を介して、Freeze済みの共有メモリから `worker_daemon.py` に NDJSON IPC で一括抽出リクエストを送信。Librosa / GPU Tensor DSP / Essentia を単一インメモリコンテキストで瞬時に実行し、プロセス起動オーバーヘッドと冗長な CPU Warmup を完全排除（約 50 秒短縮）。
+  - DBアクセス（PostgreSQLへの INSERT / UPSERT）を非同期の Goroutine / Direct Ingest で完全に引き受け、Pythonプロセスのブロッキングを排除する。
 - **Python (Worker & Pure Morphism)**:
-  - **`demucs_worker.py`**: 引数で渡された共有メモリ名を開き、Demucs分離後のステム波形を書き込んで `exit 0` する。
-  - **`librosa_worker.py`**: 渡された共有メモリを Read-Only でアタッチし、Librosa特徴抽出を実行してJSONを返す。プロセスは単一タスク完了と共に破棄され、メモリを全解放する。
+  - **`worker_demucs.py`**: 引数で渡された共有メモリ名を開き、Demucs分離後のステム波形を書き込んで `exit 0` する。
+  - **`worker_daemon.py`**: 常駐型ワーカーデーモン。渡された共有メモリを Read-Only でアタッチし、Librosa, Tensor (GPU cuFFT), Essentia の全特徴量を Zero-copy で一括抽出して NDJSON レスポンスを返却する。一定タスク数（100件）処理ごとにセルフリサイクルし、メモリ健全性を保つ。
 
 ## 2. DBスキーマと波形特徴量 (JSONB) の構成
 

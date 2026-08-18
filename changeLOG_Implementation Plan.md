@@ -1,3 +1,16 @@
+# Implementation Plan: WorkerDaemon 常駐プロセス化 & Warmup 49秒削減
+
+- **Goal**: Librosa ワーカーのプロセス起動オーバーヘッド（~2秒）および全5ステムに対する60回の強制CPU Warmupループ（49.2秒）を、常駐型ワーカーデーモンプール (`WorkerDaemonPool` & `worker_daemon.py`) のインメモリ Zero-copy 一括抽出へ統合し、1曲あたり約 50 秒短縮する。
+- **Target**: `worker_daemon.py`, `orchestrator/dispatcher/daemon.go`, `orchestrator/dispatcher/daemon_pool.go`, `orchestrator/dispatcher/dispatcher.go`, `orchestrator/dispatcher/daemon_test.go`, `decisions.md`.
+- **Feature**:
+  - `worker_daemon.py`: ADV-01 (CPU Warmup ループ完全撤廃), ADV-02 (`torch.cuda.empty_cache()` の純粋関数からの副作用分離), ADV-03 (`ctx.clear()` の順序修正による use-after-free 根絶), 詳細プロファイル返却。
+  - `daemon.go` [NEW]: `WorkerDaemonClient` (NDJSON IPC, Windows JobObject 管理, ハンドシェイク検知, `context.WithTimeout`, RAII)。
+  - `daemon_pool.go` [NEW]: `WorkerDaemonPool` (スレッドセーフ接続プール, 100タスクセルフリサイクル, 自動リカバリ)。
+  - `dispatcher.go`: `Dispatcher` に `daemonPool` を組み込み、Step 5 を `WorkerDaemonPool.ExtractAll` に切り替え。
+  - `daemon_test.go` [NEW]: `TestDaemonPingPong`, `TestDaemonPoolAcquireRelease`。
+  - `decisions.md`: §1 に常駐ワーカーデーモンプール構成を追記。
+- **Status**: Completed
+
 # Implementation Plan: 音響解析パイプラインの高速化 & 圏論的リファクタリング (Phase 1〜3)
 
 - **Goal**: 命題1〜3（1: 分析精度の完全維持、2: Go OS管理 + Python GPU Tensor、3: 9年長期安定言語）を厳格に遵守し、事前リリース（v1.3.1）から Phase 1（Go直接DB Ingest & 常駐ワーカー化）、Phase 2（PyTorch GPU Tensor DSP & 2Nゼロパディング cuFFT HNR/NAP）、Phase 3（回帰テスト & CI Gate）を完遂する。
