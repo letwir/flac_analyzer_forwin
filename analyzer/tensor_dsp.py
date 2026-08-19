@@ -81,8 +81,10 @@ def calc_hnr_nap_tensor(y: torch.Tensor, sr: int) -> tuple[float, float]:
     yf = torch.fft.rfft(y_f, n=n_fft)
     psd = yf.abs().square()
     r = torch.fft.irfft(psd, n=n_fft)[..., :n_samples]
+    if r.ndim > 1:
+        r = r.mean(dim=list(range(r.ndim - 1)))
 
-    r0 = float(r[..., 0].item())
+    r0 = float(r[0].item())
     if r0 < 1e-9:
         return 0.0, -40.0
 
@@ -130,6 +132,8 @@ def welch_psd(
         center=False,
     )
     psd = stft.abs().pow(2).mean(dim=-1)
+    if psd.ndim > 1:
+        psd = psd.mean(dim=list(range(psd.ndim - 1)))
     freqs = torch.linspace(0, sr / 2, psd.shape[-1], device=x.device)
     return freqs, psd
 
@@ -314,10 +318,11 @@ def extract_tensor_features(
     features["spectral_flux_mean"] = float(flux.mean().item())
     features["spectral_flux_std"] = float(flux.std().item())
 
-    # 3. Welch PSD Peaks
-    peak_idx = psd.argmax()
-    features["psd_peak_freq"] = float(freqs[peak_idx].item())
-    features["psd_peak_val"] = float(psd[peak_idx].item())
+    # 3. Welch PSD Peaks (1次元に集約して安全にピーク検出)
+    psd_1d = psd.mean(dim=list(range(psd.ndim - 1))) if psd.ndim > 1 else psd
+    peak_idx = psd_1d.argmax()
+    features["psd_peak_freq"] = float(freqs[peak_idx].item()) if peak_idx < len(freqs) else 0.0
+    features["psd_peak_val"] = float(psd_1d[peak_idx].item()) if peak_idx < len(psd_1d) else 0.0
 
     # 4. Phase Envelope (Sub-bass: 20-60Hz などの帯域別)
     sub_env = fft_bandpass_envelope(y, sr, 20.0, 60.0)

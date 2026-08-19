@@ -114,11 +114,11 @@ func FetchGpuMetricsComplex() (*GpuMetrics, error) {
 	// 1. CIM / PowerShell 高速JSONクエリ（AMD / NVIDIA / Intel を問わず安定取得できますわ）
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", `
 		$ErrorActionPreference = 'SilentlyContinue';
-		$gpuEngine = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine | Measure-Object -Property UtilizationPercentage -Sum | Select-Object -ExpandProperty Sum;
+		$gpuEngine = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine | Measure-Object -Property UtilizationPercentage -Maximum | Select-Object -ExpandProperty Maximum;
 		$mem = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory | Measure-Object -Property DedicatedUsage, SharedUsage, TotalCommitted -Sum;
 		$vAdapter = Get-CimInstance Win32_VideoController | Select-Object -First 1 -ExpandProperty AdapterRAM;
 		@{
-			util = if ($gpuEngine) { [double]$gpuEngine } else { 0.0 };
+			util = if ($gpuEngine) { [math]::Min(100.0, [double]$gpuEngine) } else { 0.0 };
 			ded_used = if ($mem[0].Sum) { [int64]$mem[0].Sum } else { 0 };
 			shr_used = if ($mem[1].Sum) { [int64]$mem[1].Sum } else { 0 };
 			tot_com = if ($mem[2].Sum) { [int64]$mem[2].Sum } else { 0 };
@@ -144,6 +144,13 @@ func FetchGpuMetricsComplex() (*GpuMetrics, error) {
 		return nil, fmt.Errorf("failed to parse GPU performance counter JSON (%s): %w", cleanOut, err)
 	}
 
+	clampedUtil := res.Util
+	if clampedUtil > 100.0 {
+		clampedUtil = 100.0
+	} else if clampedUtil < 0.0 {
+		clampedUtil = 0.0
+	}
+
 	totalDedicated := uint64(res.AdapterRam)
 	if totalDedicated == 0 && res.DedUsed > 0 {
 		// AdapterRAM が未報告の場合は、コミット量または余裕値から推定いたしますわ
@@ -159,7 +166,7 @@ func FetchGpuMetricsComplex() (*GpuMetrics, error) {
 	}
 
 	return &GpuMetrics{
-		UtilizationPercent:  res.Util,
+		UtilizationPercent:  clampedUtil,
 		DedicatedUsedBytes:  usedDedicated,
 		DedicatedTotalBytes: totalDedicated,
 		SharedUsedBytes:     uint64(res.ShrUsed),

@@ -77,7 +77,8 @@ def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: A
                 # B. PyTorch Tensor 特徴量抽出 (GPU cuFFT Wiener-Khinchin HNR/NAP & Bulk STFT)
                 t_ten_start = time.perf_counter()
                 with torch.no_grad():
-                    y_tensor = torch.from_numpy(y_np)
+                    # 共有メモリ mmap 配列の read-only 警告を防止しつつ GPU 転送
+                    y_tensor = torch.from_numpy(np.require(y_np, requirements=['C', 'W']))
                     stem_feats = extract_tensor_features(y_tensor, sr, device, spectro_path=spectro_path)
                     extracted_tensor[stem_name] = stem_feats
                 tensor_total_sec += time.perf_counter() - t_ten_start

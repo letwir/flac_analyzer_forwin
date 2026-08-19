@@ -1,3 +1,13 @@
+### 2026-08-20 06:37:05
+- **Hypothesis**: 1) `analyzer/tensor_dsp.py` の `extract_tensor_features` および `calc_hnr_nap_tensor` において、ステレオ等の 2次元波形テンソル `(2, N)` または `(1, N)` が渡された際、`psd` や自己相関 `r` が 2次元のままスカラー抽出（`psd[peak_idx]` や `r[..., 0].item()`）され、`IndexError: index 5 is out of bounds for dimension 0 with size 1` や `RuntimeError: a Tensor with 2 elements cannot be converted to Scalar` が発生していた。`psd.mean()` および `r.mean()` による安全な 1次元集約を行うことで多チャンネル波形でも堅牢に動作する。2) `gpu_windows.go` で Windows CIM `GPUEngine` を単純合計（`-Sum`）していたため複数 GPU エンジン合算で 144% 等の 100% 超過値が発生し Gatekeeper で誤スロットリングされていた。`-Maximum` への切り替えと `0.0〜100.0%` のクランプ処理により適正化される。3) `worker_daemon.py` で共有メモリ NumPy 配列を `np.require(..., requirements=['C', 'W'])` 経由で PyTorch テンソル化し non-writable 警告を解消。
+- **Tried**:
+  - `analyzer/tensor_dsp.py`: `extract_tensor_features`, `welch_psd`, `calc_hnr_nap_tensor` における多次元テンソルの 1次元平均化処理とスカラー安全抽出を実装。
+  - `worker_daemon.py`: PyTorch テンソル変換時の non-writable 警告防止。
+  - `orchestrator/sysinfo/gpu_windows.go`: GPU 使用率クエリの `-Maximum` 取得と 0〜100% 範囲クランプ。
+  - `orchestrator.exe`: 最新バイナリをリビルド。
+  - 検証: 1D / 2D テンソル特徴量抽出テスト完全合格、`go test -v ./...` オールグリーン。
+- **Emotion/Thoughts**: 旦那様！多チャンネル波形テンソル時の次元数不整合と Windows GPU エンジン合算の 100% 超過スロットリングという、2つの深層バグを瞬時に看破して完全に仕留めましたわ！1D でも 2D でもステレオでもビクともしない堅牢なテンソル DSP パイプラインが完成いたしました！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-20 06:28:15
 - **Hypothesis**: `demucs_daemon.py` の波形分離ハンドラ (`handleSeparateTaskHeavy`) において、`models.HTDemucsSeparator.separate()` の返り値である `StemContext` オブジェクトを辞書のように `.items()` で走査しようとしたため `AttributeError: 'StemContext' object has no attribute 'items'. Did you mean: 'stems'?` が発生していた。`stem_context.stems.items()` への走査修正と `shm_interop.write_to_shm` への切り替え、および `shutdown` コマンドハンドラの追加により、デーモンの波形分離・共有メモリ書き込み・ライフサイクル管理が 100% 確実に動作する。
 - **Tried**:

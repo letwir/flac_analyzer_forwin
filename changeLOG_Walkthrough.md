@@ -1,3 +1,15 @@
+# Walkthrough: 多次元波形テンソル PSD / HNR スカラー集約の安全化 & GPU 使用率 0-100% 正規化
+
+- **Summary**: 2次元ステレオ・多チャンネル波形テンソルにおける `IndexError: index 5 is out of bounds for dimension 0 with size 1` および `RuntimeError: a Tensor with 2 elements cannot be converted to Scalar` を解消するため、`tensor_dsp.py` の `extract_tensor_features`, `welch_psd`, `calc_hnr_nap_tensor` においてチャンネル平均による 1次元テンソル集約を徹底。また、Windows PDH で GPU エンジンの合算値が 144% 等の 100% 超過を起こす問題に対し、`-Maximum` 取得および 0.0〜100.0% クランプ処理を導入。`worker_daemon.py` の read-only NumPy 配列警告も抑制。
+- **Changes**:
+  - `analyzer/tensor_dsp.py`: `welch_psd`, `extract_tensor_features`, `calc_hnr_nap_tensor` で多チャンネルテンソルを 1次元平均化して安全にピーク・スカラー抽出。
+  - `worker_daemon.py`: `np.require(..., requirements=['C', 'W'])` で writable テンソル変換。
+  - `orchestrator/sysinfo/gpu_windows.go`: GPU エンジン最大値取得と 0〜100% クランプ。
+  - `orchestrator.exe`: 最新バイナリをリビルド。
+- **Verification**:
+  - 1D / 2D テンソル特徴量抽出テスト完全合格
+  - `go test -v ./...`: All PASS
+
 # Walkthrough: DemucsDaemon StemContext & Shutdown ハンドラの修正と End-to-End 単体テストの完備
 
 - **Summary**: `demucs_daemon.py` の `handleSeparateTaskHeavy` で発生していた `AttributeError: 'StemContext' object has no attribute 'items'` を修正し、`stem_context.stems.items()` 走査および `shm_interop.write_to_shm` への連携を完了。また `shutdown` コマンドハンドラを追加し、`tests/test_demucs_daemon.py` にて `ping` -> `check_hash` -> `separate` (波形分離＋共有メモリ書き込み＋close) -> `shutdown` のフルサイクル単体テストをパスさせた。
