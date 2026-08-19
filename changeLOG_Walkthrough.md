@@ -1,3 +1,13 @@
+# Walkthrough: DemucsDaemon StemContext & Shutdown ハンドラの修正と End-to-End 単体テストの完備
+
+- **Summary**: `demucs_daemon.py` の `handleSeparateTaskHeavy` で発生していた `AttributeError: 'StemContext' object has no attribute 'items'` を修正し、`stem_context.stems.items()` 走査および `shm_interop.write_to_shm` への連携を完了。また `shutdown` コマンドハンドラを追加し、`tests/test_demucs_daemon.py` にて `ping` -> `check_hash` -> `separate` (波形分離＋共有メモリ書き込み＋close) -> `shutdown` のフルサイクル単体テストをパスさせた。
+- **Changes**:
+  - `demucs_daemon.py`: `stem_context.stems.items()` 走査修正、`shm_interop.write_to_shm` 適用、`shutdown` コマンド処理を追加。
+  - `tests/test_demucs_daemon.py`: フルサイクルの単体テストケースを追加。
+- **Verification**:
+  - `python -m unittest tests/test_demucs_daemon.py`: 1/1 PASS (33.5s)
+  - `go test -v ./...`: All PASS
+
 # Walkthrough: 長尺・ハイレゾ FLAC 向けストリーミング逐次スキップデコードの導入 & VRAM 閾値最適化
 
 - **Summary**: サンプル位置が 1億〜3.5億を超える長尺マルチトラック・ハイレゾ FLAC において、SEEKTABLE 欠落や 32bit シーク限界（`FLAC__STREAM_DECODER_SEEK_ERROR` / `psf_fseek` 失敗）を回避するため、`decode_flac_range_stream_fallback` を実装。`WAVE_FORMAT_EXTENSIBLE` (24bit/32bit) ヘッダ解析と逐次バイトスキップにより 100% 確実なデコードを達成。また、Demucs 常駐デーモン環境に合わせて Gatekeeper の VRAM 閾値を最適化。

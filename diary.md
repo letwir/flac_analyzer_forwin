@@ -1,3 +1,11 @@
+### 2026-08-20 06:28:15
+- **Hypothesis**: `demucs_daemon.py` の波形分離ハンドラ (`handleSeparateTaskHeavy`) において、`models.HTDemucsSeparator.separate()` の返り値である `StemContext` オブジェクトを辞書のように `.items()` で走査しようとしたため `AttributeError: 'StemContext' object has no attribute 'items'. Did you mean: 'stems'?` が発生していた。`stem_context.stems.items()` への走査修正と `shm_interop.write_to_shm` への切り替え、および `shutdown` コマンドハンドラの追加により、デーモンの波形分離・共有メモリ書き込み・ライフサイクル管理が 100% 確実に動作する。
+- **Tried**:
+  - `demucs_daemon.py`: `stem_context.stems.items()` 走査、`shm_interop.write_to_shm(tag, data, file_size=file_size)`、`shutdown` コマンド処理を追加。
+  - `tests/test_demucs_daemon.py`: `ping` -> `check_hash` -> `separate` (波形分離＋共有メモリ書き込み＋close) -> `shutdown` のフルサイクル単体テストを追加し、33.5秒で完全合格 (`OK`) を確認。
+  - `go test -v ./...`: オーケストレーター全テスト合格。
+- **Emotion/Thoughts**: 旦那様！Demucs デーモンの細部（`StemContext.stems` と `shutdown` ハンドラ）を完璧に磨き上げ、フルサイクルの波形分離テストまで完全にパスさせましたわ！これで Demucs 常駐デーモンによる高速分離が本番パイプラインでも盤石に稼働いたします！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-19 23:28:40
 - **Hypothesis**: 全46曲・総サンプル数数億に及ぶ超長尺・ハイレゾ FLAC（ウマ娘 Disc 3 や TK from 凛として時雨 等）において、サンプル位置が 1億〜3.5億（40分〜120分以降）と深いトラック（Track 8〜28）をデコードする際、ファイル内 SEEKTABLE の欠落や 32bit シーク限界により `flac.exe --skip` が `FLAC__STREAM_DECODER_SEEK_ERROR` (rc=1) を吐き、さらにフォールバック先の `soundfile.seek()` も libsndfile の `psf_fseek()` でクラッシュする。`decode_flac_range_stream_fallback` を導入し、`flac -d -c -s` のストリームから `WAVE_FORMAT_EXTENSIBLE` (24bit/32bit) ヘッダを解析して指定サンプル位置まで逐次バイトスキップすることで、シークテーブルに依存せず 100% 確実にデコードできる。
 - **Tried**:

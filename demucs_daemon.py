@@ -106,8 +106,11 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any) -> dict[str
     stems_meta: dict[str, Any] = {}
     t_shm_start = time.perf_counter()
 
+    file_size = os.path.getsize(flac_path) if os.path.exists(flac_path) else 0
+    stem_items = stem_context.stems.items() if hasattr(stem_context, "stems") else stem_context.items()
+
     # ステム波形の共有メモリ書き込み
-    for stem_name, audio_ctx in stem_context.items():
+    for stem_name, audio_ctx in stem_items:
         if stem_name not in shm_tags:
             continue
         tag = shm_tags[stem_name]
@@ -119,17 +122,14 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any) -> dict[str
         data = np.ascontiguousarray(data, dtype=np.float32)
 
         # 共有メモリへ書き込み、完了後即座にアンマップ (Advisory 1: Error 1450 完全防止)
-        shm = shm_interop.create_or_attach_shm(tag, data.shape, data.dtype)
-        try:
-            shm.write_numpy(data)
-        finally:
-            shm.close()
+        shm = shm_interop.write_to_shm(tag, data, file_size=file_size)
+        shm.close()
 
         stems_meta[stem_name] = {
             "shm_tag": tag,
             "shape": list(data.shape),
             "dtype": str(data.dtype),
-            "file_size": data.nbytes
+            "file_size": file_size
         }
 
     shm_duration = time.perf_counter() - t_shm_start
@@ -176,6 +176,10 @@ def runDemucsDaemonLoopComplex():
 
             if cmd == "ping":
                 resp = {"status": "pong", "time": time.time()}
+            elif cmd == "shutdown":
+                resp = {"status": "bye"}
+                print(json.dumps(resp), flush=True)
+                break
             elif cmd == "check_hash":
                 resp = handle_check_hash(payload)
             elif cmd == "separate":
