@@ -1,3 +1,18 @@
+# Walkthrough: GPU Resource Observation & Dynamic Allocation
+
+- **Summary**: Windows Native API (PDH / CIM) による GPU 使用率 (%) および Dedicated / Shared VRAM のリアルタイム観測モジュール、Prometheus 可観測性メトリクス拡張、Gatekeeper による GPU 過負荷防止動的リソース配分・スロットリングを実装・検証完了。
+- **Changes**:
+  - `orchestrator/sysinfo/gpu_windows.go` [NEW]: Windows Performance Counters (CIM/WMI) による GPU 負荷率・Dedicated/Shared VRAM のバックグラウンド定期収集ループ (`GpuCollectorDaemon`) および Lock-free キャッシュ (`atomic.Pointer[GpuMetrics]`)。
+  - `orchestrator/sysinfo/gpu_test.go` [NEW]: 初期値安全性・VRAM 計算境界値テスト。
+  - `orchestrator/metrics/metrics.go`: `analyzer_gpu_utilization_percent`, `analyzer_gpu_dedicated_used_bytes`, `analyzer_gpu_wait_seconds`, `analyzer_gpu_throttle_events_total` などの Prometheus 可観測性メトリクス追加。
+  - `orchestrator/dispatcher/dispatcher.go` & `stats.go`: `GatekeeperInput` 構造体による純粋判定関数 `EvaluateGoNoGoPure` を拡張し、GPU 負荷率（閾値: 85%）や VRAM 不足時の安全スロットリング・待機時間記録を実装。
+  - `orchestrator/main.go` & `config.toml`: `max_gpu_utilization_ratio`, `min_avail_vram_gb`, `estimated_demucs_vram_gb`, `enable_gpu_throttle` を追加し、無停止動的ホットリロードに対応。
+  - `gatekeeper_test.go` & `reload_test.go`: GPU 過負荷・VRAM 枯渇・スロットル無効化・動的リロードの単体テストを整備。
+- **Verification**:
+  - `go test -v ./...` (orchestrator): 全単体テスト PASS (`ok flac_analyzer/orchestrator/dispatcher 32.276s`, `ok flac_analyzer/orchestrator/sysinfo 0.998s`)
+  - `proof-checker.exe`: PASS (0 Errors)
+  - Auditor & Verifier サブエージェント審査: 満場一致の PASS
+
 # Walkthrough: WorkerDaemon 常駐プロセス化 & Warmup 49秒削減
 
 - **Summary**: `worker_daemon.py` の常駐プロセス化および `WorkerDaemonPool` の Go オーケストレーター統合により、従来の 3 プロセス起動オーバーヘッド（~2秒）と 60 回の CPU Warmup ループ（49.2秒）を完全撤廃。1曲あたり約 50 秒のレイテンシを削減し、2〜3秒/曲での Zero-copy 一括特徴量抽出を達成。

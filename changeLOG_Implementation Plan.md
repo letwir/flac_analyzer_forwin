@@ -1,3 +1,15 @@
+# Implementation Plan: GPU Resource Observation & Dynamic Allocation
+
+- **Goal**: パイプラインにおける GPU / VRAM 負荷・競合（Demucs 等の波形分離処理によるスラッシング）を根絶するため、Windows Native (PDH / CIM) を用いて Go 側から GPU 使用率および Dedicated / Shared VRAM 容量をゼロオーバーヘッドで観測し、Prometheus メトリクスへのエクスポートおよび Gatekeeper による過負荷防止スロットリング（動的リソース配分）を導入する。
+- **Target**: `orchestrator/sysinfo/gpu_windows.go`, `orchestrator/sysinfo/gpu_test.go`, `orchestrator/metrics/metrics.go`, `orchestrator/dispatcher/stats.go`, `orchestrator/dispatcher/dispatcher.go`, `orchestrator/main.go`, `config.toml`, `config_test.toml`, `orchestrator/dispatcher/gatekeeper_test.go`, `orchestrator/reload_test.go`.
+- **Feature**:
+  - `gpu_windows.go` [NEW]: Windows Performance Counters (CIM/WMI) による GPU 負荷率・Dedicated/Shared VRAM のバックグラウンド定期収集ループ (`GpuCollectorDaemon`) および Lock-free キャッシュ (`atomic.Pointer[GpuMetrics]`)。
+  - `metrics.go`: `analyzer_gpu_utilization_percent`, `analyzer_gpu_dedicated_used_bytes`, `analyzer_gpu_wait_seconds`, `analyzer_gpu_throttle_events_total` などの Prometheus 可観測性メトリクス追加。
+  - `dispatcher.go` & `stats.go`: `GatekeeperInput` 構造体による純粋判定関数 `EvaluateGoNoGoPure` を拡張し、GPU 負荷率（閾値: 85%）や VRAM 不足時の安全スロットリング・待機時間記録を実装。
+  - `main.go` & `config.toml`: `max_gpu_utilization_ratio`, `min_avail_vram_gb`, `estimated_demucs_vram_gb`, `enable_gpu_throttle` を追加し、無停止動的ホットリロードに対応。
+  - `gatekeeper_test.go` & `reload_test.go`: GPU 過負荷・VRAM 枯渇・スロットル無効化・動的リロードの単体テストを整備（全テスト PASS）。
+- **Status**: Completed
+
 # Implementation Plan: WorkerDaemon 常駐プロセス化 & Warmup 49秒削減
 
 - **Goal**: Librosa ワーカーのプロセス起動オーバーヘッド（~2秒）および全5ステムに対する60回の強制CPU Warmupループ（49.2秒）を、常駐型ワーカーデーモンプール (`WorkerDaemonPool` & `worker_daemon.py`) のインメモリ Zero-copy 一括抽出へ統合し、1曲あたり約 50 秒短縮する。

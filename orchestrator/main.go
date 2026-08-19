@@ -51,8 +51,12 @@ type Config struct {
 		MaxWorkingSetMB       int     `toml:"max_working_set_mb"`
 		GatekeeperRetryDelaySec int   `toml:"gatekeeper_retry_delay_sec"`
 		ConfigWatchIntervalSec  int   `toml:"config_watch_interval_sec"`
-		EnableDlqRetry          *bool `toml:"enable_dlq_retry"`
-		DlqRetryIntervalSec     int   `toml:"dlq_retry_interval_sec"`
+		EnableDlqRetry          *bool   `toml:"enable_dlq_retry"`
+		DlqRetryIntervalSec     int     `toml:"dlq_retry_interval_sec"`
+		MaxGpuUtilizationRatio  float64 `toml:"max_gpu_utilization_ratio"`
+		MinAvailVramGB          float64 `toml:"min_avail_vram_gb"`
+		EstimatedDemucsVramGB   float64 `toml:"estimated_demucs_vram_gb"`
+		EnableGpuThrottle       *bool   `toml:"enable_gpu_throttle"`
 	} `toml:"orchestrator"`
 	PythonEnv map[string]string `toml:"python_env"`
 }
@@ -587,6 +591,26 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		dlqRetryInterval = 600
 	}
 
+	maxGpuUtilRatio := cfg.Orchestrator.MaxGpuUtilizationRatio
+	if maxGpuUtilRatio <= 0 {
+		maxGpuUtilRatio = 0.85
+	}
+
+	minAvailVramGB := cfg.Orchestrator.MinAvailVramGB
+	if minAvailVramGB <= 0 {
+		minAvailVramGB = 0.5
+	}
+
+	estimatedDemucsVramGB := cfg.Orchestrator.EstimatedDemucsVramGB
+	if estimatedDemucsVramGB <= 0 {
+		estimatedDemucsVramGB = 1.0
+	}
+
+	enableGpuThrottle := true
+	if cfg.Orchestrator.EnableGpuThrottle != nil {
+		enableGpuThrottle = *cfg.Orchestrator.EnableGpuThrottle
+	}
+
 	resolvedPythonEnv := resolvePythonEnv(cfg.PythonEnv, numCPU, cfg.Orchestrator.NumWorkers)
 
 	dispConfig := &dispatcher.Config{
@@ -612,6 +636,10 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		ConfigWatchIntervalSec:  configWatchInterval,
 		EnableDlqRetry:          enableDlqRetry,
 		DlqRetryIntervalSec:     dlqRetryInterval,
+		MaxGpuUtilizationRatio:  maxGpuUtilRatio,
+		MinAvailVramGB:          minAvailVramGB,
+		EstimatedDemucsVramGB:   estimatedDemucsVramGB,
+		EnableGpuThrottle:       enableGpuThrottle,
 	}
 
 	return &cfg, dispConfig, nil

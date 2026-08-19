@@ -261,6 +261,64 @@ var (
 			Help: "Available physical system RAM in bytes",
 		},
 	)
+
+	// ─── 技法④：GPU & VRAM 可観測性 (GPU Utilization & Video Memory) ───
+	AnalyzerGpuUtilizationPercent = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_utilization_percent",
+			Help: "Realtime total GPU utilization percentage (0-100)",
+		},
+	)
+
+	AnalyzerGpuDedicatedUsedBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_dedicated_used_bytes",
+			Help: "Dedicated video memory (VRAM) used in bytes",
+		},
+	)
+
+	AnalyzerGpuDedicatedTotalBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_dedicated_total_bytes",
+			Help: "Dedicated video memory (VRAM) total capacity in bytes",
+		},
+	)
+
+	AnalyzerGpuSharedUsedBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_shared_used_bytes",
+			Help: "Shared system memory used by GPU in bytes",
+		},
+	)
+
+	AnalyzerGpuTotalCommittedBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_total_committed_bytes",
+			Help: "Total committed GPU memory in bytes",
+		},
+	)
+
+	AnalyzerGpuWaitSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "analyzer_gpu_wait_seconds",
+			Help:    "Wait time spent blocked by GPU utilization or VRAM deficit in seconds",
+			Buckets: []float64{0.5, 1, 2, 5, 10, 20, 30, 60, 120},
+		},
+	)
+
+	AnalyzerLastGpuWaitSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_last_gpu_wait_seconds",
+			Help: "Most recent wait duration blocked by GPU in seconds",
+		},
+	)
+
+	AnalyzerGpuThrottleEventsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "analyzer_gpu_throttle_events_total",
+			Help: "Total count of dispatch throttle events triggered by GPU saturation",
+		},
+	)
 )
 
 // InitMetricsServer starts the Prometheus metrics HTTP server with pprof enabled.

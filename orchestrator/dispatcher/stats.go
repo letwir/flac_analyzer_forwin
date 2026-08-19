@@ -228,6 +228,14 @@ func (st *StatsTracker) RecordGatekeeperWait(duration time.Duration) {
 	metrics.AnalyzerLastGatekeeperWaitSeconds.Set(durSec)
 }
 
+// RecordGpuWait records waiting duration blocked by GPU utilization or VRAM deficit.
+func (st *StatsTracker) RecordGpuWait(duration time.Duration) {
+	durSec := duration.Seconds()
+	metrics.AnalyzerGpuWaitSeconds.Observe(durSec)
+	metrics.AnalyzerLastGpuWaitSeconds.Set(durSec)
+	metrics.AnalyzerGpuThrottleEventsTotal.Inc()
+}
+
 // RecordShmAllocDuration records SHM allocation and locking duration.
 func (st *StatsTracker) RecordShmAllocDuration(duration time.Duration) {
 	durSec := duration.Seconds()
@@ -268,11 +276,14 @@ func (st *StatsTracker) SetQueueLength(qLen int) {
 	st.updateThroughputAndEta()
 }
 
-// StartSystemResourceCollector periodically updates Disk and RAM available bytes metrics.
+// StartSystemResourceCollector periodically updates Disk, RAM, and GPU available bytes metrics.
 func (st *StatsTracker) StartSystemResourceCollector(ctx context.Context, queueDir string, interval time.Duration) {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
+
+	// GPU コレクターデーモンを開始いたしますわ
+	sysinfo.StartGpuCollectorDaemon(ctx, interval)
 
 	go func() {
 		ticker := time.NewTicker(interval)
@@ -290,17 +301,27 @@ func (st *StatsTracker) StartSystemResourceCollector(ctx context.Context, queueD
 }
 
 func (st *StatsTracker) collectSystemResources(queueDir string) {
-	// RAM 測定
+	// 1. RAM 測定
 	if memInfo, err := sysinfo.GetMemoryInfo(); err == nil && memInfo != nil {
 		metrics.AnalyzerRamAvailableBytes.Set(float64(memInfo.AvailPhys))
 	}
 
-	// 作業ディスク測定
+	// 2. 作業ディスク測定
 	targetDir := queueDir
 	if targetDir == "" {
 		targetDir = "."
 	}
 	if diskInfo, err := sysinfo.GetDiskFreeSpace(targetDir); err == nil && diskInfo != nil {
 		metrics.AnalyzerDiskFreeBytes.Set(float64(diskInfo.FreeBytesAvailable))
+	}
+
+	// 3. GPU / VRAM メトリクス測定
+	gpuM := sysinfo.GetLatestGpuMetrics()
+	if gpuM != nil {
+		metrics.AnalyzerGpuUtilizationPercent.Set(gpuM.UtilizationPercent)
+		metrics.AnalyzerGpuDedicatedUsedBytes.Set(float64(gpuM.DedicatedUsedBytes))
+		metrics.AnalyzerGpuDedicatedTotalBytes.Set(float64(gpuM.DedicatedTotalBytes))
+		metrics.AnalyzerGpuSharedUsedBytes.Set(float64(gpuM.SharedUsedBytes))
+		metrics.AnalyzerGpuTotalCommittedBytes.Set(float64(gpuM.TotalCommittedBytes))
 	}
 }

@@ -63,7 +63,7 @@ omp_num_threads = "1"
 		t.Fatalf("expected log level info, got %v", currentCfg.LogLevel)
 	}
 
-	// 1. Update config file: demucs_concurrent_limit -> 3, log_level -> "debug", skip_dup_by_hash -> false
+	// 1. Update config file: demucs_concurrent_limit -> 3, log_level -> "debug", skip_dup_by_hash -> false, max_gpu_utilization_ratio -> 0.90
 	updatedConfig := `
 [orchestrator]
 num_workers = 2
@@ -79,6 +79,10 @@ queue_dir = "./custom_queue"
 log_level = "debug"
 skip_dup_by_hash = false
 enable_virtual_lock = false
+max_gpu_utilization_ratio = 0.90
+min_avail_vram_gb = 1.0
+estimated_demucs_vram_gb = 1.5
+enable_gpu_throttle = false
 
 [python_env]
 omp_num_threads = "2"
@@ -102,6 +106,18 @@ omp_num_threads = "2"
 	if diff["skip_dup_by_hash"] != "true -> false" {
 		t.Errorf("expected diff skip_dup_by_hash 'true -> false', got %q", diff["skip_dup_by_hash"])
 	}
+	if diff["max_gpu_utilization_ratio"] != "0.85 -> 0.90" {
+		t.Errorf("expected diff max_gpu_utilization_ratio '0.85 -> 0.90', got %q", diff["max_gpu_utilization_ratio"])
+	}
+	if diff["min_avail_vram_gb"] != "0.50 -> 1.00" {
+		t.Errorf("expected diff min_avail_vram_gb '0.50 -> 1.00', got %q", diff["min_avail_vram_gb"])
+	}
+	if diff["estimated_demucs_vram_gb"] != "1.00 -> 1.50" {
+		t.Errorf("expected diff estimated_demucs_vram_gb '1.00 -> 1.50', got %q", diff["estimated_demucs_vram_gb"])
+	}
+	if diff["enable_gpu_throttle"] != "true -> false" {
+		t.Errorf("expected diff enable_gpu_throttle 'true -> false', got %q", diff["enable_gpu_throttle"])
+	}
 
 	// Verify dispatcher state after reload
 	reloadedCfg := disp.GetConfig()
@@ -113,6 +129,12 @@ omp_num_threads = "2"
 	}
 	if reloadedCfg.SkipDupByHash != false {
 		t.Errorf("expected reloaded skip_dup_by_hash false, got true")
+	}
+	if reloadedCfg.MaxGpuUtilizationRatio != 0.90 {
+		t.Errorf("expected reloaded max_gpu_utilization_ratio 0.90, got %f", reloadedCfg.MaxGpuUtilizationRatio)
+	}
+	if reloadedCfg.EnableGpuThrottle != false {
+		t.Errorf("expected reloaded enable_gpu_throttle false, got true")
 	}
 	if reloadedCfg.QueueDir != "./custom_queue" {
 		t.Errorf("expected queue_dir './custom_queue', got %q", reloadedCfg.QueueDir)

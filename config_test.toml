@@ -4,6 +4,10 @@ url = "postgres://postgres:postgres@localhost:5432/flac_analyzer_test"
 [orchestrator]
 num_workers = 4
 demucs_concurrent_limit = 1
+enable_gpu_throttle = true
+max_gpu_utilization_ratio = 0.85
+min_avail_vram_gb = 0.5
+estimated_demucs_vram_gb = 1.0
 shm_allocation_delay_sec = 2
 queue_dir = "../testFLAC"
 test_flac_dir = "../testFLAC"
