@@ -1017,7 +1017,7 @@ func (d *Dispatcher) worker(id int) {
 					if endSampleParam == 0 {
 						endSampleParam = -1
 					}
-					ctxHash, cancelHash := context.WithTimeout(context.Background(), 30*time.Second)
+					ctxHash, cancelHash := context.WithTimeout(context.Background(), 120*time.Second)
 					demucsClient, dErr := d.demucsPool.Acquire(ctxHash)
 					if dErr != nil {
 						cancelHash()

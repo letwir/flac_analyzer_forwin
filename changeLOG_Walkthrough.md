@@ -1,3 +1,12 @@
+# Walkthrough: 長尺ハイレゾ FLAC 向け HashCheck コンテキストタイムアウトの拡張 (30s -> 120s)
+
+- **Summary**: `TK from 凛として時雨 Track 12` などの長尺・ハイレゾ FLAC において、SEEKTABLE 欠落時のストリーミング逐次スキップ（1.8GB PCM スキップ）に約 35〜45 秒要するため、Go 側 Step 2.1 の `ctxHash` タイムアウト（30秒）で `context deadline exceeded` が発生していた。これを 120 秒に拡張し、深いトラックのハッシュ事前判定を確実に完走可能にした。
+- **Changes**:
+  - `orchestrator/dispatcher/dispatcher.go`: `ctxHash` タイムアウトを `30s` ➡️ `120s` に拡張。
+  - `orchestrator.exe`: 最新バイナリをリビルド。
+- **Verification**:
+  - `go test -v ./...`: All PASS
+
 # Walkthrough: 多次元波形テンソル PSD / HNR スカラー集約の安全化 & GPU 使用率 0-100% 正規化
 
 - **Summary**: 2次元ステレオ・多チャンネル波形テンソルにおける `IndexError: index 5 is out of bounds for dimension 0 with size 1` および `RuntimeError: a Tensor with 2 elements cannot be converted to Scalar` を解消するため、`tensor_dsp.py` の `extract_tensor_features`, `welch_psd`, `calc_hnr_nap_tensor` においてチャンネル平均による 1次元テンソル集約を徹底。また、Windows PDH で GPU エンジンの合算値が 144% 等の 100% 超過を起こす問題に対し、`-Maximum` 取得および 0.0〜100.0% クランプ処理を導入。`worker_daemon.py` の read-only NumPy 配列警告も抑制。

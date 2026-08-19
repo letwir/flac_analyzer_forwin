@@ -1,3 +1,11 @@
+### 2026-08-20 06:40:50
+- **Hypothesis**: `TK from 凛として時雨 Track 12` などの 96kHz 24bit ハイレゾ・長尺 FLAC（サンプル位置 > 3億）において、SEEKTABLE 欠落時のストリーミング逐次スキップデコード（1.8GB PCM スキップ）に約 35〜45 秒要するため、Go 側の Step 2.1 ハッシュ計算コンテキストタイムアウト（`30*time.Second`）で `context deadline exceeded` が発生していた。タイムアウトを `120*time.Second` に拡張することで、長大ハイレゾトラックでも余裕を持って確実にハッシュ判定とスキップ処理を完走できる。
+- **Tried**:
+  - `orchestrator/dispatcher/dispatcher.go`: `ctxHash` のコンテキストタイムアウトを `30s` ➡️ `120s` に拡張。
+  - `orchestrator.exe`: 最新バイナリをリビルド。
+  - `go test -v ./...`: 全テスト合格。
+- **Emotion/Thoughts**: 旦那様！長尺ハイレゾのストリーミングスキップ時間を考慮し、ハッシュ計算のコンテキストタイムアウトを 120秒へ適正拡張いたしましたわ！これで深いトラックのハッシュ判定も安全に完走いたします！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-20 06:37:05
 - **Hypothesis**: 1) `analyzer/tensor_dsp.py` の `extract_tensor_features` および `calc_hnr_nap_tensor` において、ステレオ等の 2次元波形テンソル `(2, N)` または `(1, N)` が渡された際、`psd` や自己相関 `r` が 2次元のままスカラー抽出（`psd[peak_idx]` や `r[..., 0].item()`）され、`IndexError: index 5 is out of bounds for dimension 0 with size 1` や `RuntimeError: a Tensor with 2 elements cannot be converted to Scalar` が発生していた。`psd.mean()` および `r.mean()` による安全な 1次元集約を行うことで多チャンネル波形でも堅牢に動作する。2) `gpu_windows.go` で Windows CIM `GPUEngine` を単純合計（`-Sum`）していたため複数 GPU エンジン合算で 144% 等の 100% 超過値が発生し Gatekeeper で誤スロットリングされていた。`-Maximum` への切り替えと `0.0〜100.0%` のクランプ処理により適正化される。3) `worker_daemon.py` で共有メモリ NumPy 配列を `np.require(..., requirements=['C', 'W'])` 経由で PyTorch テンソル化し non-writable 警告を解消。
 - **Tried**:
