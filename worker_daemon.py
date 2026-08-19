@@ -16,6 +16,8 @@ import sys
 import time
 import traceback
 from typing import Any
+import numpy as np
+import torch
 
 # プロジェクト内モジュールの事前ロード (起動時 1 回のみ)
 import shm_interop

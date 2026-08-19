@@ -1,3 +1,12 @@
+# Walkthrough: WorkerDaemon NumPy / PyTorch インポートの補完 & 全単体テストオールグリーン
+
+- **Summary**: `worker_daemon.py` に `import numpy as np` および `import torch` を追加し、テンソル特徴量抽出時の `NameError: name 'np' is not defined` を解消。
+- **Changes**:
+  - `worker_daemon.py`: `import numpy as np`, `import torch` を明示的にインポート。
+- **Verification**:
+  - `pytest`: 全 62 テスト合格 (62 passed in 57.58s)
+  - `go test ./...`: All PASS
+
 # Walkthrough: 長尺ハイレゾ FLAC 向け HashCheck コンテキストタイムアウトの拡張 (30s -> 120s)
 
 - **Summary**: `TK from 凛として時雨 Track 12` などの長尺・ハイレゾ FLAC において、SEEKTABLE 欠落時のストリーミング逐次スキップ（1.8GB PCM スキップ）に約 35〜45 秒要するため、Go 側 Step 2.1 の `ctxHash` タイムアウト（30秒）で `context deadline exceeded` が発生していた。これを 120 秒に拡張し、深いトラックのハッシュ事前判定を確実に完走可能にした。
