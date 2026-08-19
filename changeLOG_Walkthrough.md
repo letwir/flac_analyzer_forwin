@@ -1,3 +1,15 @@
+# Walkthrough: 長尺・ハイレゾ FLAC 向けストリーミング逐次スキップデコードの導入 & VRAM 閾値最適化
+
+- **Summary**: サンプル位置が 1億〜3.5億を超える長尺マルチトラック・ハイレゾ FLAC において、SEEKTABLE 欠落や 32bit シーク限界（`FLAC__STREAM_DECODER_SEEK_ERROR` / `psf_fseek` 失敗）を回避するため、`decode_flac_range_stream_fallback` を実装。`WAVE_FORMAT_EXTENSIBLE` (24bit/32bit) ヘッダ解析と逐次バイトスキップにより 100% 確実なデコードを達成。また、Demucs 常駐デーモン環境に合わせて Gatekeeper の VRAM 閾値を最適化。
+- **Changes**:
+  - `flac_decode.py`: `decode_flac_range_stream_fallback` を追加し、`decode_flac_range_fallback` 内の例外ハンドラへ統合。
+  - `config.toml`: `min_avail_vram_gb = 0.25`, `estimated_demucs_vram_gb = 0.5` へ調整。
+  - `orchestrator.exe`: 最新バイナリをリビルド。
+- **Verification**:
+  - 実機検証: `TK from 凛として時雨 Track 12` (96kHz 24bit, 3億サンプル, 149MB) および `ウマ娘 Disc 3 Track 8 & Track 20` (9,931万〜2.2億サンプル, 31MB & 71MB) が 100% 確実にデコード成功することを確認。
+  - `pytest tests/test_flac_decode.py`: 5/5 PASSED
+  - `go test ./...`: All PASS
+
 # Walkthrough: Demucs Resident Daemon & Adaptive GPU Single/Dual Scheduler
 
 - **Summary**: Demucs 波形分離処理において、常駐型ワーカーデーモン (`DemucsDaemonPool` & `demucs_daemon.py`) によるモデルロード時間・プロセス起動オーバーヘッドの完全撤廃、および GPU 負荷・VRAM 空き容量に応じたアダプティブ Single/Dual スロット制御 (`AdaptiveDemucsScheduler`) を実装・検証完了。

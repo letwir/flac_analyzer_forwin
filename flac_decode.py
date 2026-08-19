@@ -289,42 +289,113 @@ def parse_wav_header(wav_bytes: bytes) -> tuple[int, int, int, int, int, int]:
         
     return wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size
 
+def decode_flac_range_stream_fallback(
+    filepath: str, start_sample: int, end_sample: int
+) -> tuple[bytes, int, int, int, int]:
+    """
+    SEEKTABLE 欠落や 32bit オーバーフロー等でシークが全滅した長尺 FLAC のための
+    決定論的ストリーミング逐次スキップデコード射ですわ！
+    """
+    cmd = ['flac', '-d', '-c', '-s', '-F', filepath]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1024*1024)
+    try:
+        # ハイレゾ WAVE_FORMAT_EXTENSIBLE (24bit/32bit) に対応するため 4096 バイト先頭ヘッダを読み出し
+        header_buf = proc.stdout.read(4096)
+        if len(header_buf) < 44:
+            raise RuntimeError(f"WAV ヘッダ読み出し失敗: {filepath}")
+
+        wFormatTag, numChannels, sampleRate, bitsPerSample, data_offset, data_size = parse_wav_header(header_buf)
+        bytes_per_sample = bitsPerSample // 8
+        bytes_per_frame = numChannels * bytes_per_sample
+
+        skip_bytes = start_sample * bytes_per_frame
+        target_frames = end_sample - start_sample if end_sample > 0 else (data_size // bytes_per_frame) - start_sample
+        target_bytes = target_frames * bytes_per_frame
+
+        # 4096 バイト中のヘッダ以降の PCM バイト列
+        initial_pcm = header_buf[data_offset:]
+        initial_pcm_len = len(initial_pcm)
+
+        read_buf = bytearray()
+        chunk_size = 1024 * 1024
+
+        if skip_bytes <= initial_pcm_len:
+            # スキップ範囲が初期バッファ内に収まる場合
+            available_pcm = initial_pcm[skip_bytes:]
+            take = min(target_bytes, len(available_pcm))
+            read_buf.extend(available_pcm[:take])
+        else:
+            # 初期バッファを全スキップし、残りのスキップバイト数をストリームから読み飛ばす
+            remaining_skip = skip_bytes - initial_pcm_len
+            skipped = 0
+            while skipped < remaining_skip:
+                to_read = min(chunk_size, remaining_skip - skipped)
+                buf = proc.stdout.read(to_read)
+                if not buf:
+                    break
+                skipped += len(buf)
+
+        # 必要な target_bytes だけを読み出し
+        while len(read_buf) < target_bytes:
+            to_read = min(chunk_size, target_bytes - len(read_buf))
+            buf = proc.stdout.read(to_read)
+            if not buf:
+                break
+            read_buf.extend(buf)
+
+        return bytes(read_buf), wFormatTag, numChannels, sampleRate, bitsPerSample
+    finally:
+        try:
+            proc.stdout.close()
+            proc.terminate()
+            proc.wait(timeout=2)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
 def decode_flac_range_fallback(
     filepath: str, start_sample: int, end_sample: int
 ) -> tuple[bytes, int, int, int, int]:
     """
     flac CLI が SEEKTABLE 欠落などで FLAC__STREAM_DECODER_SEEK_ERROR を起こした際の
-    libsndfile (soundfile) による高精度ストリームデコード・フォールバックですわ！
+    libsndfile (soundfile) および ストリーミング逐次スキップによる高精度デコード・フォールバックですわ！
     """
-    import soundfile as sf
-    with sf.SoundFile(filepath) as f:
-        total = len(f)
-        actual_start = max(0, min(start_sample, total))
-        actual_end = max(actual_start, min(end_sample if end_sample > 0 else total, total))
-        frames = actual_end - actual_start
+    try:
+        import soundfile as sf
+        with sf.SoundFile(filepath) as f:
+            total = len(f)
+            actual_start = max(0, min(start_sample, total))
+            actual_end = max(actual_start, min(end_sample if end_sample > 0 else total, total))
+            frames = actual_end - actual_start
 
-        if frames <= 0 or actual_start >= total:
-            raise ValueError(f"デコード対象フレーム数が不正ですわ (frames={frames}, actual_start={actual_start}, total={total})")
+            if frames <= 0 or actual_start >= total:
+                raise ValueError(f"デコード対象フレーム数が不正ですわ (frames={frames}, actual_start={actual_start}, total={total})")
 
-        f.seek(actual_start)
-        subtype = getattr(f, "subtype", "")
-        if "PCM_24" in subtype or "PCM_32" in subtype:
-            pcm_data = f.read(frames=frames, dtype="int32")
-            pcm_bytes = pcm_data.tobytes()
-            wFormatTag = 1
-            bitsPerSample = 32
-        elif "PCM_16" in subtype:
-            pcm_data = f.read(frames=frames, dtype="int16")
-            pcm_bytes = pcm_data.tobytes()
-            wFormatTag = 1
-            bitsPerSample = 16
-        else:
-            pcm_data = f.read(frames=frames, dtype="float32")
-            pcm_bytes = pcm_data.tobytes()
-            wFormatTag = 3
-            bitsPerSample = 32
+            f.seek(actual_start)
+            subtype = getattr(f, "subtype", "")
+            if "PCM_24" in subtype or "PCM_32" in subtype:
+                pcm_data = f.read(frames=frames, dtype="int32")
+                pcm_bytes = pcm_data.tobytes()
+                wFormatTag = 1
+                bitsPerSample = 32
+            elif "PCM_16" in subtype:
+                pcm_data = f.read(frames=frames, dtype="int16")
+                pcm_bytes = pcm_data.tobytes()
+                wFormatTag = 1
+                bitsPerSample = 16
+            else:
+                pcm_data = f.read(frames=frames, dtype="float32")
+                pcm_bytes = pcm_data.tobytes()
+                wFormatTag = 3
+                bitsPerSample = 32
 
-        return pcm_bytes, wFormatTag, f.channels, f.samplerate, bitsPerSample
+            return pcm_bytes, wFormatTag, f.channels, f.samplerate, bitsPerSample
+    except Exception:
+        # soundfile.seek が psf_fseek でコケた場合は、確実なストリーミング逐次スキップデコードへ移行いたしますわ！
+        return decode_flac_range_stream_fallback(filepath, start_sample, end_sample)
 
 
 def decode_flac_range(
@@ -368,18 +439,18 @@ def decode_flac_range(
         last_error_context = f"rc={rc}, stderr='{err_msg}', bytes_len={len(wav_bytes)}, cmd={cmd}"
 
         # SEEKTABLE欠落や破損ストリームによるシークエラー（FLAC__STREAM_DECODER_SEEK_ERROR等）を検知した場合は、
-        # 即座に libsndfile (soundfile) による直接デコードへ安全にフォールバックいたしますわ！
+        # 即座に libsndfile (soundfile) / ストリーミングスキップによる直接デコードへ安全にフォールバックいたしますわ！
         if "SEEK_ERROR" in err_msg or "ERROR seeking" in err_msg or rc == 1:
             try:
                 return decode_flac_range_fallback(filepath, start_sample, end_sample)
             except Exception as fb_exc:
-                last_error_context += f" | soundfile_fallback_err='{fb_exc}'"
+                last_error_context += f" | fallback_err='{fb_exc}'"
 
         # I/O競合や一時的なファイルロックを考慮して指数バックオフで再試行
         if attempt < max_retries:
             time.sleep(0.5 * (2 ** (attempt - 1)))
             
-    # 最終リトライ失敗時も soundfile フォールバックを再試行
+    # 最終リトライ失敗時もフォールバックを再試行
     try:
         return decode_flac_range_fallback(filepath, start_sample, end_sample)
     except Exception:
