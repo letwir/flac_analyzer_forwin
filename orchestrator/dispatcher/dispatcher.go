@@ -93,26 +93,29 @@ type Config struct {
 	EstimatedWorkerRamGB  float64
 	MinAvailRamGB         float64
 	MinAvailDiskGB        float64
-	DemucsConcurrentLimit int
-	ShmAllocationDelaySec int
-	ShmExpansionRatio     float64
-	ShmRetryCount         int
-	ShmRetryDelaySec      int
-	QueueDir              string
-	DatabaseURL           string
-	PythonEnv             map[string]string
-	LogLevel              LogLevel
-	EventLog              EventLogger
-	SkipDupByHash         bool
-	EnableVirtualLock     bool
-	GatekeeperRetryDelaySec int
-	ConfigWatchIntervalSec  int
-	EnableDlqRetry          bool
-	DlqRetryIntervalSec     int
-	MaxGpuUtilizationRatio  float64
-	MinAvailVramGB          float64
-	EstimatedDemucsVramGB   float64
-	EnableGpuThrottle       bool
+	DemucsConcurrentLimit        int
+	DemucsDaemonCapacity         int
+	DemucsDualGpuUtilThreshold   float64
+	DemucsDualMinVramGB          float64
+	ShmAllocationDelaySec        int
+	ShmExpansionRatio            float64
+	ShmRetryCount                int
+	ShmRetryDelaySec             int
+	QueueDir                     string
+	DatabaseURL                  string
+	PythonEnv                    map[string]string
+	LogLevel                     LogLevel
+	EventLog                     EventLogger
+	SkipDupByHash                bool
+	EnableVirtualLock            bool
+	GatekeeperRetryDelaySec      int
+	ConfigWatchIntervalSec       int
+	EnableDlqRetry               bool
+	DlqRetryIntervalSec          int
+	MaxGpuUtilizationRatio       float64
+	MinAvailVramGB               float64
+	EstimatedDemucsVramGB        float64
+	EnableGpuThrottle            bool
 }
 
 
@@ -134,6 +137,8 @@ type Dispatcher struct {
 	arenaPool              *ShmArenaPool
 	statsTracker           *StatsTracker
 	daemonPool             *WorkerDaemonPool
+	demucsPool             *DemucsDaemonPool
+	demucsScheduler        *AdaptiveDemucsScheduler
 }
 
 const (
@@ -195,6 +200,14 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		log.Printf(format, v...)
 	})
 
+	statsTracker := NewStatsTracker()
+
+	// 常駐 Demucs デーモンプール (最大容量 2) & アダプティブ GPU スケジューラ
+	demucsPool := NewDemucsDaemonPool(2, pythonPath, parentDir, envVars, func(format string, v ...interface{}) {
+		log.Printf(format, v...)
+	})
+	demucsScheduler := NewAdaptiveDemucsScheduler(1, 2, 0.50, 4*1024*1024*1024, statsTracker)
+
 	return &Dispatcher{
 		config:                 cfg,
 		db:                     db,
@@ -207,8 +220,10 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		skipDupByHash:          cfg.SkipDupByHash,
 		activeInFlightRamBytes: 0,
 		arenaPool:              NewShmArenaPool(cfg.EnableVirtualLock),
-		statsTracker:           NewStatsTracker(),
+		statsTracker:           statsTracker,
 		daemonPool:             daemonPool,
+		demucsPool:             demucsPool,
+		demucsScheduler:        demucsScheduler,
 	}
 }
 
@@ -302,6 +317,15 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	if oldCfg.DlqRetryIntervalSec != newCfg.DlqRetryIntervalSec {
 		diff["dlq_retry_interval_sec"] = fmt.Sprintf("%d -> %d", oldCfg.DlqRetryIntervalSec, newCfg.DlqRetryIntervalSec)
 	}
+	if oldCfg.DemucsDaemonCapacity != newCfg.DemucsDaemonCapacity {
+		diff["demucs_daemon_capacity"] = fmt.Sprintf("%d -> %d", oldCfg.DemucsDaemonCapacity, newCfg.DemucsDaemonCapacity)
+	}
+	if oldCfg.DemucsDualGpuUtilThreshold != newCfg.DemucsDualGpuUtilThreshold {
+		diff["demucs_dual_gpu_util_threshold"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.DemucsDualGpuUtilThreshold, newCfg.DemucsDualGpuUtilThreshold)
+	}
+	if oldCfg.DemucsDualMinVramGB != newCfg.DemucsDualMinVramGB {
+		diff["demucs_dual_min_vram_gb"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.DemucsDualMinVramGB, newCfg.DemucsDualMinVramGB)
+	}
 	if oldCfg.MaxGpuUtilizationRatio != newCfg.MaxGpuUtilizationRatio {
 		diff["max_gpu_utilization_ratio"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.MaxGpuUtilizationRatio, newCfg.MaxGpuUtilizationRatio)
 	}
@@ -362,11 +386,21 @@ func (d *Dispatcher) Start() {
 	if d.statsTracker != nil {
 		d.statsTracker.StartSystemResourceCollector(context.Background(), d.config.QueueDir, 5*time.Second)
 	}
+	if d.demucsScheduler != nil {
+		d.demucsScheduler.StartAdaptiveLoop(context.Background(), 2*time.Second)
+	}
 	if d.daemonPool != nil {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			_ = d.daemonPool.Prewarm(ctx, 2)
+		}()
+	}
+	if d.demucsPool != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			_ = d.demucsPool.Prewarm(ctx, 1)
 		}()
 	}
 	for i := 1; i <= d.config.NumWorkers; i++ {
@@ -401,6 +435,9 @@ func (d *Dispatcher) Stop() {
 	d.wg.Wait()
 	if d.daemonPool != nil {
 		_ = d.daemonPool.Close()
+	}
+	if d.demucsPool != nil {
+		_ = d.demucsPool.Close()
 	}
 	if d.arenaPool != nil {
 		d.arenaPool.Close()
@@ -975,37 +1012,34 @@ func (d *Dispatcher) worker(id int) {
 					trackHash = fastMD5
 					d.LogDebug("[W-%d] [FastPath] Extracted STREAMINFO MD5 directly: %s", id, trackHash)
 				} else {
-					// 2.1 Calculate MD5 hash only (Lightweight decoding)
+					// 2.1 Calculate MD5 hash only via DemucsDaemonPool (Zero process spawn!)
 					endSampleParam = task.EndSample
 					if endSampleParam == 0 {
 						endSampleParam = -1
 					}
-					hashOut, err := d.runPythonScript("worker_demucs.py", []string{
-						"--flac-path", task.FlacPath,
-						"--shm-tags", "{}",
-						"--start-sample", fmt.Sprintf("%d", task.StartSample),
-						"--end-sample", fmt.Sprintf("%d", endSampleParam),
-						"--check-hash-only",
-					}, id, "HashCheck", ColorCyan, true)
+					ctxHash, cancelHash := context.WithTimeout(context.Background(), 30*time.Second)
+					demucsClient, dErr := d.demucsPool.Acquire(ctxHash)
+					if dErr != nil {
+						cancelHash()
+						d.failTask(task, fmt.Sprintf("Failed to acquire Demucs daemon for hash check: %v", dErr))
+						return
+					}
+					hashResp, hashErr := demucsClient.CheckHash(ctxHash, DemucsCheckHashPayload{
+						FlacPath:    task.FlacPath,
+						StartSample: task.StartSample,
+						EndSample:   endSampleParam,
+					})
+					cancelHash()
+					d.demucsPool.Release(demucsClient)
 
-					if err != nil {
-						d.failTask(task, fmt.Sprintf("Hash calculation failed: %v", err))
+					if hashErr != nil {
+						d.failTask(task, fmt.Sprintf("Hash calculation failed via Demucs daemon: %v", hashErr))
 						return
 					}
 
-					cleanHashOut := strings.TrimSpace(hashOut)
-					var hashMeta struct {
-						Status    string             `json:"status"`
-						AudioHash string             `json:"audio_hash"`
-						Profile   map[string]float64 `json:"profile"`
-					}
-					if err := json.Unmarshal([]byte(cleanHashOut), &hashMeta); err != nil || hashMeta.AudioHash == "" {
-						d.failTask(task, fmt.Sprintf("Failed to parse calculated hash (output: %s): %v", cleanHashOut, err))
-						return
-					}
-					trackHash = hashMeta.AudioHash
-					if d.statsTracker != nil && hashMeta.Profile != nil {
-						for step, dur := range hashMeta.Profile {
+					trackHash = hashResp.AudioHash
+					if d.statsTracker != nil && hashResp.Profile != nil {
+						for step, dur := range hashResp.Profile {
 							d.statsTracker.RecordPythonStepDuration("demucs", step, dur)
 						}
 					}
@@ -1051,15 +1085,8 @@ func (d *Dispatcher) worker(id int) {
 			if ratio <= 0 { ratio = 3.5 }
 			estimatedSize := EstimateShmSizeForTaskWithRatio(task, ratio)
 
-			d.LogInfo("[W-%d] [IO Monad] Waiting for Demucs execution slot (limit: %d)...", id, d.demucsSemaphore.GetLimit())
-			metrics.AnalyzerDemucsQueueWaiters.Inc()
-			demucsWaitStart := time.Now()
-			d.demucsSemaphore.Acquire()
-			metrics.AnalyzerDemucsQueueWaiters.Dec()
-			metrics.AnalyzerDemucsSlotsInUse.Inc()
-			if d.statsTracker != nil {
-				d.statsTracker.RecordDemucsWait(time.Since(demucsWaitStart))
-			}
+			d.LogInfo("[W-%d] [IO Monad] Waiting for Adaptive Demucs execution slot (limit: %d)...", id, d.demucsScheduler.GetLimit())
+			d.demucsScheduler.Acquire()
 
 			delaySec := currentCfg.ShmAllocationDelaySec
 			if delaySec > 0 {
@@ -1125,8 +1152,7 @@ func (d *Dispatcher) worker(id int) {
 			}
 
 			if allocError != nil {
-				d.demucsSemaphore.Release()
-				metrics.AnalyzerDemucsSlotsInUse.Dec()
+				d.demucsScheduler.Release()
 				_ = arenaSet.UnfreezeAll()
 				d.failTask(task, allocError.Error())
 				metrics.AnalyzerTasksTotal.WithLabelValues("oom_failed").Inc()
@@ -1134,59 +1160,52 @@ func (d *Dispatcher) worker(id int) {
 			}
 
 			tagsMap := arenaSet.GetTagsMap()
-			tagsJson, err := json.Marshal(tagsMap)
-			if err != nil {
-				d.demucsSemaphore.Release()
-				metrics.AnalyzerDemucsSlotsInUse.Dec()
-				_ = arenaSet.UnfreezeAll()
-				d.failTask(task, fmt.Sprintf("Failed to marshal tagsMap: %v", err))
-				return
-			}
 
-			// 3. Demucs
+			// 3. Demucs via Resident DemucsDaemonPool
 			endSampleParam = task.EndSample
 			if endSampleParam == 0 {
 				endSampleParam = -1
 			}
 			demucsStageStart := time.Now()
-			demucsOut, err := d.runPythonScript("worker_demucs.py", []string{
-				"--flac-path", task.FlacPath, 
-				"--shm-tags", string(tagsJson), 
-				"--start-sample", fmt.Sprintf("%d", task.StartSample), 
-				"--end-sample", fmt.Sprintf("%d", endSampleParam),
-			}, id, "Demucs", ColorCyan, true)
+			ctxDemucs, cancelDemucs := context.WithTimeout(context.Background(), 300*time.Second)
+			demucsClient, dErr := d.demucsPool.Acquire(ctxDemucs)
+			if dErr != nil {
+				cancelDemucs()
+				d.demucsScheduler.Release()
+				_ = arenaSet.UnfreezeAll()
+				d.failTask(task, fmt.Sprintf("Failed to acquire Demucs daemon for separation: %v", dErr))
+				return
+			}
 
-			d.demucsSemaphore.Release()
-			metrics.AnalyzerDemucsSlotsInUse.Dec()
+			sepResp, sepErr := demucsClient.Separate(ctxDemucs, DemucsSeparatePayload{
+				FlacPath:    task.FlacPath,
+				ShmTags:     tagsMap,
+				StartSample: task.StartSample,
+				EndSample:   endSampleParam,
+				UseDml:      false,
+			})
+			cancelDemucs()
+			d.demucsPool.Release(demucsClient)
+			d.demucsScheduler.Release()
 
 			if d.statsTracker != nil {
 				d.statsTracker.RecordStageDuration("demucs", time.Since(demucsStageStart))
 			}
 
-			if err != nil {
+			if sepErr != nil {
 				_ = arenaSet.UnfreezeAll()
-				d.failTask(task, err.Error())
+				d.failTask(task, fmt.Sprintf("Demucs daemon separation failed: %v", sepErr))
 				return
 			}
 
-			var demucsMeta struct {
-				Status    string              `json:"status"`
-				SR        int                 `json:"sr"`
-				AudioHash string              `json:"audio_hash"`
-				Stems     map[string]StemInfo `json:"stems"`
-				Profile   map[string]float64  `json:"profile"`
+			trackHash = sepResp.AudioHash
+			demucsSR := sepResp.SR
+			if demucsSR == 0 {
+				demucsSR = 44100
 			}
-			if err := json.Unmarshal([]byte(demucsOut), &demucsMeta); err != nil || demucsMeta.Status != "success" || demucsMeta.AudioHash == "" {
-				_ = arenaSet.UnfreezeAll()
-				d.failTask(task, "Demucs metadata invalid")
-				return
-			}
-			trackHash = demucsMeta.AudioHash
-			if demucsMeta.SR == 0 {
-				demucsMeta.SR = 44100
-			}
-			if d.statsTracker != nil && demucsMeta.Profile != nil {
-				for step, dur := range demucsMeta.Profile {
+			demucsStems := sepResp.Stems
+			if d.statsTracker != nil && sepResp.Profile != nil {
+				for step, dur := range sepResp.Profile {
 					d.statsTracker.RecordPythonStepDuration("demucs", step, dur)
 				}
 			}
@@ -1216,9 +1235,9 @@ func (d *Dispatcher) worker(id int) {
 			}
 
 			extractPayload := ExtractAllPayload{
-				SR:        demucsMeta.SR,
+				SR:        demucsSR,
 				TrackHash: trackHash,
-				Stems:     demucsMeta.Stems,
+				Stems:     demucsStems,
 			}
 			ctxExtract, cancelExtract := context.WithTimeout(context.Background(), 90*time.Second)
 			daemonResp, daemonExtractErr := daemonClient.ExtractAll(ctxExtract, extractPayload)

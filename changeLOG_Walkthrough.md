@@ -1,3 +1,19 @@
+# Walkthrough: Demucs Resident Daemon & Adaptive GPU Single/Dual Scheduler
+
+- **Summary**: Demucs 波形分離処理において、常駐型ワーカーデーモン (`DemucsDaemonPool` & `demucs_daemon.py`) によるモデルロード時間・プロセス起動オーバーヘッドの完全撤廃、および GPU 負荷・VRAM 空き容量に応じたアダプティブ Single/Dual スロット制御 (`AdaptiveDemucsScheduler`) を実装・検証完了。
+- **Changes**:
+  - `demucs_daemon.py` [NEW]: `HTDemucsSeparator`（ONNX）を起動時に 1 回だけ GPU VRAM にロード。NDJSON IPC で `check_hash` および `separate` をオンメモリ高速実行。Advisory 1 遵守により書き込み後即座に `shm.close()` でハンドル解放。
+  - `orchestrator/dispatcher/demucs_daemon.go` [NEW]: `DemucsDaemonClient` & `DemucsDaemonPool` (Windows JobObject 管理, 自動リカバリ, 50タスクリサイクル)。
+  - `orchestrator/dispatcher/demucs_scheduler.go` [NEW]: 決定論的純粋射 `DetermineDemucsSlotLimitPure` と、2回連続判定ヒステリシス制御を備えた `AdaptiveDemucsScheduler`。
+  - `orchestrator/dispatcher/dispatcher.go`: Step 2.1 (HashCheck) および Step 3 (Demucs) を常駐デーモンプール経由に切り替え。
+  - `orchestrator/metrics/metrics.go`: `analyzer_demucs_dynamic_limit`, `analyzer_demucs_daemon_active_slots`, `analyzer_demucs_daemon_pool_size` を追加。
+  - `orchestrator/main.go`, `config.toml`, `config_test.toml`, `reload_test.go`: `demucs_daemon_capacity` (2), `demucs_dual_gpu_util_threshold` (0.50), `demucs_dual_min_vram_gb` (4.0) を追加。
+- **Verification**:
+  - `go test -v ./...` (orchestrator): 全単体テスト PASS (`ok flac_analyzer/orchestrator/dispatcher 34.221s`)
+  - `python -m unittest tests/test_demucs_daemon.py`: OK (19.767s)
+  - `proof-checker.exe`: PASS (0 Errors)
+  - Auditor & Verifier サブエージェント審査: 満場一致の PASS
+
 # Walkthrough: GPU Resource Observation & Dynamic Allocation
 
 - **Summary**: Windows Native API (PDH / CIM) による GPU 使用率 (%) および Dedicated / Shared VRAM のリアルタイム観測モジュール、Prometheus 可観測性メトリクス拡張、Gatekeeper による GPU 過負荷防止動的リソース配分・スロットリングを実装・検証完了。

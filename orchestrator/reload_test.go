@@ -68,6 +68,9 @@ omp_num_threads = "1"
 [orchestrator]
 num_workers = 2
 demucs_concurrent_limit = 3
+demucs_daemon_capacity = 2
+demucs_dual_gpu_util_threshold = 0.40
+demucs_dual_min_vram_gb = 6.0
 max_ram_ratio = 0.60
 estimated_worker_ram_gb = 2.5
 min_avail_ram_gb = 3.0
@@ -99,6 +102,12 @@ omp_num_threads = "2"
 
 	if diff["demucs_concurrent_limit"] != "1 -> 3" {
 		t.Errorf("expected diff demucs_concurrent_limit '1 -> 3', got %q", diff["demucs_concurrent_limit"])
+	}
+	if diff["demucs_dual_gpu_util_threshold"] != "0.50 -> 0.40" {
+		t.Errorf("expected diff demucs_dual_gpu_util_threshold '0.50 -> 0.40', got %q", diff["demucs_dual_gpu_util_threshold"])
+	}
+	if diff["demucs_dual_min_vram_gb"] != "4.00 -> 6.00" {
+		t.Errorf("expected diff demucs_dual_min_vram_gb '4.00 -> 6.00', got %q", diff["demucs_dual_min_vram_gb"])
 	}
 	if diff["log_level"] != "info -> debug" {
 		t.Errorf("expected diff log_level 'info -> debug', got %q", diff["log_level"])

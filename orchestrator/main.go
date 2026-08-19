@@ -37,8 +37,11 @@ type Config struct {
 		EstimatedWorkerRamGB  float64 `toml:"estimated_worker_ram_gb"`
 		MinAvailRamGB         float64 `toml:"min_avail_ram_gb"`
 		MinAvailDiskGB        float64 `toml:"min_avail_disk_gb"`
-		DemucsConcurrentLimit int     `toml:"demucs_concurrent_limit"`
-		ShmAllocationDelaySec int     `toml:"shm_allocation_delay_sec"`
+		DemucsConcurrentLimit        int     `toml:"demucs_concurrent_limit"`
+		DemucsDaemonCapacity         int     `toml:"demucs_daemon_capacity"`
+		DemucsDualGpuUtilThreshold   float64 `toml:"demucs_dual_gpu_util_threshold"`
+		DemucsDualMinVramGB          float64 `toml:"demucs_dual_min_vram_gb"`
+		ShmAllocationDelaySec        int     `toml:"shm_allocation_delay_sec"`
 		ShmExpansionRatio     float64 `toml:"shm_expansion_ratio"`
 		ShmRetryCount         int     `toml:"shm_retry_count"`
 		ShmRetryDelaySec      int     `toml:"shm_retry_delay_sec"`
@@ -611,21 +614,39 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		enableGpuThrottle = *cfg.Orchestrator.EnableGpuThrottle
 	}
 
+	demucsDaemonCap := cfg.Orchestrator.DemucsDaemonCapacity
+	if demucsDaemonCap <= 0 {
+		demucsDaemonCap = 2
+	}
+
+	demucsDualUtilThreshold := cfg.Orchestrator.DemucsDualGpuUtilThreshold
+	if demucsDualUtilThreshold <= 0 {
+		demucsDualUtilThreshold = 0.50
+	}
+
+	demucsDualMinVramGB := cfg.Orchestrator.DemucsDualMinVramGB
+	if demucsDualMinVramGB <= 0 {
+		demucsDualMinVramGB = 4.0
+	}
+
 	resolvedPythonEnv := resolvePythonEnv(cfg.PythonEnv, numCPU, cfg.Orchestrator.NumWorkers)
 
 	dispConfig := &dispatcher.Config{
-		NumWorkers:            cfg.Orchestrator.NumWorkers,
-		MaxRamRatio:           effectiveRamRatio,
-		EstimatedWorkerRamGB:  cfg.Orchestrator.EstimatedWorkerRamGB,
-		MinAvailRamGB:         cfg.Orchestrator.MinAvailRamGB,
-		MinAvailDiskGB:        cfg.Orchestrator.MinAvailDiskGB,
-		DemucsConcurrentLimit: cfg.Orchestrator.DemucsConcurrentLimit,
-		ShmAllocationDelaySec: cfg.Orchestrator.ShmAllocationDelaySec,
-		ShmExpansionRatio:     cfg.Orchestrator.ShmExpansionRatio,
-		ShmRetryCount:         cfg.Orchestrator.ShmRetryCount,
-		ShmRetryDelaySec:      cfg.Orchestrator.ShmRetryDelaySec,
-		QueueDir:              cfg.Orchestrator.QueueDir,
-		DatabaseURL:           cfg.Database.URL,
+		NumWorkers:                 cfg.Orchestrator.NumWorkers,
+		MaxRamRatio:                effectiveRamRatio,
+		EstimatedWorkerRamGB:       cfg.Orchestrator.EstimatedWorkerRamGB,
+		MinAvailRamGB:              cfg.Orchestrator.MinAvailRamGB,
+		MinAvailDiskGB:             cfg.Orchestrator.MinAvailDiskGB,
+		DemucsConcurrentLimit:      cfg.Orchestrator.DemucsConcurrentLimit,
+		DemucsDaemonCapacity:       demucsDaemonCap,
+		DemucsDualGpuUtilThreshold: demucsDualUtilThreshold,
+		DemucsDualMinVramGB:        demucsDualMinVramGB,
+		ShmAllocationDelaySec:      cfg.Orchestrator.ShmAllocationDelaySec,
+		ShmExpansionRatio:          cfg.Orchestrator.ShmExpansionRatio,
+		ShmRetryCount:              cfg.Orchestrator.ShmRetryCount,
+		ShmRetryDelaySec:           cfg.Orchestrator.ShmRetryDelaySec,
+		QueueDir:                   cfg.Orchestrator.QueueDir,
+		DatabaseURL:                cfg.Database.URL,
 
 		PythonEnv:               resolvedPythonEnv,
 		LogLevel:                logLevel,

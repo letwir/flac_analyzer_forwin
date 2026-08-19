@@ -51,6 +51,27 @@ var (
 		},
 	)
 
+	AnalyzerDemucsDynamicLimit = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_demucs_dynamic_limit",
+			Help: "Current adaptive concurrency limit for Demucs GPU execution (1 or 2)",
+		},
+	)
+
+	AnalyzerDemucsDaemonActiveSlots = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_demucs_daemon_active_slots",
+			Help: "Number of Demucs resident daemon slots currently active",
+		},
+	)
+
+	AnalyzerDemucsDaemonPoolSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_demucs_daemon_pool_size",
+			Help: "Total number of spawned Demucs resident daemons in pool",
+		},
+	)
+
 	AnalyzerErrorsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "analyzer_errors_total",
