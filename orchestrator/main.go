@@ -1,108 +1,26 @@
+// Package main provides the top-level orchestration entrypoint, HTTP natural transformation, and lifecycle.
+// Morphism Composition & Application Lifecycle (IO Monad)
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"sync"
+	"runtime"
 	"syscall"
 	"time"
 
-	"math"
-	"runtime"
-
+	"flac_analyzer/orchestrator/config"
 	"flac_analyzer/orchestrator/dispatcher"
+	"flac_analyzer/orchestrator/logger"
 	"flac_analyzer/orchestrator/metrics"
 	"flac_analyzer/orchestrator/state"
 	"flac_analyzer/orchestrator/sysinfo"
-	"github.com/pelletier/go-toml/v2"
-	"golang.org/x/sys/windows/svc/eventlog"
 )
-
-
-type Config struct {
-	Database struct {
-		URL        string `toml:"url"`
-		TimeoutSec int    `toml:"db_timeout_sec"`
-	} `toml:"database"`
-	Orchestrator struct {
-		NumWorkers            int     `toml:"num_workers"`
-		MaxRamRatio           float64 `toml:"max_ram_ratio"`
-		CpuWorkerRatio        float64 `toml:"cpu_worker_ratio"`
-		EstimatedWorkerRamGB  float64 `toml:"estimated_worker_ram_gb"`
-		MinAvailRamGB         float64 `toml:"min_avail_ram_gb"`
-		MinAvailDiskGB        float64 `toml:"min_avail_disk_gb"`
-		DemucsConcurrentLimit        int     `toml:"demucs_concurrent_limit"`
-		DemucsDaemonCapacity         int     `toml:"demucs_daemon_capacity"`
-		DemucsDualGpuUtilThreshold   float64 `toml:"demucs_dual_gpu_util_threshold"`
-		DemucsDualMinVramGB          float64 `toml:"demucs_dual_min_vram_gb"`
-		ShmAllocationDelaySec        int     `toml:"shm_allocation_delay_sec"`
-		ShmExpansionRatio     float64 `toml:"shm_expansion_ratio"`
-		ShmRetryCount         int     `toml:"shm_retry_count"`
-		ShmRetryDelaySec      int     `toml:"shm_retry_delay_sec"`
-		QueueDir              string  `toml:"queue_dir"`
-
-		LogLevel              string  `toml:"log_level"`
-		SkipDupByHash         *bool   `toml:"skip_dup_by_hash"`
-		EnableVirtualLock     *bool   `toml:"enable_virtual_lock"`
-		MinWorkingSetMB       int     `toml:"min_working_set_mb"`
-		MaxWorkingSetMB       int     `toml:"max_working_set_mb"`
-		GatekeeperRetryDelaySec int   `toml:"gatekeeper_retry_delay_sec"`
-		ConfigWatchIntervalSec  int   `toml:"config_watch_interval_sec"`
-		EnableDlqRetry          *bool   `toml:"enable_dlq_retry"`
-		DlqRetryIntervalSec     int     `toml:"dlq_retry_interval_sec"`
-		MaxGpuUtilizationRatio  float64 `toml:"max_gpu_utilization_ratio"`
-		MinAvailVramGB          float64 `toml:"min_avail_vram_gb"`
-		EstimatedDemucsVramGB   float64 `toml:"estimated_demucs_vram_gb"`
-		EnableGpuThrottle       *bool   `toml:"enable_gpu_throttle"`
-		DbTimeoutSec            int     `toml:"db_timeout_sec"`
-		EnableDiskModeFallback  *bool   `toml:"enable_disk_mode_fallback"`
-		DiskModeRamThresholdRatio float64 `toml:"disk_mode_ram_threshold_ratio"`
-	} `toml:"orchestrator"`
-	PythonEnv map[string]string `toml:"python_env"`
-}
-
-func setupEventLog() *eventlog.Log {
-	const sourceName = "FlacAnalyzerOrchestrator"
-	// イベントソースのインストールを試みます
-	// 失敗してもすでに登録済み、または権限不足の可能性があります
-	_ = eventlog.InstallAsEventCreate(sourceName, eventlog.Error|eventlog.Warning|eventlog.Info)
-
-	elog, err := eventlog.Open(sourceName)
-	if err != nil {
-		log.Printf("Warning: Failed to open Windows event log (maybe run as non-admin?): %v\n", err)
-		return nil
-	}
-	return elog
-}
-
-func fatalErrorLog(titleJP, descJP, hintJP, titleEN, descEN, hintEN string, err error) {
-	log.Printf("==========================================================================")
-	log.Printf(" ❌ 【エラー発生 / ERROR OCCURRED】 %s", titleJP)
-	log.Printf(" --------------------------------------------------------------------------")
-	log.Printf(" [JP] %s", descJP)
-	if hintJP != "" {
-		log.Printf(" 💡 [ヒント] %s", hintJP)
-	}
-	log.Printf(" --------------------------------------------------------------------------")
-	log.Printf(" [EN] %s", descEN)
-	if hintEN != "" {
-		log.Printf(" 💡 [Hint] %s", hintEN)
-	}
-	if err != nil {
-		log.Printf(" 🔍 [Details/詳細] %v", err)
-	}
-	log.Printf("==========================================================================")
-	log.Printf("※ コンソールが即座に閉じるのを防ぐため、5秒間待機いたしますわ...")
-	time.Sleep(5 * time.Second)
-	log.Fatalf("Orchestrator terminated due to fatal error.")
-}
 
 func main() {
 	var configPath string
@@ -137,15 +55,15 @@ func main() {
 	}
 
 	// Initialize Windows Event Log
-	elog := setupEventLog()
+	elog := logger.SetupEventLog()
 	if elog != nil {
 		defer elog.Close()
 	}
 
-	// 2. Load and validate config
-	cfg, dispConfig, err := loadAndValidateConfig(configPath, totalRamGB, numCPU, logLevelStr, elog)
+	// 2. Load and validate config via pure functor
+	rawCfg, dispConfig, err := config.LoadFromFile(configPath, totalRamGB, numCPU, logLevelStr, elog)
 	if err != nil {
-		fatalErrorLog(
+		logger.FatalErrorLog(
 			"設定ファイル読み込み・構文エラー",
 			fmt.Sprintf("設定ファイル (%s) の読み込みまたは解析に失敗いたしましたわ！", configPath),
 			"プロジェクトルートにある 'config.toml.example' をコピーして 'config.toml' を作成し、構文（UTF-8）をご確認くださいませ。",
@@ -169,13 +87,13 @@ func main() {
 		log.Printf("Successfully auto-detected hardware specs and updated %s", specsPath)
 	}
 
-	// Enable Virtual Lock setting (default: true)
+	// Enable Virtual Lock setting
 	enableVirtualLock := dispConfig.EnableVirtualLock
-	minWS := cfg.Orchestrator.MinWorkingSetMB
+	minWS := rawCfg.Orchestrator.MinWorkingSetMB
 	if minWS <= 0 {
 		minWS = 512
 	}
-	maxWS := cfg.Orchestrator.MaxWorkingSetMB
+	maxWS := rawCfg.Orchestrator.MaxWorkingSetMB
 	if maxWS <= 0 {
 		calcMaxWS := int(totalRamGB * 1024 * 0.75)
 		if calcMaxWS < 16384 {
@@ -185,7 +103,6 @@ func main() {
 	}
 
 	if enableVirtualLock {
-		// 物理RAMへの固着 (VirtualLock) 用にプロセスのワーキングセットサイズを拡張試行いたしますの
 		if err := dispatcher.EnableProcessWorkingSetLock(minWS, maxWS); err != nil {
 			log.Printf("[INFO] Working set expansion note: %v (using dynamic auto-expansion Working Set quotas)", err)
 		} else {
@@ -195,7 +112,7 @@ func main() {
 		log.Printf("[INFO] VirtualLock disabled via config (enable_virtual_lock = false). Using standard shared memory.")
 	}
 
-	// Win32 Job Object の初期化（Chrome風プロセスグループ化 ＆ 自動一括クリーンアップ）
+	// Win32 Job Object の初期化
 	if err := dispatcher.InitGlobalJob(); err != nil {
 		log.Printf("[WARN] Failed to initialize Win32 Job Object: %v", err)
 	}
@@ -214,7 +131,7 @@ func main() {
 
 	stateDB, err := state.InitDB(dbPath)
 	if err != nil {
-		fatalErrorLog(
+		logger.FatalErrorLog(
 			"状態DB (SQLite) 初期化失敗",
 			fmt.Sprintf("タスク状態データベース (%s) の初期化に失敗いたしましたわ！", dbPath),
 			"データベースファイルへの書き込み権限や、他プロセスによるロック（二重起動等）をご確認くださいませ。",
@@ -226,21 +143,21 @@ func main() {
 	}
 	defer stateDB.Close()
 
-	// 3.1 Reset any stale RUNNING/PENDING tasks from previous interrupted runs
+	// 3.1 Reset stale tasks from previous interrupted runs
 	if resetCount, err := stateDB.ResetStaleTasks(); err != nil {
 		log.Printf("Warning: Failed to reset stale tasks: %v", err)
 	} else if resetCount > 0 {
 		log.Printf("Reset %d interrupted/stale tasks to FAILED state for clean retry", resetCount)
 	}
 
-	// 3.2 Purge orphaned cache directories and stale queue JSON files (Storage Defense GC)
+	// 3.2 Purge orphaned cache directories and stale queue JSON files
 	dispatcher.PurgeOrphanedQueueAndCacheFiles(dispConfig.QueueDir, 1*time.Hour)
 
 	// 4. Initialize Metrics Server
 	go func() {
 		log.Println("Starting Prometheus metrics server on :2112/metrics")
 		if err := metrics.InitMetricsServer(":2112"); err != nil {
-			fatalErrorLog(
+			logger.FatalErrorLog(
 				"メトリクスサーバー起動失敗",
 				"Prometheus メトリクスサーバー (:2112) の起動に失敗いたしましたわ！",
 				"ポート 2112 が他プロセスや Orchestrator の二重起動で使用されていないかご確認くださいませ。",
@@ -258,147 +175,21 @@ func main() {
 	log.Printf("Dispatcher started with %d workers (Demucs Limit: %d, MaxRamRatio: %.1f%%, VirtualLock: %v, LogLevel: %v)\n",
 		dispConfig.NumWorkers, dispConfig.DemucsConcurrentLimit, dispConfig.MaxRamRatio*100, enableVirtualLock, dispConfig.LogLevel)
 
-	// 5.1 Start DLQ Auto-Retry Scheduler (startup immediate run + periodic ticker)
+	// 5.1 Start DLQ Auto-Retry Scheduler
 	disp.StartDlqRetryScheduler(context.Background())
 
-	// 5.2 Start Config File Watcher for dynamic hot-reloading (10 min / config_watch_interval_sec)
+	// 5.2 Start Config File Watcher
 	watcherCtx, cancelWatcher := context.WithCancel(context.Background())
 	defer cancelWatcher()
 	startConfigFileWatcher(watcherCtx, configPath, disp, totalRamGB, numCPU, logLevelStr, elog, dispConfig.ConfigWatchIntervalSec)
 
-	// 6. Setup Task Receiver and Admin Endpoints
-	mux := http.NewServeMux()
-
-	cueInspectSem := make(chan struct{}, 8)
-
-	// POST /task
-	mux.HandleFunc("/task", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var payload dispatcher.TaskPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-
-		// 1. Inspect CUE / FLAC tags automatically (throttled by semaphore)
-		cueInspectSem <- struct{}{}
-		cueRes, err := disp.InspectCue(payload.FlacPath)
-		<-cueInspectSem
-
-		if err != nil || cueRes == nil || len(cueRes.Tracks) == 0 {
-			warnMsg := "CUE not present or failed to parse"
-			if err != nil {
-				warnMsg = fmt.Sprintf("CUE inspect warning: %v", err)
-			}
-			log.Printf("Fallback to single track processing for %s: %s", payload.FlacPath, warnMsg)
-			cueRes = &dispatcher.CueInspectResult{
-				Status:   "fallback",
-				Filepath: payload.FlacPath,
-				Tracks: []dispatcher.CueInspectTrack{
-					{
-						TrackNumber: 1,
-						StartSample: 0,
-						EndSample:   0,
-						Title:       dispatcher.FlexibleString(payload.Title),
-						Artist:      dispatcher.FlexibleString(payload.Artist),
-					},
-				},
-			}
-		}
-
-		// 2. Expand into track-level tasks
-		disp.RegisterFileTracks(payload.FlacPath, len(cueRes.Tracks))
-		enqueuedCount := 0
-		skippedCount := 0
-
-		for _, tr := range cueRes.Tracks {
-			taskItem := payload
-			taskItem.TrackNumber = tr.TrackNumber
-			taskItem.StartSample = tr.StartSample
-			taskItem.EndSample = tr.EndSample
-			taskItem.Title = tr.Title.String()
-			taskItem.Artist = tr.Artist.String()
-			taskItem.Album = cueRes.Album.String()
-			taskItem.AlbumArtist = cueRes.AlbumArtist.String()
-
-			shouldRun, dbErr := stateDB.CheckOrInsertWithForce(taskItem.FlacPath, taskItem.TrackNumber, taskItem.Force)
-			if dbErr != nil {
-				log.Printf("DB error for %s track %d: %v", taskItem.FlacPath, taskItem.TrackNumber, dbErr)
-				continue
-			}
-
-			if !shouldRun {
-				skippedCount++
-				continue
-			}
-
-			disp.Enqueue(taskItem)
-			enqueuedCount++
-		}
-
-		if enqueuedCount == 0 && skippedCount > 0 {
-			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, "Skipped: All %d tracks already processed or in progress\n", skippedCount)
-			return
-		}
-
-		w.WriteHeader(http.StatusAccepted)
-		fmt.Fprintf(w, "Task accepted (%d tracks enqueued, %d skipped)\n", enqueuedCount, skippedCount)
-	})
-
-	// POST /reload (Manual Dynamic Config Reload)
-	mux.HandleFunc("/reload", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		diff, err := reloadConfiguration(disp, configPath, totalRamGB, numCPU, logLevelStr, elog)
-		w.Header().Set("Content-Type", "application/json")
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "error",
-				"message": err.Error(),
-			})
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":         "success",
-			"message":        "Configuration reloaded successfully",
-			"changes":        diff,
-			"current_config": disp.GetConfig(),
-		})
-	})
-
-	// GET /config (Inspect current active configuration)
-	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(disp.GetConfig())
-	})
-
-	srv := &http.Server{
-		Addr:         ":8080",
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
+	// 6. Setup Task Receiver and Admin HTTP Server
+	srv := setupTaskServer(disp, stateDB, configPath, totalRamGB, numCPU, logLevelStr, elog)
 
 	go func() {
 		log.Println("Listening for tasks on :8080/task (Admin: /reload, /config)")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fatalErrorLog(
+			logger.FatalErrorLog(
 				"タスク受付 HTTP サーバー起動失敗",
 				"タスク受付 HTTP サーバー (:8080) の起動に失敗いたしましたわ！",
 				"ポート 8080 が他アプリケーションや既存の Orchestrator プロセスで使用されていないかご確認くださいませ。",
@@ -426,291 +217,3 @@ func main() {
 	disp.Stop()
 	log.Println("Shutdown complete.")
 }
-
-var reloadMutex sync.Mutex
-
-func reloadConfiguration(disp *dispatcher.Dispatcher, configPath string, totalRamGB float64, numCPU int, explicitLogLevel string, elog dispatcher.EventLogger) (map[string]string, error) {
-	reloadMutex.Lock()
-	defer reloadMutex.Unlock()
-
-	_, newDispConfig, err := loadAndValidateConfig(configPath, totalRamGB, numCPU, explicitLogLevel, elog)
-	if err != nil {
-		return nil, err
-	}
-
-	diff := disp.UpdateConfig(*newDispConfig)
-	if len(diff) > 0 {
-		log.Printf("==========================================================================")
-		log.Printf(" 🔄 [Config Reload] Configuration reloaded successfully (%d changes)", len(diff))
-		for k, v := range diff {
-			log.Printf("    * %s: %s", k, v)
-		}
-		log.Printf("==========================================================================")
-	} else {
-		log.Printf("[Config Reload] Config reloaded (no parameter changes detected)")
-	}
-	return diff, nil
-}
-
-func startConfigFileWatcher(ctx context.Context, configPath string, disp *dispatcher.Dispatcher, totalRamGB float64, numCPU int, explicitLogLevel string, elog dispatcher.EventLogger, intervalSec int) {
-	if intervalSec <= 0 {
-		intervalSec = 600
-	}
-	go func() {
-		var lastModTime time.Time
-		if fi, err := os.Stat(configPath); err == nil {
-			lastModTime = fi.ModTime()
-		}
-
-		ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				fi, err := os.Stat(configPath)
-				if err != nil {
-					continue
-				}
-				if !lastModTime.IsZero() && fi.ModTime().After(lastModTime) {
-					lastModTime = fi.ModTime()
-					// Small debounce sleep for atomic editor saves
-					time.Sleep(300 * time.Millisecond)
-					log.Printf("[FileWatcher] Detected change in %s, reloading configuration...", configPath)
-					if _, err := reloadConfiguration(disp, configPath, totalRamGB, numCPU, explicitLogLevel, elog); err != nil {
-						log.Printf("[WARN] [FileWatcher] Config reload failed: %v", err)
-					}
-				} else if lastModTime.IsZero() {
-					lastModTime = fi.ModTime()
-				}
-			}
-		}
-	}()
-}
-
-func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, explicitLogLevel string, elog dispatcher.EventLogger) (*Config, *dispatcher.Config, error) {
-	var cfg Config
-	cfgBytes, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read config file (%s): %w", configPath, err)
-	}
-	if err := toml.Unmarshal(cfgBytes, &cfg); err != nil {
-		return nil, nil, fmt.Errorf("failed to parse TOML syntax (%s): %w", configPath, err)
-	}
-
-	// Set defaults for dynamic scaling
-	if cfg.Orchestrator.MaxRamRatio <= 0 {
-		cfg.Orchestrator.MaxRamRatio = 0.625
-	}
-	if cfg.Orchestrator.CpuWorkerRatio <= 0 {
-		cfg.Orchestrator.CpuWorkerRatio = 0.80
-	}
-	if cfg.Orchestrator.EstimatedWorkerRamGB <= 0 {
-		cfg.Orchestrator.EstimatedWorkerRamGB = 1.75
-	}
-	if cfg.Orchestrator.MinAvailRamGB <= 0 {
-		cfg.Orchestrator.MinAvailRamGB = 1.75
-	}
-	if cfg.Orchestrator.MinAvailDiskGB <= 0 {
-		cfg.Orchestrator.MinAvailDiskGB = 5.0
-	}
-	if cfg.Orchestrator.DemucsConcurrentLimit <= 0 {
-		cfg.Orchestrator.DemucsConcurrentLimit = 1
-	}
-	if cfg.Orchestrator.ShmExpansionRatio <= 0 {
-		cfg.Orchestrator.ShmExpansionRatio = 3.5
-	}
-	if cfg.Orchestrator.ShmRetryCount <= 0 {
-		cfg.Orchestrator.ShmRetryCount = 5
-	}
-	if cfg.Orchestrator.ShmRetryDelaySec <= 0 {
-		cfg.Orchestrator.ShmRetryDelaySec = 8
-	}
-
-	effectiveRamRatio := cfg.Orchestrator.MaxRamRatio
-	if effectiveRamRatio > 0.95 {
-		effectiveRamRatio = 0.95
-	}
-	targetRamGB := totalRamGB * effectiveRamRatio
-	ramBasedWorkers := int(math.Floor(targetRamGB / cfg.Orchestrator.EstimatedWorkerRamGB))
-	if ramBasedWorkers < 1 {
-		ramBasedWorkers = 1
-	}
-
-	hardCeilingRamGB := totalRamGB * 0.95
-	hardCeilingWorkers := int(math.Floor(hardCeilingRamGB / cfg.Orchestrator.EstimatedWorkerRamGB))
-
-	cpuBasedWorkers := int(math.Floor(float64(numCPU) * cfg.Orchestrator.CpuWorkerRatio))
-	if cpuBasedWorkers < 1 {
-		cpuBasedWorkers = 1
-	}
-
-	if cfg.Orchestrator.NumWorkers <= 0 {
-		cfg.Orchestrator.NumWorkers = ramBasedWorkers
-		if cpuBasedWorkers < cfg.Orchestrator.NumWorkers {
-			cfg.Orchestrator.NumWorkers = cpuBasedWorkers
-		}
-	} else {
-		if cfg.Orchestrator.NumWorkers > ramBasedWorkers {
-			cfg.Orchestrator.NumWorkers = ramBasedWorkers
-		}
-		if cfg.Orchestrator.NumWorkers > hardCeilingWorkers {
-			cfg.Orchestrator.NumWorkers = hardCeilingWorkers
-		}
-	}
-
-	targetLogLevelStr := "info"
-	if explicitLogLevel != "" {
-		targetLogLevelStr = explicitLogLevel
-	} else if cfg.Orchestrator.LogLevel != "" {
-		targetLogLevelStr = cfg.Orchestrator.LogLevel
-	}
-	logLevel := dispatcher.ParseLogLevel(targetLogLevelStr)
-
-	enableVirtualLock := true
-	if cfg.Orchestrator.EnableVirtualLock != nil {
-		enableVirtualLock = *cfg.Orchestrator.EnableVirtualLock
-	}
-
-	skipDup := true
-	if cfg.Orchestrator.SkipDupByHash != nil {
-		skipDup = *cfg.Orchestrator.SkipDupByHash
-	}
-
-	gatekeeperRetryDelay := cfg.Orchestrator.GatekeeperRetryDelaySec
-	if gatekeeperRetryDelay <= 0 {
-		gatekeeperRetryDelay = 20
-	}
-
-	configWatchInterval := cfg.Orchestrator.ConfigWatchIntervalSec
-	if configWatchInterval <= 0 {
-		configWatchInterval = 600
-	}
-
-	enableDlqRetry := true
-	if cfg.Orchestrator.EnableDlqRetry != nil {
-		enableDlqRetry = *cfg.Orchestrator.EnableDlqRetry
-	}
-
-	dlqRetryInterval := cfg.Orchestrator.DlqRetryIntervalSec
-	if dlqRetryInterval < 0 {
-		dlqRetryInterval = 600
-	} else if cfg.Orchestrator.DlqRetryIntervalSec == 0 && cfg.Orchestrator.EnableDlqRetry == nil {
-		dlqRetryInterval = 600
-	}
-
-	maxGpuUtilRatio := cfg.Orchestrator.MaxGpuUtilizationRatio
-	if maxGpuUtilRatio <= 0 {
-		maxGpuUtilRatio = 0.85
-	}
-
-	minAvailVramGB := cfg.Orchestrator.MinAvailVramGB
-	if minAvailVramGB <= 0 {
-		minAvailVramGB = 0.5
-	}
-
-	estimatedDemucsVramGB := cfg.Orchestrator.EstimatedDemucsVramGB
-	if estimatedDemucsVramGB <= 0 {
-		estimatedDemucsVramGB = 1.0
-	}
-
-	enableGpuThrottle := true
-	if cfg.Orchestrator.EnableGpuThrottle != nil {
-		enableGpuThrottle = *cfg.Orchestrator.EnableGpuThrottle
-	}
-
-	demucsDaemonCap := cfg.Orchestrator.DemucsDaemonCapacity
-	if demucsDaemonCap <= 0 {
-		demucsDaemonCap = 2
-	}
-
-	demucsDualUtilThreshold := cfg.Orchestrator.DemucsDualGpuUtilThreshold
-	if demucsDualUtilThreshold <= 0 {
-		demucsDualUtilThreshold = 0.50
-	}
-
-	demucsDualMinVramGB := cfg.Orchestrator.DemucsDualMinVramGB
-	if demucsDualMinVramGB <= 0 {
-		demucsDualMinVramGB = 4.0
-	}
-
-	dbTimeoutSec := cfg.Database.TimeoutSec
-	if dbTimeoutSec <= 0 {
-		dbTimeoutSec = cfg.Orchestrator.DbTimeoutSec
-	}
-	if dbTimeoutSec <= 0 {
-		dbTimeoutSec = 20
-	}
-
-	enableDiskFallback := true
-	if cfg.Orchestrator.EnableDiskModeFallback != nil {
-		enableDiskFallback = *cfg.Orchestrator.EnableDiskModeFallback
-	}
-
-	diskModeRamRatio := cfg.Orchestrator.DiskModeRamThresholdRatio
-	if diskModeRamRatio <= 0 || diskModeRamRatio > 1.0 {
-		diskModeRamRatio = 0.8
-	}
-
-	resolvedPythonEnv := resolvePythonEnv(cfg.PythonEnv, numCPU, cfg.Orchestrator.NumWorkers)
-
-	dispConfig := &dispatcher.Config{
-		NumWorkers:                 cfg.Orchestrator.NumWorkers,
-		MaxRamRatio:                effectiveRamRatio,
-		EstimatedWorkerRamGB:       cfg.Orchestrator.EstimatedWorkerRamGB,
-		MinAvailRamGB:              cfg.Orchestrator.MinAvailRamGB,
-		MinAvailDiskGB:             cfg.Orchestrator.MinAvailDiskGB,
-		DemucsConcurrentLimit:      cfg.Orchestrator.DemucsConcurrentLimit,
-		DemucsDaemonCapacity:       demucsDaemonCap,
-		DemucsDualGpuUtilThreshold: demucsDualUtilThreshold,
-		DemucsDualMinVramGB:        demucsDualMinVramGB,
-		ShmAllocationDelaySec:      cfg.Orchestrator.ShmAllocationDelaySec,
-		ShmExpansionRatio:          cfg.Orchestrator.ShmExpansionRatio,
-		ShmRetryCount:              cfg.Orchestrator.ShmRetryCount,
-		ShmRetryDelaySec:           cfg.Orchestrator.ShmRetryDelaySec,
-		QueueDir:                   cfg.Orchestrator.QueueDir,
-		DatabaseURL:                cfg.Database.URL,
-
-		PythonEnv:                  resolvedPythonEnv,
-		LogLevel:                   logLevel,
-		EventLog:                   elog,
-		SkipDupByHash:              skipDup,
-		EnableVirtualLock:          enableVirtualLock,
-		GatekeeperRetryDelaySec:    gatekeeperRetryDelay,
-		ConfigWatchIntervalSec:     configWatchInterval,
-		EnableDlqRetry:             enableDlqRetry,
-		DlqRetryIntervalSec:        dlqRetryInterval,
-		MaxGpuUtilizationRatio:     maxGpuUtilRatio,
-		MinAvailVramGB:             minAvailVramGB,
-		EstimatedDemucsVramGB:      estimatedDemucsVramGB,
-		EnableGpuThrottle:          enableGpuThrottle,
-		DBTimeoutSec:               dbTimeoutSec,
-		EnableDiskModeFallback:     enableDiskFallback,
-		DiskModeRamThresholdRatio:  diskModeRamRatio,
-	}
-
-	return &cfg, dispConfig, nil
-}
-
-// resolvePythonEnv derives environment variable mappings deterministically without mutating input
-func resolvePythonEnv(raw map[string]string, numCPU, numWorkers int) map[string]string {
-	resolved := make(map[string]string)
-	for k, v := range raw {
-		if v != "0" {
-			resolved[k] = v
-			continue
-		}
-		threads := 1
-		if numWorkers > 0 {
-			threads = numCPU / numWorkers
-		}
-		if threads < 1 {
-			threads = 1
-		}
-		resolved[k] = strconv.Itoa(threads)
-	}
-	return resolved
-}
-

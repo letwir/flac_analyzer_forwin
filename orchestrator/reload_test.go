@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"flac_analyzer/orchestrator/config"
 	"flac_analyzer/orchestrator/dispatcher"
 	"flac_analyzer/orchestrator/state"
 )
@@ -42,9 +43,9 @@ omp_num_threads = "1"
 	totalRamGB := 32.0
 	numCPU := 8
 
-	_, dispConfig, err := loadAndValidateConfig(configPath, totalRamGB, numCPU, "", nil)
+	_, dispConfig, err := config.LoadFromFile(configPath, totalRamGB, numCPU, "", nil)
 	if err != nil {
-		t.Fatalf("loadAndValidateConfig failed: %v", err)
+		t.Fatalf("LoadFromFile failed: %v", err)
 	}
 
 	stateDB, err := state.InitDB(dbPath)
@@ -171,9 +172,9 @@ log_level = "info"
 	totalRamGB := 32.0
 	numCPU := 8
 
-	_, dispConfig, err := loadAndValidateConfig(configPath, totalRamGB, numCPU, "", nil)
+	_, dispConfig, err := config.LoadFromFile(configPath, totalRamGB, numCPU, "", nil)
 	if err != nil {
-		t.Fatalf("loadAndValidateConfig failed: %v", err)
+		t.Fatalf("LoadFromFile failed: %v", err)
 	}
 
 	stateDB, err := state.InitDB(dbPath)
