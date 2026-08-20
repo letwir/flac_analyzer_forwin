@@ -116,6 +116,7 @@ type Config struct {
 	MinAvailVramGB               float64
 	EstimatedDemucsVramGB        float64
 	EnableGpuThrottle            bool
+	DBTimeoutSec                 int
 }
 
 
@@ -125,6 +126,10 @@ type Dispatcher struct {
 	db                     *state.DB
 	pgDB                   *sql.DB
 	taskQueue              chan TaskPayload
+	ingestQueue            chan IngestPayload
+	ingestWg               sync.WaitGroup
+	ingestCtx              context.Context
+	cancelIngest           context.CancelFunc
 	allocMutex             sync.Mutex
 	demucsSemaphore        *DynamicSemaphore
 	tensorSemaphore        chan struct{}
@@ -208,11 +213,22 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 	})
 	demucsScheduler := NewAdaptiveDemucsScheduler(1, 2, 0.50, 4*1024*1024*1024, statsTracker)
 
+	dbTimeout := cfg.DBTimeoutSec
+	if dbTimeout <= 0 {
+		dbTimeout = 20
+	}
+	cfg.DBTimeoutSec = dbTimeout
+
+	ingestCtx, cancelIngest := context.WithCancel(context.Background())
+
 	return &Dispatcher{
 		config:                 cfg,
 		db:                     db,
 		pgDB:                   pgConn,
 		taskQueue:              make(chan TaskPayload, 1000),
+		ingestQueue:            make(chan IngestPayload, 1000),
+		ingestCtx:              ingestCtx,
+		cancelIngest:           cancelIngest,
 		demucsSemaphore:        NewDynamicSemaphore(cfg.DemucsConcurrentLimit),
 		tensorSemaphore:        make(chan struct{}, 1),
 		logLevel:               cfg.LogLevel,
@@ -338,6 +354,9 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	if oldCfg.EnableGpuThrottle != newCfg.EnableGpuThrottle {
 		diff["enable_gpu_throttle"] = fmt.Sprintf("%v -> %v", oldCfg.EnableGpuThrottle, newCfg.EnableGpuThrottle)
 	}
+	if oldCfg.DBTimeoutSec != newCfg.DBTimeoutSec {
+		diff["db_timeout_sec"] = fmt.Sprintf("%d -> %d", oldCfg.DBTimeoutSec, newCfg.DBTimeoutSec)
+	}
 
 	d.config = newCfg
 	return diff
@@ -403,6 +422,11 @@ func (d *Dispatcher) Start() {
 			_ = d.demucsPool.Prewarm(ctx, 1)
 		}()
 	}
+
+	// 独立した非同期 IngestWorker を起動いたしますわ（Compute と IO の完全分離）
+	d.ingestWg.Add(1)
+	go d.ingestWorker()
+
 	for i := 1; i <= d.config.NumWorkers; i++ {
 		d.wg.Add(1)
 		go d.worker(i)
@@ -431,8 +455,16 @@ func (d *Dispatcher) GetStatsTracker() *StatsTracker {
 }
 
 func (d *Dispatcher) Stop() {
+	// Phase 1: 解析ワーカーキューを閉じ、全解析ワーカーの完了を待機
 	close(d.taskQueue)
 	d.wg.Wait()
+
+	// Phase 2: Ingest キューを閉じ、非同期 IngestWorker の完了を待機 (Advisory 1: 厳格な2段階シャットダウン)
+	close(d.ingestQueue)
+	d.ingestWg.Wait()
+	d.cancelIngest()
+
+	// Phase 3: 全ての後続処理完了後にプールおよび DB コネクションを破棄
 	if d.daemonPool != nil {
 		_ = d.daemonPool.Close()
 	}
@@ -536,7 +568,10 @@ func (d *Dispatcher) runPythonScript(scriptName string, args []string, workerID 
 		}
 	}
 	cmdArgs := append([]string{scriptPath}, args...)
-	cmd := exec.Command(pythonPath, cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, pythonPath, cmdArgs...)
 	cmd.Dir = parentDir
 
 	currentCfg := d.GetConfig()
@@ -1362,8 +1397,10 @@ func (d *Dispatcher) worker(id int) {
 				d.LogWarn("[W-%d] FLAC tagger warned/failed for %s: %v", id, task.FlacPath, tagErr)
 			}
 
-			// 6. Direct PostgreSQL Ingestion (Zero Python subprocess overhead)
-			ingestStart := time.Now()
+			// Clean up intermediate JSON files immediately
+			cleanupQueueFiles(queueDir, trackHash, baseName)
+
+			// 6. Decoupled Asynchronous DB Ingestion (Compute と IO の完全分離)
 			ingestPayload := IngestPayload{
 				TrackHash:    trackHash,
 				Task:         task,
@@ -1371,46 +1408,12 @@ func (d *Dispatcher) worker(id int) {
 				EssentiaJSON: json.RawMessage(essOut),
 				TensorJSON:   json.RawMessage(tensorOut),
 			}
-			ingestRes := d.UpsertTrackDirectly(context.Background(), ingestPayload)
-			if d.statsTracker != nil {
-				d.statsTracker.RecordStageDuration("db_ingest", time.Since(ingestStart))
-			}
 
-			// Clean up intermediate JSON files immediately
-			cleanupQueueFiles(queueDir, trackHash, baseName)
-
-			if !ingestRes.Success {
-				d.failTask(task, fmt.Sprintf("Direct Ingestion failed: %s", ingestRes.ErrorMessage))
-				return
-			}
-
-			if ingestRes.SavedToDLQ {
-				d.LogWarn("[W-%d] DLQ fallback triggered for %s (Track %d). Scheduled retry in 10 minutes.", id, task.FlacPath, task.TrackNumber)
-				d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusRunning, "DLQ fallback: Retry scheduled in 10m")
-				metrics.AnalyzerActiveWorkers.Dec()
-
-				go func(t TaskPayload) {
-					time.Sleep(10 * time.Minute)
-					d.LogInfo("[DLQ-Retry] Running retry_ingest.py for %s (Track %d)...", t.FlacPath, t.TrackNumber)
-					_, retryErr := d.runPythonScript("retry_ingest.py", []string{}, 0, "RetryIngest", ColorYellow, true)
-					if retryErr == nil {
-						d.LogInfo("[DLQ-Retry] Retry succeeded for %s (Track %d)", t.FlacPath, t.TrackNumber)
-						d.db.UpdateStatus(t.FlacPath, t.TrackNumber, state.StatusCompleted, "")
-						metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
-					} else {
-						d.LogError("[DLQ-Retry] Retry failed for %s (Track %d): %v. Keeping in DLQ and marking FAILED.", t.FlacPath, t.TrackNumber, retryErr)
-						d.db.UpdateStatus(t.FlacPath, t.TrackNumber, state.StatusFailed, fmt.Sprintf("DLQ retry failed after 10m: %v", retryErr))
-						metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
-					}
-				}(task)
-				return
-			}
-
-			d.LogInfo("[W-%d] Successfully processed entire pipeline: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
-			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
-			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
+			// Ingest キューへ送信（メインワーカーはブロックされず即座に次タスクへ遷移）
+			d.ingestQueue <- ingestPayload
 			metrics.AnalyzerActiveWorkers.Dec()
 			taskSuccess = true
+			d.LogInfo("[W-%d] Compute & tagging completed, dispatched to IngestWorker: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
 		}(task)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"flac_analyzer/orchestrator/metrics"
+	"flac_analyzer/orchestrator/state"
 
 	_ "modernc.org/sqlite"
 )
@@ -54,45 +55,7 @@ func MergeFeaturesAndPredictions(librosaRaw, essentiaRaw, tensorRaw json.RawMess
 
 	// 2. Tensor features のマージ (mix および demucs サブステムへ注入)
 	if len(tensorRaw) > 0 {
-		var tensorData struct {
-			Features map[string]interface{} `json:"features"`
-		}
-		if err := json.Unmarshal(tensorRaw, &tensorData); err == nil && tensorData.Features != nil {
-			for stemName, stemFeats := range tensorData.Features {
-				if stemName == "mix" {
-					mixMap, ok := libData.Features["mix"].(map[string]interface{})
-					if !ok {
-						mixMap = make(map[string]interface{})
-						libData.Features["mix"] = mixMap
-					}
-					if featsMap, isMap := stemFeats.(map[string]interface{}); isMap {
-						for k, v := range featsMap {
-							mixMap[k] = v
-						}
-					}
-				} else if stemName == "demucs" {
-					demucsMap, ok := libData.Features["demucs"].(map[string]interface{})
-					if !ok {
-						demucsMap = make(map[string]interface{})
-						libData.Features["demucs"] = demucsMap
-					}
-					if subMap, isMap := stemFeats.(map[string]interface{}); isMap {
-						for subStem, subFeats := range subMap {
-							targetSub, subOk := demucsMap[subStem].(map[string]interface{})
-							if !subOk {
-								targetSub = make(map[string]interface{})
-								demucsMap[subStem] = targetSub
-							}
-							if featVals, valOk := subFeats.(map[string]interface{}); valOk {
-								for k, v := range featVals {
-									targetSub[k] = v
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+		mergeTensorFeaturesPure(libData.Features, tensorRaw)
 	}
 
 	// 3. Essentia predictions のパース
@@ -124,8 +87,120 @@ func MergeFeaturesAndPredictions(librosaRaw, essentiaRaw, tensorRaw json.RawMess
 	return metaJSON, mergedFeatures, mergedPredictions, nil
 }
 
+// mergeTensorFeaturesPure は Tensor 特徴量 JSON を Librosa features マップへマージする純粋補助射ですわ！
+func mergeTensorFeaturesPure(libFeatures map[string]interface{}, tensorRaw json.RawMessage) {
+	var tensorData struct {
+		Features map[string]interface{} `json:"features"`
+	}
+	if err := json.Unmarshal(tensorRaw, &tensorData); err != nil || tensorData.Features == nil {
+		return
+	}
+
+	for stemName, stemFeats := range tensorData.Features {
+		featsMap, isMap := stemFeats.(map[string]interface{})
+		if !isMap {
+			continue
+		}
+
+		if stemName == "mix" {
+			mixMap, ok := libFeatures["mix"].(map[string]interface{})
+			if !ok {
+				mixMap = make(map[string]interface{})
+				libFeatures["mix"] = mixMap
+			}
+			for k, v := range featsMap {
+				mixMap[k] = v
+			}
+			continue
+		}
+
+		if stemName == "demucs" {
+			demucsMap, ok := libFeatures["demucs"].(map[string]interface{})
+			if !ok {
+				demucsMap = make(map[string]interface{})
+				libFeatures["demucs"] = demucsMap
+			}
+			for subStem, subFeats := range featsMap {
+				subVals, isSubMap := subFeats.(map[string]interface{})
+				if !isSubMap {
+					continue
+				}
+				targetSub, subOk := demucsMap[subStem].(map[string]interface{})
+				if !subOk {
+					targetSub = make(map[string]interface{})
+					demucsMap[subStem] = targetSub
+				}
+				for k, v := range subVals {
+					targetSub[k] = v
+				}
+			}
+		}
+	}
+}
+
+// ingestWorker はメインの解析ワーカーから非同期にペイロードを受け取り、
+// タイムアウト付きで PostgreSQL または SQLite DLQ へ永続化する独立バックグラウンド射ですわ！
+func (d *Dispatcher) ingestWorker() {
+	defer d.ingestWg.Done()
+
+	for payload := range d.ingestQueue {
+		d.processIngestPayloadComplex(payload)
+	}
+}
+
+// processIngestPayloadComplex は1件の IngestPayload に対して Panic Recovery を施し、
+// タイムアウト付きの DB UPSERT / DLQ 退避・状態更新・メトリクス計測を完遂する堅牢な IO 射ですわ！
+func (d *Dispatcher) processIngestPayloadComplex(payload IngestPayload) {
+	// Advisory 3: 予期せぬ panic を安全にキャッチして IngestWorker の脱落を完全防止
+	defer func() {
+		if r := recover(); r != nil {
+			d.LogError("[IngestWorker] Panic recovered during ingestion for %s (Track %d): %v", payload.Task.FlacPath, payload.Task.TrackNumber, r)
+			_ = d.saveToSQLiteDLQ(payload.TrackHash, payload.Task, filepath.Base(payload.Task.FlacPath), payload.LibrosaJSON, payload.TensorJSON, payload.EssentiaJSON)
+			d.db.UpdateStatus(payload.Task.FlacPath, payload.Task.TrackNumber, state.StatusFailed, fmt.Sprintf("Panic in IngestWorker: %v", r))
+			metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
+		}
+	}()
+
+	currentCfg := d.GetConfig()
+	timeoutSec := currentCfg.DBTimeoutSec
+	if timeoutSec <= 0 {
+		timeoutSec = 20
+	}
+	dbTimeout := time.Duration(timeoutSec) * time.Second
+
+	// Advisory 4: context.WithTimeout に対する RAII defer cancel() の徹底
+	ctx, cancel := context.WithTimeout(d.ingestCtx, dbTimeout)
+	defer cancel()
+
+	ingestStart := time.Now()
+	ingestRes := d.UpsertTrackDirectly(ctx, payload)
+
+	if d.statsTracker != nil {
+		d.statsTracker.RecordStageDuration("db_ingest", time.Since(ingestStart))
+	}
+
+	task := payload.Task
+	if !ingestRes.Success {
+		d.LogError("[IngestWorker] DB and DLQ both failed for %s (Track %d): %s", task.FlacPath, task.TrackNumber, ingestRes.ErrorMessage)
+		d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailed, fmt.Sprintf("Ingestion failed: %s", ingestRes.ErrorMessage))
+		metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
+		return
+	}
+
+	if ingestRes.SavedToDLQ {
+		d.LogWarn("[IngestWorker] DLQ fallback triggered for %s (Track %d). Preserved in send_failed.db.", task.FlacPath, task.TrackNumber)
+		d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "Saved to DLQ (send_failed.db)")
+		metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
+		return
+	}
+
+	d.LogInfo("[IngestWorker] Successfully ingested into PostgreSQL: %s (Track %d)", task.FlacPath, task.TrackNumber)
+	d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
+	metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
+}
+
 // UpsertTrackDirectly は Go オーケストレーターから直接 PostgreSQL (raw.library_flac) へ UPSERT を敢行し、
-// 接続障害時は SQLite DLQ (send_failed.db) へ完全フォールバックする IO エフェクト射ですわ！
+// 接続障害・タイムアウト時は SQLite DLQ (send_failed.db) へ完全フォールバックする IO エフェクト射ですわ！
 func (d *Dispatcher) UpsertTrackDirectly(ctx context.Context, payload IngestPayload) IngestResult {
 	metaJSON, featuresJSON, predictionsJSON, err := MergeFeaturesAndPredictions(
 		payload.LibrosaJSON,
@@ -142,7 +217,7 @@ func (d *Dispatcher) UpsertTrackDirectly(ctx context.Context, payload IngestPayl
 	filename := filepath.Base(payload.Task.FlacPath)
 	task := payload.Task
 
-	// 1. PostgreSQL への直接 UPSERT を試行
+	// 1. PostgreSQL への直接 UPSERT を試行 (タイムアウト付き context で厳格保護)
 	if d.pgDB != nil {
 		tQueryStart := time.Now()
 		query := `
@@ -183,14 +258,13 @@ func (d *Dispatcher) UpsertTrackDirectly(ctx context.Context, payload IngestPayl
 		if execErr == nil {
 			dur := time.Since(tQueryStart)
 			d.LogInfo("[DirectIngest] PostgreSQL direct UPSERT succeeded (Hash: %s, Time: %v)", payload.TrackHash, dur)
-			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 			return IngestResult{
 				Success:    true,
 				DBDuration: dur,
 			}
 		}
 
-		d.LogWarn("[DirectIngest] PostgreSQL UPSERT error: %v. Falling back to local DLQ (send_failed.db)...", execErr)
+		d.LogWarn("[DirectIngest] PostgreSQL UPSERT error/timeout (%v): %v. Falling back to local DLQ (send_failed.db)...", ctx.Err(), execErr)
 	}
 
 	// 2. PostgreSQL 未接続または書き込み失敗時のローカル SQLite DLQ フォールバック (Safety Guard)
@@ -221,6 +295,9 @@ func (d *Dispatcher) saveToSQLiteDLQ(trackHash string, task TaskPayload, filenam
 	}
 	defer dlqDB.Close()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	schema := `
 		CREATE TABLE IF NOT EXISTS failed_payloads (
 			audio_hash TEXT PRIMARY KEY,
@@ -237,7 +314,7 @@ func (d *Dispatcher) saveToSQLiteDLQ(trackHash string, task TaskPayload, filenam
 			failed_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 	`
-	if _, err := dlqDB.Exec(schema); err != nil {
+	if _, err := dlqDB.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("failed to create DLQ schema: %w", err)
 	}
 
@@ -246,7 +323,8 @@ func (d *Dispatcher) saveToSQLiteDLQ(trackHash string, task TaskPayload, filenam
 			audio_hash, filepath, filename, track_number, album_artist, album, artist, title, meta, features, predictions
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
-	_, err = dlqDB.Exec(
+	_, err = dlqDB.ExecContext(
+		ctx,
 		insertSQL,
 		trackHash,
 		task.FlacPath,

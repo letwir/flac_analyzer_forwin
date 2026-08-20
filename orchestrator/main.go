@@ -28,7 +28,8 @@ import (
 
 type Config struct {
 	Database struct {
-		URL string `toml:"url"`
+		URL        string `toml:"url"`
+		TimeoutSec int    `toml:"db_timeout_sec"`
 	} `toml:"database"`
 	Orchestrator struct {
 		NumWorkers            int     `toml:"num_workers"`
@@ -60,6 +61,7 @@ type Config struct {
 		MinAvailVramGB          float64 `toml:"min_avail_vram_gb"`
 		EstimatedDemucsVramGB   float64 `toml:"estimated_demucs_vram_gb"`
 		EnableGpuThrottle       *bool   `toml:"enable_gpu_throttle"`
+		DbTimeoutSec            int     `toml:"db_timeout_sec"`
 	} `toml:"orchestrator"`
 	PythonEnv map[string]string `toml:"python_env"`
 }
@@ -384,8 +386,11 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:    ":8080",
-		Handler: mux,
+		Addr:         ":8080",
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
@@ -629,6 +634,14 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		demucsDualMinVramGB = 4.0
 	}
 
+	dbTimeoutSec := cfg.Database.TimeoutSec
+	if dbTimeoutSec <= 0 {
+		dbTimeoutSec = cfg.Orchestrator.DbTimeoutSec
+	}
+	if dbTimeoutSec <= 0 {
+		dbTimeoutSec = 20
+	}
+
 	resolvedPythonEnv := resolvePythonEnv(cfg.PythonEnv, numCPU, cfg.Orchestrator.NumWorkers)
 
 	dispConfig := &dispatcher.Config{
@@ -661,6 +674,7 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		MinAvailVramGB:          minAvailVramGB,
 		EstimatedDemucsVramGB:   estimatedDemucsVramGB,
 		EnableGpuThrottle:       enableGpuThrottle,
+		DBTimeoutSec:            dbTimeoutSec,
 	}
 
 	return &cfg, dispConfig, nil

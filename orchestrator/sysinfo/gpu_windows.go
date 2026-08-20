@@ -111,8 +111,11 @@ func StartGpuCollectorDaemon(ctx context.Context, interval time.Duration) {
 
 // FetchGpuMetricsComplex queries GPU utilization and VRAM using CIM / WMI and PDH fallbacks.
 func FetchGpuMetricsComplex() (*GpuMetrics, error) {
-	// 1. CIM / PowerShell 高速JSONクエリ（AMD / NVIDIA / Intel を問わず安定取得できますわ）
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", `
+	// 1. CIM / PowerShell 高速JSONクエリ（タイムアウト付き context で厳格保護）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", `
 		$ErrorActionPreference = 'SilentlyContinue';
 		$gpuEngine = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine | Measure-Object -Property UtilizationPercentage -Maximum | Select-Object -ExpandProperty Maximum;
 		$mem = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory | Measure-Object -Property DedicatedUsage, SharedUsage, TotalCommitted -Sum;
@@ -128,7 +131,7 @@ func FetchGpuMetricsComplex() (*GpuMetrics, error) {
 
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to query GPU performance counters via CIM: %w", err)
+		return nil, fmt.Errorf("failed to query GPU performance counters via CIM (%v): %w", ctx.Err(), err)
 	}
 
 	var res struct {

@@ -1,0 +1,68 @@
+goroutine 74988 [running]:
+runtime/pprof.writeGoroutineStacks({0x7ff722a60560, 0x30c8605c83c0})
+	C:/Program Files/Go/src/runtime/pprof/pprof.go:819 +0x6b
+runtime/pprof.writeGoroutine({0x7ff722a60560?, 0x30c8605c83c0?}, 0x30c8607277b8?)
+	C:/Program Files/Go/src/runtime/pprof/pprof.go:782 +0x25
+runtime/pprof.(*Profile).WriteTo(0x7ff7230b1500?, {0x7ff722a60560?, 0x30c8605c83c0?}, 0xc?)
+	C:/Program Files/Go/src/runtime/pprof/pprof.go:408 +0x149
+net/http/pprof.handler.ServeHTTP({0x30c8608f80a1, 0x9}, {0x7ff722a64440, 0x30c8605c83c0}, 0x30c860be1180)
+	C:/Program Files/Go/src/net/http/pprof/pprof.go:273 +0x52a
+net/http/pprof.Index({0x7ff722a64440, 0x30c8605c83c0}, 0x30c860be1180?)
+	C:/Program Files/Go/src/net/http/pprof/pprof.go:397 +0xda
+net/http.HandlerFunc.ServeHTTP(0x7ff7230d70c0?, {0x7ff722a64440?, 0x30c8605c83c0?}, 0x7ff72246b916?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff7221e76f9?, {0x7ff722a64440, 0x30c8605c83c0}, 0x30c860be1180)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x30c860cf4900?}, {0x7ff722a64440?, 0x30c8605c83c0?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x30c8604f61b0, {0x7ff722a65118, 0x30c8601d6900})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 66
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 1 [chan receive, 801 minutes]:
+main.main()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:409 +0x133d
+
+goroutine 30 [select, 801 minutes]:
+database/sql.(*DB).connectionOpener(0x30c860143860, {0x7ff722a65150, 0x30c860180780})
+	C:/Program Files/Go/src/database/sql/sql.go:1261 +0x89
+created by database/sql.OpenDB in goroutine 1
+	C:/Program Files/Go/src/database/sql/sql.go:841 +0x130
+
+goroutine 66 [IO wait]:
+internal/poll.runtime_pollWait(0x2ccec2d5a00, 0x72)
+	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x30c860f0bad0?, 0x7ff722177d06?, 0x0)
+	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*FD).waitIO(0x30c860f0bad0?, 0x30c8601dba90?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:228 +0x4c
+internal/poll.(*FD).execIO(0x30c86024e1c0, 0x72, 0x30c8601dbb00)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:311 +0x365
+internal/poll.(*FD).acceptOne(0x30c86024e1c0, 0x698, {0x30c86037c2d0?, 0x30c8601dbb9c?, 0x30c8601dbbc8?})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:1129 +0x79
+internal/poll.(*FD).Accept(0x30c86024e1c0, 0x30c8601dbce8)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:1164 +0x190
+net.(*netFD).accept(0x30c86024e1c0)
+	C:/Program Files/Go/src/net/fd_windows.go:202 +0x4b
+net.(*TCPListener).accept(0x30c86017e280)
+	C:/Program Files/Go/src/net/tcpsock_posix.go:159 +0x1b
+net.(*TCPListener).Accept(0x30c86017e280)
+	C:/Program Files/Go/src/net/tcpsock.go:387 +0x30
+net/http.(*Server).Serve(0x30c8601e0300, {0x7ff722a64650, 0x30c86017e280})
+	C:/Program Files/Go/src/net/http/server.go:3434 +0x30c
+net/http.(*Server).ListenAndServe(0x30c8601e0300)
+	C:/Program Files/Go/src/net/http/server.go:3360 +0x72
+net/http.ListenAndServe(...)
+	C:/Program Files/Go/src/net/http/server.go:3675
+flac_analyzer/orchestrator/metrics.InitMetricsServer({0x7ff722a0c9f6, 0x5})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/metrics/metrics.go:349 +0x7a
+main.main.func1()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:238 +0x96
+created by main.main in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:236 +0xd46
+
+goroutine 31 [chan receive, 498 minutes]:
+flac_analyzer/orchestrator/state.(*DB).writerLoop(0x30c860140590)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/state/db.go:63 +0x70
+created by flac_analyzer/orchestrator/state.InitDB in goroutine 1

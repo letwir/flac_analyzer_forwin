@@ -2,7 +2,7 @@
 # FLAC Analyzer Plugin Configuration (analyzer.toml)
 # ==============================================================================
 # 【安全確認】解析を実行するには execute を true に変更してください。
-execute = false
+execute = true
 
 # ─────────────────────────────────────────────
 # 現行解析機 (Current Active Analyzers)
@@ -32,21 +32,21 @@ enabled = true
 # 追加分析器 (Additional Analyzers: 治具または個別有効化用)
 # ─────────────────────────────────────────────
 [plugins.psychoacoustics]
-enabled = false
+enabled = true
 calc_sharpness = true
 calc_roughness = true
 calc_tonality = true
 
 [plugins.structure]
-enabled = false
+enabled = true
 calc_chorus = true
 calc_drop = true
 
 [plugins.voice_cpp]
-enabled = false
+enabled = true
 
 [plugins.audio_cutoff_lufs]
-enabled = false
+enabled = true
 detect_cutoff = true
 calc_true_peak = true
 calc_ebur128 = true

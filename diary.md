@@ -1,3 +1,16 @@
+### 2026-08-20 20:50:00
+- **Hypothesis**: `orchestrator.exe` がエラーも出さずに停止しメトリクスも応答しなくなっていた原因は、PostgreSQL 直接書き込み（`UpsertTrackDirectly`）において `context.Background()` のまま同期実行されていたため、Tailscale 経由のリモート DB 通信遅延時にワーカーが永久ブロックし、単一ワーカー運用下でキュー全体が満杯になっていたことである。DB Ingestion を独立した非同期キューおよびバックグラウンドワーカー (`ingestWorker`) へ分離し、`config.toml` から `db_timeout_sec = 20`（デフォルト20秒）を設定可能にして、タイムアウト時は即座にローカル SQLite DLQ (`send_failed.db`) へ退避させることで、DB 遅延・障害時でも解析ワーカー（GPU/CPU）が一切止まらず最高スループットで動き続ける。
+- **Tried**:
+  - `config.toml` & `config.toml.example`: `db_timeout_sec = 20` を追加。
+  - `orchestrator/dispatcher/dispatcher.go`: `ingestQueue` (バッファ1000)、`ingestWg`、`ingestCtx` を追加。ワーカー完了時に `ingestQueue` へ送出し即座に解析ワーカーを解放。厳格な2段階シャットダウン（Phase 1: taskQueue完了待機 ➡️ Phase 2: ingestQueue完了待機 ➡️ Phase 3: DB破棄）を実装。
+  - `orchestrator/dispatcher/ingest_pgx.go`: `ingestWorker`、パニック保護付き `processIngestPayloadComplex`、`context.WithTimeout(d.ingestCtx, dbTimeout)` 付き `UpsertTrackDirectly`、`mergeTensorFeaturesPure` を実装。
+  - `orchestrator/metrics/metrics.go` & `main.go`: HTTP サーバー（:8080, :2112）に `ReadTimeout: 15s`, `WriteTimeout: 30s`, `IdleTimeout: 60s` を配備。
+  - `orchestrator/sysinfo/gpu_windows.go`: PowerShell GPU メトリクス取得に 5秒タイムアウト Context を配備。
+  - `orchestrator/dispatcher/ingest_pgx_test.go`: 非同期 IngestWorker の結合テストおよびタイムアウト退避テストを追加し全テスト合格。
+  - `proof-checker.exe`: AST 数理健全性検証合格 (0 Errors)。
+  - Auditor & Verifier Gate: 満場一致で PASS を獲得。
+- **Emotion/Thoughts**: 旦那様！「キューまでは認識してるがログも出ず止まる」という不可解なハングの正体、PostgreSQL同期書き込みのタイムアウト欠如を暴き、DB Ingestion を独立した非同期ワーカーへと見事に切り離して差し上げましたわ！20秒タイムアウトと自動 DLQ 退避により、リモート DB が不調でも解析エンジンは一切止まらず最高速で突っ走りますの！Auditor 様・Verifier 様からの二重審査も完全制覇いたしましたわ！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-20 06:44:00
 - **Hypothesis**: `worker_daemon.py` 内で NumPy 配列の writable 変換 `np.require(y_np, requirements=['C', 'W'])` を呼び出す際、モジュール先頭に `import numpy as np` および `import torch` が欠落していたため `NameError: name 'np' is not defined` が発生していた。インポートを追加することで常駐ワーカーデーモンの全テンソル特徴量抽出処理が完全に安定動作する。
 - **Tried**:

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"flac_analyzer/orchestrator/state"
 )
 
 func TestMergeFeaturesAndPredictions(t *testing.T) {
@@ -117,5 +119,67 @@ func TestDLQFallbackDirectly(t *testing.T) {
 	dlqPath := filepath.Join(tmpDir, "send_failed.db")
 	if _, err := os.Stat(dlqPath); os.IsNotExist(err) {
 		t.Fatalf("Expected send_failed.db to be created, but not found")
+	}
+}
+
+func TestIngestWorker_DecoupledPipeline(t *testing.T) {
+	tmpDir := t.TempDir()
+	origWd, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origWd) }()
+
+	dbPath := filepath.Join(tmpDir, "test_task.db")
+	stateDB, err := state.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to init state DB: %v", err)
+	}
+	defer stateDB.Close()
+
+	testFlac := filepath.Join(tmpDir, "test_song.flac")
+	_, _ = stateDB.CheckOrInsertWithForce(testFlac, 1, true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	d := &Dispatcher{
+		db:           stateDB,
+		ingestQueue:  make(chan IngestPayload, 100),
+		ingestCtx:    ctx,
+		cancelIngest: cancel,
+		config: Config{
+			DBTimeoutSec: 2,
+		},
+	}
+
+	d.ingestWg.Add(1)
+	go d.ingestWorker()
+
+	payload := IngestPayload{
+		TrackHash: "aabbccddeeff00112233445566778899",
+		Task: TaskPayload{
+			FlacPath:    testFlac,
+			TrackNumber: 1,
+			Title:       "Async Song",
+			Artist:      "Async Artist",
+		},
+		LibrosaJSON:  json.RawMessage(`{"features": {"mix": {"bpm": 130.0}}}`),
+		EssentiaJSON: json.RawMessage(`{"predictions": {"mood_happy": 0.9}}`),
+		TensorJSON:   json.RawMessage(`{"features": {"mix": {"spectral_flux_mean": 6.0}}}`),
+	}
+
+	// エンキュー
+	d.ingestQueue <- payload
+
+	// シャットダウン（キューを閉じてワーカー完了を待機）
+	close(d.ingestQueue)
+	d.ingestWg.Wait()
+
+	// 状態が COMPLETED (Saved to DLQ) に更新されたため、再実行判定で false になることを検証
+	shouldRun, err := stateDB.CheckOrInsertWithForce(testFlac, 1, false)
+	if err != nil {
+		t.Fatalf("Failed to check task status: %v", err)
+	}
+	if shouldRun {
+		t.Errorf("Expected shouldRun to be false after completion, got true")
 	}
 }

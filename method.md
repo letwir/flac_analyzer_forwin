@@ -1,4 +1,8 @@
 <methods>
+  <target id="DECOUPLED_ASYNC_INGEST_WORKER">
+    <why>Remote PostgreSQL writes over Tailscale can experience network socket stalls, blocking compute workers indefinitely when executed synchronously.</why>
+    <how>Decouple DB ingestion into an asynchronous buffered queue (`ingestQueue`, cap 1000) and dedicated `ingestWorker`. Workers enqueue payload upon FLAC tag completion and immediately decrement active worker metrics. `ingestWorker` enforces configurable timeout (`db_timeout_sec = 20`) via `context.WithTimeout`, falling back instantly to local SQLite DLQ (`send_failed.db`) on timeout/connection failure. Shutdown is orchestrated via a strict 2-phase sequence.</how>
+  </target>
   <target id="ESSENTIA_SEGFAULT_PREVENTION">
     <why>ONNX Runtime parallel access and OpenMP/Python thread collision cause SegFaults.</why>
   </target>

@@ -2,6 +2,7 @@
 
 - [x]DONE 【Fix】 flac_decode.py の flac CLI 範囲デコード例外 (rc=1) 修正（-F / --silent / proc.communicate / 指数バックオフリトライ導入）
 - [x]DONE 【Fix】 ingester.py の stdout ログ混入による Orchestrator の Pre-Hash Duplicate Check (mixハッシュチェック) スキップ失敗バグの修正
+- [x]DONE 【Fix】 PostgreSQL 直接書き込みのタイムアウト欠如による無限ハング修正 ＆ DB Ingestion の独立非同期ワーカー化 (db_timeout_sec = 20)
 - [x]DONE 【Tuning】 PostgreSQL 側の GIN インデックスおよび UPSERT チューニング（優先度：低）
 - [x]DONE 【Verify】 実機 CUDA / GPU 実行環境における ONNX 推論および PyTorch の動作確認とパフォーマンス検証
 - [x]DONE 【Docs】 requirements.txt に記載された依存バージョンの整合性解消（PyTorchのONNX統一のドキュメント不一致修正）

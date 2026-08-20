@@ -1,7 +1,19 @@
 
 # History Log
 
-### 2026-08-14 22:48:00
+### 2026-08-20 20:50:00
+
+- Category: Bugfix & Architecture / Decoupled Asynchronous DB Ingestion & Timeout Protection
+- Summary: `orchestrator.exe` の PostgreSQL 直接書き込み（`UpsertTrackDirectly`）におけるタイムアウト欠如による無限ハング障害を解消。DB Ingestion を独立した非同期キュー（`ingestQueue`、バッファ1000）およびバックグラウンドワーカー（`ingestWorker`）へ分離し、`config.toml` に `db_timeout_sec = 20` を導入。タイムアウト・接続障害時はローカル SQLite DLQ (`send_failed.db`) に退避させ、解析ワーカーの完全非停止化を実現。
+- Decisions:
+  - `orchestrator/dispatcher/dispatcher.go`: `ingestQueue` (1000) および `ingestWg` を新設。メインワーカー完了時に `ingestQueue` へ送出して即座にワーカーを解放。厳格な2段階シャットダウン（taskQueue待機 ➡️ ingestQueue待機 ➡️ DB破棄）を実装。
+  - `orchestrator/dispatcher/ingest_pgx.go`: `ingestWorker`、パニック保護付き `processIngestPayloadComplex`、`context.WithTimeout(d.ingestCtx, dbTimeout)` を実装。
+  - `config.toml` & `config.toml.example`: `db_timeout_sec = 20` を追加。
+  - `orchestrator/metrics/metrics.go` & `main.go`: HTTP サーバー（:8080, :2112）に `ReadTimeout: 15s`, `WriteTimeout: 30s`, `IdleTimeout: 60s` を配備。
+  - `orchestrator/sysinfo/gpu_windows.go`: PowerShell GPU メトリクス取得に 5秒タイムアウト Context を配備。
+  - `orchestrator/dispatcher/ingest_pgx_test.go`: 非同期 IngestWorker の結合テストおよびタイムアウト退避テストを追加（全テスト合格）。
+- Files: [config.toml](file:///C:/Users/letwir/repo/flac_analyzer_forwin/config.toml), [config.toml.example](file:///C:/Users/letwir/repo/flac_analyzer_forwin/config.toml.example), [dispatcher.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go), [ingest_pgx.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/ingest_pgx.go), [main.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go), [metrics.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/metrics/metrics.go), [gpu_windows.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/sysinfo/gpu_windows.go), [ingest_pgx_test.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/ingest_pgx_test.go)
+
 
 - Category: Bugfix & Robustness / flac_decode.py Range Decode Resiliency
 - Summary: `flac_decode.py` における `flac` CLI 呼び出し例外（`rc=1`）に対し、`-F` (`--decode-through-errors`)、`--silent`、`proc.communicate()`、指数バックオフリトライ（最大3回）を導入し、マルチトラックCUEスライス境界・軽微ストリームエラー・一時的I/O競合への耐性を確立。

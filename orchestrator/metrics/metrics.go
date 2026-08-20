@@ -3,6 +3,7 @@ package metrics
 import (
 	"net/http"
 	_ "net/http/pprof" // ライブプロファイリング用 pprof ハンドラを http.DefaultServeMux に自動登録いたしますわ！
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -342,10 +343,17 @@ var (
 	)
 )
 
-// InitMetricsServer starts the Prometheus metrics HTTP server with pprof enabled.
+// InitMetricsServer starts the Prometheus metrics HTTP server with pprof enabled and strict timeout protection.
 func InitMetricsServer(addr string) error {
 	http.Handle("/metrics", promhttp.Handler())
 	// pprof はブランクインポート (_ "net/http/pprof") により /debug/pprof/ 下に自動登録されますわ！
-	return http.ListenAndServe(addr, nil)
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      http.DefaultServeMux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	return srv.ListenAndServe()
 }
 

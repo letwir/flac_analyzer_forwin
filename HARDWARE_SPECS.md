@@ -1,12 +1,12 @@
 # System & Environment Specifications
 
 <dev_specs id="DEV_SPECS">
-## 開発マシンスペック (Development Host Machine Specifications) [Auto-Detected]
-- **CPU**: AMD Ryzen 7 7735HS with Radeon Graphics        
-- **RAM**: 32.0 GB Physical DDR4
-- **GPU**: AMD Radeon(TM) Graphics
-- **OS**: Microsoft Windows 11 Pro / PowerShell 7 (`pwsh.exe`)
-- **Pagefile**: C:\pagefile.sys (59.3 GB)
+## 開発マシンスペック (Development Host Machine Specifications) [Auto-Detected by Go Orchestrator]
+- **CPU**: QEMU Virtual CPU version 2.5+
+- **RAM**: 64.0 GB Physical DDR4
+- **GPU**: Virtual Desktop Monitor, NVIDIA GeForce RTX 5070 Ti, Microsoft Remote Display Adapter, Microsoft ���{�f�B�X�v���C �A�_�v�^�[
+- **OS**: Microsoft Windows 11 Pro / PowerShell 7
+- **Pagefile**: C:\pagefile.sys (64 GB)
 </dev_specs>
 
 <exec_specs id="EXEC_SPECS">

@@ -1,4 +1,14 @@
 <knowledge>
+  <api id="DECOUPLED_DB_INGESTION_AND_TIMEOUT_RESILIENCY">
+    <title>Decoupled Asynchronous DB Ingestion and Timeout Resiliency</title>
+    - **概要**: 高負荷な音響解析パイプライン（CPU/GPU密集型）において、解析結果のデータベース（PostgreSQL）書き込みを同期的に行うと、TailscaleやWAN等のリモート接続時のネットワーク不調・コネクションストールによって全解析ワーカーが永久ブロック（ハング）する危険性がある。
+    - **対策**:
+      - **Compute / IO 非同期分離**: 特徴量抽出ワーカーは FLAC タグ付け完了直後にインメモリの `ingestQueue`（バッファ付きチャネル）へ送出し、即座にアクティブワーカーカウントを解放して次タスクの処理を開始する。
+      - **独立 IngestWorker**: 独立したバックグラウンドゴルーチン `ingestWorker` がキューから取り出し、設定可能なタイムアウト（`db_timeout_sec = 20`、`context.WithTimeout`）付きで PostgreSQL に書き込む。
+      - **Panic Recovery**: `processIngestPayloadComplex` に `defer recover()` を配置し、予期せぬ実行時例外が発生してもゴルーチンが落ちずに DLQ へ退避する。
+      - **ローカル DLQ フォールバック**: タイムアウトまたは DB 接続障害時は即座にローカル SQLite DLQ (`send_failed.db`) に退避させ、タスク状態を COMPLETED (DLQ退避済み) として正常終了させる。バックグラウンドの `StartDlqRetryScheduler` により eventual consistency（結果整合性）を維持する。
+      - **2段階 Graceful Shutdown**: `taskQueue` の close と全解析ワーカーの完了待機（Phase 1）を経てから、`ingestQueue` の close と IngestWorker の完了待機（Phase 2）を行い、最後に DB 接続・リソースを安全に Close する。
+  </api>
   <api id="FLAC_CLI_DECODE_RESILIENCY">
     <title>flac CLI Range Decoding Resiliency and Subprocess Safety</title>
     - **概要**: `flac -d -c --skip=... --until=...` による部分デコード時、CUEシートのサンプル境界の端数やストリームフレームの軽微な警告により、flac CLI が `rc=1` で異常終了することがある。
