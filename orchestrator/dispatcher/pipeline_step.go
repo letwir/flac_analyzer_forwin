@@ -117,7 +117,7 @@ func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
 	}
 
 	// 3. Feature Extraction Stage (Daemon)
-	feats, featErr := d.executeFeaturesStage(demucsSR, trackHash, demucsStems, arenaSet, storageMode)
+	feats, featErr := d.executeFeaturesStage(demucsSR, trackHash, demucsStems, arenaSet, storageMode, task, currentCfg)
 	if featErr != nil {
 		d.failTask(task, featErr.Error())
 		return

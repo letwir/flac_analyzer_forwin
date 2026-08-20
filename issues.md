@@ -1,5 +1,6 @@
 # ISSUE
 
+- [x]DONE 【Fix/Architecture】 長尺トラック・高負荷時の特徴量抽出タイムアウト解決および適応的タイムアウト（Adaptive Timeout）導入（5分以上の楽曲および55分トークトラック等の 90秒デッドライン超過 FAILED を完全根絶）
 - [x]DONE 【Feature】 物理 RAM 安全圏超過時の SSD/TMP ディスク退避モード (Disk Mode Fallback) 実装（ASMR / 長尺トラック 104GB 見積もり時の Gatekeeper NOGO 永久ブロック根絶 ＆ 7ステム維持）
 - [x]DONE 【Fix】 flac_decode.py の flac CLI 範囲デコード例外 (rc=1) 修正（-F / --silent / proc.communicate / 指数バックオフリトライ導入）
 - [x]DONE 【Fix】 ingester.py の stdout ログ混入による Orchestrator の Pre-Hash Duplicate Check (mixハッシュチェック) スキップ失敗バグの修正

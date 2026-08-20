@@ -1,3 +1,18 @@
+### 2026-08-20 23:36:00
+- **Hypothesis**: `worker daemon extraction failed: daemon ExtractAll context cancelled: context deadline exceeded` の原因は、`orchestrator/dispatcher/pipeline_features.go` の `ctxExtract` が `90*time.Second` にハードコードされており、7ステム（mix, bass, drums, vocals, other, guitar, piano）の Librosa / PyTorch / Essentia 特徴量抽出を行う際に、5分以上の楽曲や 55分におよぶ長尺特典トークトラック（Perfume Track 3 等）で 90 秒を超過してデッドラインが切れていたことにある。トラック長に応じた適応的タイムアウト関手 `ComputeAdaptiveTimeoutPure` を導入し、設定ファイル `config.toml` に `feature_extract_timeout_sec`, `demucs_timeout_sec`, `adaptive_timeout_ratio`, `max_adaptive_timeout_sec` を追加することで、あらゆる長さのトラックを安全に完走できる。
+- **Tried**:
+  - `orchestrator/config/config.go` & `loader.go`: タイムアウトパラメータの追加と正規化ガード。
+  - `config.toml`: タイムアウト制御セクションを追加。
+  - `orchestrator/dispatcher/shm_utils.go`: 純粋関数 `ComputeAdaptiveTimeoutPure` を実装（トラック長に比例した動的タイムアウトと上限クランプ）。
+  - `orchestrator/dispatcher/pipeline_features.go`: `executeFeaturesStage` に `task`, `currentCfg` を受け取り `ComputeAdaptiveTimeoutPure` で計算したタイムアウトと `defer cancelExtract()` を適用。
+  - `orchestrator/dispatcher/pipeline_demucs.go`: `executeDemucsStage` で `ComputeAdaptiveTimeoutPure` で計算したタイムアウトと `defer cancelDemucs()` を適用。
+  - `orchestrator/dispatcher/pipeline_step.go`: `executeFeaturesStage` 呼び出しに `task`, `currentCfg` を伝達。
+  - `orchestrator/dispatcher/shm_windows_test.go` & `loader_test.go`: `TestComputeAdaptiveTimeoutPure` および `TestNormalizeConfig_Timeouts` 単体テスト追加。
+  - `go test -v ./...`: 全パッケージ 100% PASS。
+  - `proof-checker.exe`: 0 Errors (PASS)。
+  - Auditor Gate (Claude 4.6) & Verifier Gate (Gemini 3.7 Flash fallback): 満場一致で PASS。
+- **Emotion/Thoughts**: 旦那様！ログに出ていたエラーの正体、完全に暴き出しましたわ！なんと特徴量抽出（7ステムのLibrosa多変量解析＋GPU STFT/HNR/NAP＋Essentia ONNX）のタイムアウトがたったの 90 秒に固定されておりましたの！5分半の楽曲でもギリギリでしたのに、Perfume Track 3 に至ってはなんと 55 分（3300秒）の長大トラックでしたから、90秒で落ちるのは当然の摂理でしたわ！トラックの長さに応じてタイムアウトを動的にスケーリングする適応的タイムアウト関手（Adaptive Timeout Functor）を組み込み、55分のトラックには 87.5 分（5250秒）の極めて安全なバッファを自動割り当てできるようにいたしましたの！もう長尺トラックでもトークトラックでも、一切怖くありませんわ！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-20 22:32:00
 - **Hypothesis**: `WorkerDaemonClient.ExtractAll` において、`c.mu.Lock()` を保持した状態で `worker_daemon.py` の 100曲処理後 Graceful 再起動（EOF）やタイムアウトによるエラーハンドリング時に `c.Close()`（内部で再度 `c.mu.Lock()`）が呼ばれ、再入不能ミューテックスによる即時自己デッドロックが発生し、ワーカーが永久フリーズしてキューおよび HTTP エンドポイントが全面閉塞していた。`closeLocked()` の導入により自己デッドロックを完全根絶し、さらに `DynamicSemaphore` / `AdaptiveDemucsScheduler` への `AcquireWithContext` 導入と多層タイムアウト監視により、進捗停止タスクを確実に `state.StatusFailed` に記録してリソースを安全解放し、次のタスクへ自動復帰（フェイルフォワード）できる。
 - **Tried**:

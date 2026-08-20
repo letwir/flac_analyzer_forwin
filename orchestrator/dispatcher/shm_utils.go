@@ -1,5 +1,7 @@
 package dispatcher
 
+import "time"
+
 // StorageMode represents the waveform IPC transfer mechanism (Zero-copy SHM or Disk Spooling).
 type StorageMode string
 
@@ -129,4 +131,53 @@ func DetermineStorageModePure(
 	}
 
 	return StorageModeSHM, estimatedRam, 0
+}
+
+// ComputeAdaptiveTimeoutPure calculates a dynamic, safe timeout duration scaled to track length.
+// Mor: (TaskPayload, BaseTimeoutSec, Ratio, MaxTimeoutSec) -> time.Duration
+// PureMorph: ComputeAdaptiveTimeoutPure
+func ComputeAdaptiveTimeoutPure(
+	task TaskPayload,
+	baseTimeoutSec int,
+	ratio float64,
+	maxTimeoutSec int,
+) time.Duration {
+	if baseTimeoutSec <= 0 {
+		baseTimeoutSec = 300
+	}
+	if ratio <= 0 {
+		ratio = 1.5
+	}
+	if maxTimeoutSec <= 0 {
+		maxTimeoutSec = 7200
+	}
+	if maxTimeoutSec < baseTimeoutSec {
+		maxTimeoutSec = baseTimeoutSec
+	}
+
+	var trackSec float64
+	if task.EndSample > task.StartSample {
+		// Sample count is explicit (CUE track slice). 44.1kHz base reference.
+		trackSec = float64(task.EndSample-task.StartSample) / 44100.0
+	} else if task.FileSize > 0 {
+		// Single whole FLAC file. 16-bit 44.1kHz stereo PCM ≈ 176.4 KB/s.
+		// For high-res/compressed FLAC, provide conservative lower-bound of 600s.
+		estimatedSec := float64(task.FileSize) / 176400.0
+		if estimatedSec < 600.0 {
+			estimatedSec = 600.0
+		}
+		trackSec = estimatedSec
+	} else {
+		trackSec = 300.0
+	}
+
+	adaptiveSec := float64(baseTimeoutSec) + (trackSec * ratio)
+	if adaptiveSec < float64(baseTimeoutSec) {
+		adaptiveSec = float64(baseTimeoutSec)
+	}
+	if adaptiveSec > float64(maxTimeoutSec) {
+		adaptiveSec = float64(maxTimeoutSec)
+	}
+
+	return time.Duration(adaptiveSec) * time.Second
 }

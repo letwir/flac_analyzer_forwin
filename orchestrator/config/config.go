@@ -52,6 +52,10 @@ type OrchestratorConfig struct {
 	DbTimeoutSec               int      `toml:"db_timeout_sec"`
 	EnableDiskModeFallback     *bool    `toml:"enable_disk_mode_fallback"`
 	DiskModeRamThresholdRatio  float64  `toml:"disk_mode_ram_threshold_ratio"`
+	FeatureExtractTimeoutSec   int      `toml:"feature_extract_timeout_sec"`
+	DemucsTimeoutSec           int      `toml:"demucs_timeout_sec"`
+	AdaptiveTimeoutRatio       float64  `toml:"adaptive_timeout_ratio"`
+	MaxAdaptiveTimeoutSec      int      `toml:"max_adaptive_timeout_sec"`
 }
 
 // Config represents the fully normalized, runtime-validated configuration domain object.
@@ -89,4 +93,8 @@ type Config struct {
 	DBTimeoutSec               int
 	EnableDiskModeFallback     bool
 	DiskModeRamThresholdRatio  float64
+	FeatureExtractTimeoutSec   int
+	DemucsTimeoutSec           int
+	AdaptiveTimeoutRatio       float64
+	MaxAdaptiveTimeoutSec      int
 }

@@ -315,3 +315,65 @@ print("READ2_OK")
 		t.Fatalf("Unexpected python read round 2 output: %s", string(outRead2))
 	}
 }
+
+func TestComputeAdaptiveTimeoutPure(t *testing.T) {
+	// Case 1: Short track (1 minute: 44100 * 60 samples)
+	shortTask := TaskPayload{
+		StartSample: 0,
+		EndSample:   44100 * 60,
+	}
+	shortDur := ComputeAdaptiveTimeoutPure(shortTask, 300, 1.5, 7200)
+	expectedShort := 390 * 1000000000 // 390s (time.Duration nanoseconds)
+	if shortDur.Seconds() != 390 {
+		t.Errorf("Expected 390s for 1-minute track, got %v", shortDur)
+	}
+	_ = expectedShort
+
+	// Case 2: Standard 5-minute track (44100 * 300 samples)
+	stdTask := TaskPayload{
+		StartSample: 0,
+		EndSample:   44100 * 300,
+	}
+	stdDur := ComputeAdaptiveTimeoutPure(stdTask, 300, 1.5, 7200)
+	if stdDur.Seconds() != 750 { // 300 + 300 * 1.5 = 750s (12.5 min)
+		t.Errorf("Expected 750s for 5-minute track, got %v", stdDur)
+	}
+
+	// Case 3: 55-minute talk/radio track (44100 * 3300 samples, like Perfume Track 3)
+	longTask := TaskPayload{
+		StartSample: 24678948,
+		EndSample:   24678948 + (44100 * 3300),
+	}
+	longDur := ComputeAdaptiveTimeoutPure(longTask, 300, 1.5, 7200)
+	if longDur.Seconds() != 5250 { // 300 + 3300 * 1.5 = 5250s (87.5 min)
+		t.Errorf("Expected 5250s for 55-minute track, got %v", longDur)
+	}
+
+	// Case 4: Extreme 100-minute track -> Clamped to maxTimeout (7200s)
+	extremeTask := TaskPayload{
+		StartSample: 0,
+		EndSample:   44100 * 6000,
+	}
+	extremeDur := ComputeAdaptiveTimeoutPure(extremeTask, 300, 1.5, 7200)
+	if extremeDur.Seconds() != 7200 { // 300 + 6000 * 1.5 = 9300 -> clamped to 7200
+		t.Errorf("Expected 7200s max clamp, got %v", extremeDur)
+	}
+
+	// Case 5: Zero/negative fallback defense
+	zeroDur := ComputeAdaptiveTimeoutPure(stdTask, 0, 0, 0)
+	if zeroDur.Seconds() != 750 {
+		t.Errorf("Expected fallback to 750s, got %v", zeroDur)
+	}
+
+	// Case 6: Single file without explicit sample range (FileSize fallback)
+	fileTask := TaskPayload{
+		StartSample: 0,
+		EndSample:   0,
+		FileSize:    50 * 1024 * 1024, // 50MB ≈ 297s, clamped to 600s min
+	}
+	fileDur := ComputeAdaptiveTimeoutPure(fileTask, 300, 1.5, 7200)
+	if fileDur.Seconds() != 1200 { // 300 + 600 * 1.5 = 1200s (20 min)
+		t.Errorf("Expected 1200s for single FLAC file fallback, got %v", fileDur)
+	}
+}
+

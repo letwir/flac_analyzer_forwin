@@ -1,6 +1,20 @@
 
 # History Log
 
+### 2026-08-20 23:36:00
+
+- Category: Bugfix & Architecture / Adaptive Timeout Functor & Pipeline Deadline Scaling
+- Summary: 長尺トラック（5分以上の楽曲や55分の特典ラジオトラック等）で発生していた特徴量抽出ステージの `daemon ExtractAll context cancelled: context deadline exceeded`（90秒固定タイムアウト）を根本解決。トラック長（サンプル数／推定秒数）に応じた動的スケーリングを行う適応的タイムアウト関手 `ComputeAdaptiveTimeoutPure` を導入し、設定ファイル `config.toml` からのカスタマイズ（基本秒数、倍率、上限秒数）、ハイレゾ/マルチレート安全フォールバック、RAII defer cancel() の徹底により、あらゆる長さのトラックを安全に完走可能にした。
+- Decisions:
+  - `orchestrator/config/config.go` & `loader.go`: `FeatureExtractTimeoutSec`, `DemucsTimeoutSec`, `AdaptiveTimeoutRatio`, `MaxAdaptiveTimeoutSec` を追加しデフォルト値ガードを実装。
+  - `config.toml`: タイムアウト制御セクションを追加。
+  - `orchestrator/dispatcher/shm_utils.go`: 純粋関数 `ComputeAdaptiveTimeoutPure` を実装（トラック長に比例した動的タイムアウトと上限クランプ）。
+  - `orchestrator/dispatcher/pipeline_features.go` & `pipeline_demucs.go`: `ComputeAdaptiveTimeoutPure` で計算したタイムアウトと `defer cancel()` を適用。
+  - `orchestrator/dispatcher/pipeline_step.go`: `executeFeaturesStage` 呼び出しに `task`, `currentCfg` を伝達。
+  - `orchestrator/dispatcher/shm_windows_test.go` & `loader_test.go`: `TestComputeAdaptiveTimeoutPure` および `TestNormalizeConfig_Timeouts` 単体テスト追加。
+  - 全単体テスト合格（`go test -v ./...`）、`proof-checker.exe` による検証合格（0 Errors）、Auditor/Verifier ゲート通過。
+- Files: [config.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/config/config.go), [loader.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/config/loader.go), [config.toml](file:///a:/Users/letwir/repo/flac_analyzer_forwin/config.toml), [shm_utils.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/shm_utils.go), [pipeline_features.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/pipeline_features.go), [pipeline_demucs.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/pipeline_demucs.go), [pipeline_step.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/pipeline_step.go), [shm_windows_test.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/shm_windows_test.go), [loader_test.go](file:///a:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/config/loader_test.go)
+
 ### 2026-08-20 21:36:00
 
 - Category: Refactor & Category Theory / Modular Morphism Decomposition & Config/Logger Functor Extraction

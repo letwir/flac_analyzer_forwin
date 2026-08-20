@@ -1,3 +1,17 @@
+# Implementation Plan: 長尺トラック・高負荷時の特徴量抽出タイムアウト解決および適応的タイムアウト（Adaptive Timeout）導入
+
+- **Goal**: 5分以上の楽曲や長尺トラック（例: 55分の特典ラジオトラック等）で発生していた特徴量抽出ステージのタイムアウト（`90秒` 固定値）を解消し、トラック長に応じた適応的タイムアウト（Adaptive Timeout Functor）を導入・設定可能にする。
+- **Target**: `orchestrator/config/config.go`, `orchestrator/config/loader.go`, `config.toml`, `orchestrator/dispatcher/shm_utils.go`, `orchestrator/dispatcher/pipeline_features.go`, `orchestrator/dispatcher/pipeline_demucs.go`, `orchestrator/dispatcher/pipeline_step.go`, `orchestrator/dispatcher/shm_windows_test.go`, `orchestrator/config/loader_test.go`.
+- **Feature**:
+  - `config.go` & `loader.go`: `FeatureExtractTimeoutSec` (デフォルト: 300), `DemucsTimeoutSec` (デフォルト: 300), `AdaptiveTimeoutRatio` (デフォルト: 1.5), `MaxAdaptiveTimeoutSec` (デフォルト: 7200) の追加と正規化ガード。
+  - `config.toml`: タイムアウト制御セクションを追加。
+  - `shm_utils.go`: 純粋関数 `ComputeAdaptiveTimeoutPure` 実装（トラック長に比例した動的タイムアウトと上限クランプ）。
+  - `pipeline_features.go`: `executeFeaturesStage` に `task`, `currentCfg` を受け取り `ComputeAdaptiveTimeoutPure` で計算したタイムアウトと `defer cancelExtract()` を適用。
+  - `pipeline_demucs.go`: `executeDemucsStage` で `ComputeAdaptiveTimeoutPure` で計算したタイムアウトと `defer cancelDemucs()` を適用。
+  - `pipeline_step.go`: `executeFeaturesStage` 呼び出しに `task`, `currentCfg` を伝達。
+  - `shm_windows_test.go` & `loader_test.go`: `TestComputeAdaptiveTimeoutPure` および `TestNormalizeConfig_Timeouts` 単体テスト追加。
+- **Status**: Completed
+
 # Implementation Plan: WorkerDaemon 自己デッドロック解消 & 進捗停止タスクの FAILED 遷移・自動リカバリ (Watchdog Protection)
 
 - **Goal**:

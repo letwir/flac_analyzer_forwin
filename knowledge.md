@@ -1,4 +1,12 @@
 <knowledge>
+  <api id="ADAPTIVE_TIMEOUT_AND_LONG_TRACK_SCALING">
+    <title>Adaptive Timeout Functor and Long Track Pipeline Scaling</title>
+    - **概要**: 7ステム（mix, bass, drums, vocals, other, guitar, piano）に対する Librosa 多変量解析、PyTorch GPU HNR/NAP 特徴量抽出、Essentia ONNX 特徴量抽出を行うパイプラインにおいて、固定値タイムアウト（例: 90秒）を設定すると、5分以上の楽曲や長尺トークトラック（55分の特典ラジオトラック等）で `worker daemon extraction failed: daemon ExtractAll context cancelled: context deadline exceeded` が発生する。
+    - **対策**:
+      - **純粋適応タイムアウト関手 `ComputeAdaptiveTimeoutPure`**: トラック長（サンプル数から算出される秒数、未指定時はファイルサイズ基準）に基づき、`T_adaptive = clamp(T_base + (T_track * ratio), T_base, T_max)` を決定論的に算出する。
+      - **設定集中管理 (Config Centralization)**: `config.toml` に `feature_extract_timeout_sec` (デフォルト: 300秒), `demucs_timeout_sec` (デフォルト: 300秒), `adaptive_timeout_ratio` (デフォルト: 1.5), `max_adaptive_timeout_sec` (デフォルト: 7200秒) を配置し、`NormalizeConfig` でゼロ・負数に対する安全フォールバックガードを適用する。
+      - **厳格な RAII `defer cancel()`**: `pipeline_features.go` および `pipeline_demucs.go` における `context.WithTimeout` 直後に `defer cancel()` を配置し、長大バッチ実行時のタイマーおよび goroutine リソースの累積リークを根絶する。
+  </api>
   <api id="DISK_MODE_FALLBACK_AND_RAM_SAFETY">
     <title>Disk Mode Fallback and RAM Safety for Massive Audio Tracks</title>
     - **概要**: 2〜3時間を超える長尺・ASMR・ハイレゾ音源において、Demucs 7ステム分離のメモリ見積もりが 104GB（104,243 MB）に達し、物理空き RAM を超過して Gatekeeper で永久ブロックされる問題。

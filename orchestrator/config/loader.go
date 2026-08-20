@@ -167,6 +167,26 @@ func NormalizeConfig(
 		diskModeRamRatio = 0.8
 	}
 
+	featureExtractTimeoutSec := raw.Orchestrator.FeatureExtractTimeoutSec
+	if featureExtractTimeoutSec <= 0 {
+		featureExtractTimeoutSec = 300
+	}
+
+	demucsTimeoutSec := raw.Orchestrator.DemucsTimeoutSec
+	if demucsTimeoutSec <= 0 {
+		demucsTimeoutSec = 300
+	}
+
+	adaptiveTimeoutRatio := raw.Orchestrator.AdaptiveTimeoutRatio
+	if adaptiveTimeoutRatio <= 0 {
+		adaptiveTimeoutRatio = 1.5
+	}
+
+	maxAdaptiveTimeoutSec := raw.Orchestrator.MaxAdaptiveTimeoutSec
+	if maxAdaptiveTimeoutSec <= 0 {
+		maxAdaptiveTimeoutSec = 7200
+	}
+
 	resolvedPythonEnv := ResolvePythonEnv(raw.PythonEnv, numCPU, effectiveWorkers)
 
 	return &Config{
@@ -203,6 +223,10 @@ func NormalizeConfig(
 		DBTimeoutSec:               dbTimeoutSec,
 		EnableDiskModeFallback:     enableDiskFallback,
 		DiskModeRamThresholdRatio:  diskModeRamRatio,
+		FeatureExtractTimeoutSec:   featureExtractTimeoutSec,
+		DemucsTimeoutSec:           demucsTimeoutSec,
+		AdaptiveTimeoutRatio:       adaptiveTimeoutRatio,
+		MaxAdaptiveTimeoutSec:      maxAdaptiveTimeoutSec,
 	}
 }
 

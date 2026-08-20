@@ -1,3 +1,20 @@
+# Walkthrough: 長尺トラック・高負荷時の特徴量抽出タイムアウト解決および適応的タイムアウト（Adaptive Timeout）導入
+
+- **Summary**: 5分以上の楽曲や長尺トークトラック（例: 55分の特典ラジオトラック等）で発生していた特徴量抽出ステージのタイムアウト（`90秒` 固定値）を解消し、トラック長に応じた適応的タイムアウト機構（`ComputeAdaptiveTimeoutPure`）を導入。設定ファイル `config.toml` からの動的設定、ハイレゾ/マルチレート安全フォールバック、RAII defer cancel() の徹底により、あらゆる長さのトラックを安全に完走可能にした。
+- **Changes**:
+  - `orchestrator/config/config.go`: `FeatureExtractTimeoutSec`, `DemucsTimeoutSec`, `AdaptiveTimeoutRatio`, `MaxAdaptiveTimeoutSec` を追加。
+  - `orchestrator/config/loader.go`: `NormalizeConfig` にタイムアウトパラメータのデフォルト値フォールバックとガードを追加。
+  - `config.toml`: タイムアウト制御セクション（`feature_extract_timeout_sec = 300`, `demucs_timeout_sec = 300`, `adaptive_timeout_ratio = 1.5`, `max_adaptive_timeout_sec = 7200`）を追加。
+  - `orchestrator/dispatcher/shm_utils.go`: 純粋関数 `ComputeAdaptiveTimeoutPure` を実装（トラック長に比例した動的タイムアウトと上限クランプ）。
+  - `orchestrator/dispatcher/pipeline_features.go`: `executeFeaturesStage` に `task`, `currentCfg` を受け取り `ComputeAdaptiveTimeoutPure` で計算したタイムアウトと `defer cancelExtract()` を適用。
+  - `orchestrator/dispatcher/pipeline_demucs.go`: `executeDemucsStage` で `ComputeAdaptiveTimeoutPure` で計算したタイムアウトと `defer cancelDemucs()` を適用。
+  - `orchestrator/dispatcher/pipeline_step.go`: `executeFeaturesStage` 呼び出しに `task`, `currentCfg` を伝達。
+  - `orchestrator/dispatcher/shm_windows_test.go` & `loader_test.go`: `TestComputeAdaptiveTimeoutPure` および `TestNormalizeConfig_Timeouts` 単体テスト追加。
+- **Verification**:
+  - `go test -v ./...`: 全パッケージ 100% PASS
+  - `proof-checker.exe -path orchestrator`: 0 Errors (PASS)
+  - `school food punishment (Track 8)` (5分26秒): 算定タイムアウト 789秒、`Perfume (Track 3)` (55分): 算定タイムアウト 5250秒
+
 # Walkthrough: WorkerDaemon 自己デッドロック解消 & 進捗停止タスクの FAILED 遷移・自動リカバリ (Watchdog Protection)
 
 - **Summary**: `WorkerDaemonClient.ExtractAll` においてエラー時やコンテキストタイムアウト時に発生していた再入不能ミューテックスの二重ロック（自己デッドロック）を `closeLocked()` 導入により完全根絶。さらに進捗停止タスクの確実な検知と `state.StatusFailed` への記録、リソース（SHM、GPUセマフォ、一時ディレクトリ）の安全解放、および `DynamicSemaphore` / `AdaptiveDemucsScheduler` の `AcquireWithContext` 導入による永久待機フリーのフェイルフォワードリカバリを実現。

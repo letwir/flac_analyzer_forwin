@@ -18,7 +18,13 @@ func (d *Dispatcher) executeDemucsStage(
 	currentCfg Config,
 	stems []string,
 ) (string, int, map[string]StemInfo, *WorkerArenaSet, error) {
-	ctxDemucs, cancelDemucs := context.WithTimeout(context.Background(), 300*time.Second)
+	timeoutDur := ComputeAdaptiveTimeoutPure(
+		task,
+		currentCfg.DemucsTimeoutSec,
+		currentCfg.AdaptiveTimeoutRatio,
+		currentCfg.MaxAdaptiveTimeoutSec,
+	)
+	ctxDemucs, cancelDemucs := context.WithTimeout(context.Background(), timeoutDur)
 	defer cancelDemucs()
 
 	d.LogInfo("[W-%d] [IO Monad] Waiting for Adaptive Demucs execution slot (limit: %d)...", id, d.demucsScheduler.GetLimit())

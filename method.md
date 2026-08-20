@@ -1,4 +1,8 @@
 <methods>
+  <target id="ADAPTIVE_TIMEOUT_PIPELINE_SCALING">
+    <why>Fixed timeouts (90s) in feature extraction cause false-positive failures for 5+ min tracks and 50+ min talk/bonus tracks.</why>
+    <how>Compute dynamic execution deadline via pure functor `ComputeAdaptiveTimeoutPure` scaling deadline as `clamp(base_sec + track_sec * ratio, base_sec, max_sec)`. Expose `feature_extract_timeout_sec`, `demucs_timeout_sec`, `adaptive_timeout_ratio`, and `max_adaptive_timeout_sec` in `config.toml` and guarantee RAII cleanup with `defer cancel()`.</how>
+  </target>
   <target id="DECOUPLED_ASYNC_INGEST_WORKER">
     <why>Remote PostgreSQL writes over Tailscale can experience network socket stalls, blocking compute workers indefinitely when executed synchronously.</why>
     <how>Decouple DB ingestion into an asynchronous buffered queue (`ingestQueue`, cap 1000) and dedicated `ingestWorker`. Workers enqueue payload upon FLAC tag completion and immediately decrement active worker metrics. `ingestWorker` enforces configurable timeout (`db_timeout_sec = 20`) via `context.WithTimeout`, falling back instantly to local SQLite DLQ (`send_failed.db`) on timeout/connection failure. Shutdown is orchestrated via a strict 2-phase sequence.</how>

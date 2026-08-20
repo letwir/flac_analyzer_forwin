@@ -24,8 +24,17 @@ func (d *Dispatcher) executeFeaturesStage(
 	demucsStems map[string]StemInfo,
 	arenaSet *WorkerArenaSet,
 	storageMode StorageMode,
+	task TaskPayload,
+	currentCfg Config,
 ) (*FeatureOutputs, error) {
 	daemonStageStart := time.Now()
+	timeoutDur := ComputeAdaptiveTimeoutPure(
+		task,
+		currentCfg.FeatureExtractTimeoutSec,
+		currentCfg.AdaptiveTimeoutRatio,
+		currentCfg.MaxAdaptiveTimeoutSec,
+	)
+
 	ctxAcquire, cancelAcquire := context.WithTimeout(context.Background(), 120*time.Second)
 	daemonClient, daemonErr := d.daemonPool.Acquire(ctxAcquire)
 	cancelAcquire()
@@ -42,9 +51,10 @@ func (d *Dispatcher) executeFeaturesStage(
 		TrackHash: trackHash,
 		Stems:     demucsStems,
 	}
-	ctxExtract, cancelExtract := context.WithTimeout(context.Background(), 90*time.Second)
+	ctxExtract, cancelExtract := context.WithTimeout(context.Background(), timeoutDur)
+	defer cancelExtract()
+
 	daemonResp, daemonExtractErr := daemonClient.ExtractAll(ctxExtract, extractPayload)
-	cancelExtract()
 	d.daemonPool.Release(daemonClient)
 
 	if daemonExtractErr != nil {
