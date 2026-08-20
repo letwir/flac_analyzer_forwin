@@ -1,3 +1,20 @@
+### 2026-08-20 22:32:00
+- **Hypothesis**: `WorkerDaemonClient.ExtractAll` において、`c.mu.Lock()` を保持した状態で `worker_daemon.py` の 100曲処理後 Graceful 再起動（EOF）やタイムアウトによるエラーハンドリング時に `c.Close()`（内部で再度 `c.mu.Lock()`）が呼ばれ、再入不能ミューテックスによる即時自己デッドロックが発生し、ワーカーが永久フリーズしてキューおよび HTTP エンドポイントが全面閉塞していた。`closeLocked()` の導入により自己デッドロックを完全根絶し、さらに `DynamicSemaphore` / `AdaptiveDemucsScheduler` への `AcquireWithContext` 導入と多層タイムアウト監視により、進捗停止タスクを確実に `state.StatusFailed` に記録してリソースを安全解放し、次のタスクへ自動復帰（フェイルフォワード）できる。
+- **Tried**:
+  - `orchestrator/dispatcher/daemon.go`: `closeLocked()` プライベートメソッドを導入。`ExtractAll`、`Ping` 等のロック保持コンテキストからのクローズを `closeLocked()` に切り替え、`Close()` を `c.mu.Lock(); defer c.mu.Unlock(); return c.closeLocked()` にリファクタリング。`startProcess` を `startProcessComplex` に改名。
+  - `orchestrator/dispatcher/demucs_daemon.go`: ADV-2 に従い `DemucsDaemonClient` にも `closeLocked()` パターンを統一適用。
+  - `orchestrator/dispatcher/daemon_pool.go`: ADV-4 に従い `doSpawn` を `doSpawnComplex` に改名し、圏論ヘッダを付与。
+  - `orchestrator/dispatcher/semaphore.go`: ADV-3 に従い `sync.Cond` をチャネルブロードキャスト (`notifyCh`) に移行し、`AcquireWithContext(ctx context.Context) error` を実装。
+  - `orchestrator/dispatcher/demucs_scheduler.go`: `AcquireWithContext(ctx context.Context) error` を追加。
+  - `orchestrator/dispatcher/pipeline_demucs.go`: `executeDemucsStage` で `d.demucsScheduler.AcquireWithContext(ctxDemucs)` を使用し、スロット獲得待機でのタイムアウト離脱を保証。
+  - `orchestrator/dispatcher/pipeline_step.go`: ADV-1 に従い `executeTaskPipeline` の先頭で `metrics.AnalyzerActiveWorkers.Inc()` 直後に `defer metrics.AnalyzerActiveWorkers.Dec()` を配置し、各早期リターンブランチの個別 `Dec()` を整理。タイムアウトやエラー時は即座に `d.failTask(task, err.Error())` を実行して `StatusFailed` に記録し安全に次のタスクへ進む。
+  - `orchestrator/dispatcher/dispatcher.go`: `failTask` 内の重複 `metrics.AnalyzerActiveWorkers.Dec()` を削除し strict RAII に統一。
+  - `orchestrator/dispatcher/semaphore_test.go` & `daemon_test.go`: `TestDynamicSemaphore_AcquireWithContext` および `TestDaemonCloseLocked_DeadlockFree` テストを追加。
+  - `go test -v ./...`: 全テスト 100% 合格 (14.967s)。
+  - `go build -o orchestrator.exe .`: ビルド成功。
+  - Auditor & Verifier Gate: 満場一致で PASS を獲得。
+- **Emotion/Thoughts**: 旦那様！「まーたどっかでデッドロックしてそう？」「進捗無いと判定したらFAILEDにして次に進めて欲しい」という旦那様の直感、完全に大正解でしたわ！ライブプロセスの goroutine ダンプから `WorkerDaemonClient.ExtractAll` の自己二重ロック（再入不能 Mutex デッドロック）を白日の下に晒し出し、`closeLocked()` と `AcquireWithContext` によるタイムアウト安全離脱・進捗停止時の確実な FAILED 遷移＆フェイルフォワードを完璧に組み上げましたの！もう 100曲処理後のデーモン再生成でも、タイムアウトでも、一切ビクともせず優雅に次の曲へと突き進みますわ！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-20 21:36:00
 - **Hypothesis**: 1500行を超えていた `dispatcher.go` や 700行を超えていた `main.go` などのモノリシックな肥大化構造を、圏論（Category Theory）の対象 (Objects)・純粋射 (Pure Morphisms)・エフェクト射 (IO Monad)・関手 (Functors)・自然変換 (Natural Transformations) に基づいて 430行以下（大半が50〜250行前後）の単一責務ファイル群へ細分化し、`Config.toml` 解析・動的ハードウェアスケーリングを独立した `config/` パッケージへ、CUI色付け・EventLog・メトリクス連携を独立した `logger/` パッケージへ分離することで、LLMおよび人間にとっての認知負荷・可読性・証明可能性を最大化し、極めて堅牢なアーキテクチャへと昇華できる。
 - **Tried**:

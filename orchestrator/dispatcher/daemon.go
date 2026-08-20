@@ -1,3 +1,6 @@
+// Mor: DaemonRequest -> DaemonResponse
+// Functor: f_worker ∘ g_ipc
+// Semantics: Category: Persistent Feature Worker Daemon NDJSON IPC Actor
 package dispatcher
 
 import (
@@ -86,14 +89,14 @@ func NewWorkerDaemonClient(
 		maxRecycle: 100,
 	}
 
-	if err := client.startProcess(); err != nil {
+	if err := client.startProcessComplex(); err != nil {
 		return nil, fmt.Errorf("failed to start worker daemon %d: %w", id, err)
 	}
 
 	return client, nil
 }
 
-func (c *WorkerDaemonClient) startProcess() error {
+func (c *WorkerDaemonClient) startProcessComplex() error {
 	scriptPath := filepath.Join(c.parentDir, "worker_daemon.py")
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 		return fmt.Errorf("worker_daemon.py not found at %s", scriptPath)
@@ -220,7 +223,7 @@ func (c *WorkerDaemonClient) ExtractAll(ctx context.Context, payload ExtractAllP
 
 	// Write NDJSON line
 	if _, err := c.stdin.Write(append(reqBytes, '\n')); err != nil {
-		_ = c.Close()
+		_ = c.closeLocked()
 		return nil, fmt.Errorf("failed to write request to daemon stdin: %w", err)
 	}
 
@@ -246,11 +249,11 @@ func (c *WorkerDaemonClient) ExtractAll(ctx context.Context, payload ExtractAllP
 
 	select {
 	case <-ctx.Done():
-		_ = c.Close()
+		_ = c.closeLocked()
 		return nil, fmt.Errorf("daemon ExtractAll context cancelled: %w", ctx.Err())
 	case res := <-resultCh:
 		if res.err != nil {
-			_ = c.Close()
+			_ = c.closeLocked()
 			return nil, res.err
 		}
 		if res.resp.Status != "success" {
@@ -283,6 +286,7 @@ func (c *WorkerDaemonClient) Ping(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal ping request: %w", err)
 	}
 	if _, err := c.stdin.Write(append(reqBytes, '\n')); err != nil {
+		_ = c.closeLocked()
 		return err
 	}
 
@@ -307,8 +311,12 @@ func (c *WorkerDaemonClient) Ping(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		_ = c.closeLocked()
 		return ctx.Err()
 	case err := <-resultCh:
+		if err != nil {
+			_ = c.closeLocked()
+		}
 		return err
 	}
 }
@@ -326,11 +334,8 @@ func (c *WorkerDaemonClient) IsHealthy() bool {
 	return true
 }
 
-// Close gracefully closes stdin and terminates the worker daemon process.
-func (c *WorkerDaemonClient) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+// closeLocked terminates pipes and process while caller already holds c.mu.
+func (c *WorkerDaemonClient) closeLocked() error {
 	if c.closed {
 		return nil
 	}
@@ -341,17 +346,16 @@ func (c *WorkerDaemonClient) Close() error {
 	}
 
 	if c.cmd != nil && c.cmd.Process != nil {
-		done := make(chan error, 1)
-		go func() {
-			done <- c.cmd.Wait()
-		}()
-
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			_ = c.cmd.Process.Kill()
-		}
+		_ = c.cmd.Process.Kill()
+		_ = c.cmd.Wait()
 	}
 
 	return nil
+}
+
+// Close gracefully closes stdin and terminates the worker daemon process.
+func (c *WorkerDaemonClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closeLocked()
 }

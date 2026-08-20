@@ -1,0 +1,520 @@
+goroutine 28209 [running]:
+runtime/pprof.writeGoroutineStacks({0x7ff6732a1ee0, 0x32ec231ba5a0})
+	C:/Program Files/Go/src/runtime/pprof/pprof.go:819 +0x6b
+runtime/pprof.writeGoroutine({0x7ff6732a1ee0?, 0x32ec231ba5a0?}, 0x32ec236af7b8?)
+	C:/Program Files/Go/src/runtime/pprof/pprof.go:782 +0x25
+runtime/pprof.(*Profile).WriteTo(0x7ff6738f3500?, {0x7ff6732a1ee0?, 0x32ec231ba5a0?}, 0xc?)
+	C:/Program Files/Go/src/runtime/pprof/pprof.go:408 +0x149
+net/http/pprof.handler.ServeHTTP({0x32ec232895a1, 0x9}, {0x7ff6732a5dc0, 0x32ec231ba5a0}, 0x32ec240be280)
+	C:/Program Files/Go/src/net/http/pprof/pprof.go:273 +0x52a
+net/http/pprof.Index({0x7ff6732a5dc0, 0x32ec231ba5a0}, 0x32ec240be280?)
+	C:/Program Files/Go/src/net/http/pprof/pprof.go:397 +0xda
+net/http.HandlerFunc.ServeHTTP(0x7ff6739190c0?, {0x7ff6732a5dc0?, 0x32ec231ba5a0?}, 0x7ff672cab916?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff672a276f9?, {0x7ff6732a5dc0, 0x32ec231ba5a0}, 0x32ec240be280)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x32ec23ff2c40?}, {0x7ff6732a5dc0?, 0x32ec231ba5a0?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec23916000, {0x7ff6732a6a98, 0x32ec2310e570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 84
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 1 [chan receive, 74 minutes]:
+main.main()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:416 +0x133d
+
+goroutine 82 [select, 74 minutes]:
+database/sql.(*DB).connectionOpener(0x32ec2310a340, {0x7ff6732a6ad0, 0x32ec2314a500})
+	C:/Program Files/Go/src/database/sql/sql.go:1261 +0x89
+created by database/sql.OpenDB in goroutine 1
+	C:/Program Files/Go/src/database/sql/sql.go:841 +0x130
+
+goroutine 83 [chan receive, 41 minutes]:
+flac_analyzer/orchestrator/state.(*DB).writerLoop(0x32ec231121d0)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/state/db.go:63 +0x70
+created by flac_analyzer/orchestrator/state.InitDB in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/state/db.go:57 +0x188
+
+goroutine 84 [IO wait]:
+internal/poll.runtime_pollWait(0x1fb788aae00, 0x72)
+	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x32ec23480000?, 0x7ff6729b7d06?, 0x0)
+	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*FD).waitIO(0x32ec23480000?, 0x32ec232f7a90?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:228 +0x4c
+internal/poll.(*FD).execIO(0x32ec2321c0e0, 0x72, 0x32ec232f7b00)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:311 +0x365
+internal/poll.(*FD).acceptOne(0x32ec2321c0e0, 0x78c, {0x32ec2324e0f0?, 0x32ec232f7b9c?, 0x32ec232f7bc8?})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:1129 +0x79
+internal/poll.(*FD).Accept(0x32ec2321c0e0, 0x32ec232f7ce8)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:1164 +0x190
+net.(*netFD).accept(0x32ec2321c0e0)
+	C:/Program Files/Go/src/net/fd_windows.go:202 +0x4b
+net.(*TCPListener).accept(0x32ec2320e100)
+	C:/Program Files/Go/src/net/tcpsock_posix.go:159 +0x1b
+net.(*TCPListener).Accept(0x32ec2320e100)
+	C:/Program Files/Go/src/net/tcpsock.go:387 +0x30
+net/http.(*Server).Serve(0x32ec23554000, {0x7ff6732a5fd0, 0x32ec2320e100})
+	C:/Program Files/Go/src/net/http/server.go:3434 +0x30c
+net/http.(*Server).ListenAndServe(0x32ec23554000)
+	C:/Program Files/Go/src/net/http/server.go:3360 +0x72
+flac_analyzer/orchestrator/metrics.InitMetricsServer({0x7ff67324e17b, 0x5})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/metrics/metrics.go:357 +0xc8
+main.main.func1()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:242 +0x96
+created by main.main in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:240 +0xd46
+
+goroutine 85 [select, 74 minutes]:
+database/sql.(*DB).connectionOpener(0x32ec2310a680, {0x7ff6732a6ad0, 0x32ec2314a550})
+	C:/Program Files/Go/src/database/sql/sql.go:1261 +0x89
+created by database/sql.OpenDB in goroutine 1
+	C:/Program Files/Go/src/database/sql/sql.go:841 +0x130
+
+goroutine 151 [syscall]:
+syscall.syscalln(0x0?, 0x0?, {0x32ec2392fc50?, 0x5?, 0x0?})
+	C:/Program Files/Go/src/runtime/syscall_windows.go:431 +0x4e
+syscall.SyscallN(0x11?, {0x32ec2392fc50?, 0x39?, 0x3?})
+	C:/Program Files/Go/src/syscall/dll_windows.go:99 +0x1e
+syscall.WaitForSingleObject(0x700, 0xffffffff)
+	C:/Program Files/Go/src/syscall/zsyscall_windows.go:1159 +0x6a
+os.(*Process).wait(0x32ec23ff2c00)
+	C:/Program Files/Go/src/os/exec_windows.go:28 +0x89
+os.(*Process).Wait(...)
+	C:/Program Files/Go/src/os/exec.go:346
+os/exec.(*Cmd).Wait(0x32ec2318aea0)
+	C:/Program Files/Go/src/os/exec/exec.go:930 +0x45
+os/exec.(*Cmd).Run(0x32ec2318aea0)
+	C:/Program Files/Go/src/os/exec/exec.go:632 +0x2d
+os/exec.(*Cmd).Output(0x32ec2318aea0)
+	C:/Program Files/Go/src/os/exec/exec.go:1026 +0xb8
+flac_analyzer/orchestrator/sysinfo.FetchGpuMetricsComplex()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/sysinfo/gpu_windows.go:132 +0x10b
+flac_analyzer/orchestrator/sysinfo.StartGpuCollectorDaemon.func1.1()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/sysinfo/gpu_windows.go:102 +0xcf
+created by flac_analyzer/orchestrator/sysinfo.StartGpuCollectorDaemon.func1 in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/sysinfo/gpu_windows.go:93 +0xb1
+
+goroutine 150 [IO wait]:
+internal/poll.runtime_pollWait(0x1fb788aa600, 0x72)
+	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x32ec241ef890?, 0x7ff6729b7d06?, 0x0)
+	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*FD).waitIO(0x7ff6738fbe00?, 0x7ff6738fbe00?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:228 +0x4c
+internal/poll.(*FD).execIO(0x32ec2321c1c0, 0x72, 0x32ec23343a10)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:311 +0x365
+internal/poll.(*FD).Read(0x32ec2321c1c0, {0x32ec2311e000, 0x1000, 0x1000})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:600 +0x20e
+net.(*netFD).Read(0x32ec2321c1c0, {0x32ec2311e000?, 0x7ff672ab4560?, 0x32ec2321c1c0?})
+	C:/Program Files/Go/src/net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x32ec23102440, {0x32ec2311e000?, 0xdf8475800?, 0x72?})
+	C:/Program Files/Go/src/net/net.go:196 +0x45
+net/http.(*connReader).Read(0x32ec2313a380, {0x32ec2311e000, 0x1000, 0x1000})
+	C:/Program Files/Go/src/net/http/server.go:812 +0x154
+bufio.(*Reader).fill(0x32ec23574480)
+	C:/Program Files/Go/src/bufio/bufio.go:113 +0x103
+bufio.(*Reader).Peek(0x32ec23574480, 0x4)
+	C:/Program Files/Go/src/bufio/bufio.go:152 +0x53
+net/http.(*conn).serve(0x32ec23146240, {0x7ff6732a6a98, 0x32ec2310e570})
+	C:/Program Files/Go/src/net/http/server.go:2109 +0x7b3
+created by net/http.(*Server).Serve in goroutine 84
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 152 [select]:
+flac_analyzer/orchestrator/dispatcher.(*StatsTracker).StartSystemResourceCollector.func1()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/stats.go:293 +0xf7
+created by flac_analyzer/orchestrator/dispatcher.(*StatsTracker).StartSystemResourceCollector in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/stats.go:288 +0xcc
+
+goroutine 153 [select]:
+flac_analyzer/orchestrator/dispatcher.(*AdaptiveDemucsScheduler).StartAdaptiveLoop.func1()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/demucs_scheduler.go:94 +0xda
+created by flac_analyzer/orchestrator/dispatcher.(*AdaptiveDemucsScheduler).StartAdaptiveLoop in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/demucs_scheduler.go:89 +0x92
+
+goroutine 133 [IO wait]:
+internal/poll.runtime_pollWait(0x1fb788aa800, 0x72)
+	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x32ec231575f0?, 0x7ff6729b7d06?, 0x0)
+	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*FD).waitIO(0x7ff6738fbe00?, 0x7ff6738fbe00?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:228 +0x4c
+internal/poll.(*FD).execIO(0x32ec231541c0, 0x72, 0x32ec23347a10)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:311 +0x365
+internal/poll.(*FD).Read(0x32ec231541c0, {0x32ec2311c000, 0x1000, 0x1000})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:600 +0x20e
+net.(*netFD).Read(0x32ec231541c0, {0x32ec2311c000?, 0x7ff672ab4560?, 0x32ec231541c0?})
+	C:/Program Files/Go/src/net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x32ec23524008, {0x32ec2311c000?, 0xdf8475800?, 0x72?})
+	C:/Program Files/Go/src/net/net.go:196 +0x45
+net/http.(*connReader).Read(0x32ec23290480, {0x32ec2311c000, 0x1000, 0x1000})
+	C:/Program Files/Go/src/net/http/server.go:812 +0x154
+bufio.(*Reader).fill(0x32ec2328d440)
+	C:/Program Files/Go/src/bufio/bufio.go:113 +0x103
+bufio.(*Reader).Peek(0x32ec2328d440, 0x4)
+	C:/Program Files/Go/src/bufio/bufio.go:152 +0x53
+net/http.(*conn).serve(0x32ec231f43f0, {0x7ff6732a6a98, 0x32ec2310e570})
+	C:/Program Files/Go/src/net/http/server.go:2109 +0x7b3
+created by net/http.(*Server).Serve in goroutine 84
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 23432 [chan send, 51 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Enqueue(0x32ec23140400, {{0x32ec23616b80, 0x3f}, 0x14c9a84d, {0x32ec23616c00, 0x31}, 0x2, 0x6691e0, 0xf9c6b4, {0x32ec23f1d0c8, ...}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:446 +0x47
+main.main.func2({0x7ff6732a5dc0, 0x32ec239101e0}, 0x32ec23958500)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:339 +0x6f5
+net/http.HandlerFunc.ServeHTTP(0x32ec23236000?, {0x7ff6732a5dc0?, 0x32ec239101e0?}, 0x32ec23631b58?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff6729c2dc5?, {0x7ff6732a5dc0, 0x32ec239101e0}, 0x32ec23958500)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x7ff6732a39d0?}, {0x7ff6732a5dc0?, 0x32ec239101e0?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec23ac2d80, {0x7ff6732a6a98, 0x32ec2331c570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 59
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 156 [chan receive, 41 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).ingestWorker(0x32ec23140400)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/ingest_pgx.go:146 +0x1bd
+created by flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Start in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:436 +0x178
+
+goroutine 157 [sync.Mutex.Lock, 39 minutes]:
+internal/sync.runtime_SemacquireMutex(0x2?, 0x2?, 0x1?)
+	C:/Program Files/Go/src/runtime/sema.go:95 +0x25
+internal/sync.(*Mutex).lockSlow(0x32ec2311a078)
+	C:/Program Files/Go/src/internal/sync/mutex.go:149 +0x15d
+internal/sync.(*Mutex).Lock(...)
+	C:/Program Files/Go/src/internal/sync/mutex.go:70
+sync.(*Mutex).Lock(...)
+	C:/Program Files/Go/src/sync/mutex.go:46
+flac_analyzer/orchestrator/dispatcher.(*WorkerDaemonClient).Close(0x32ec2311a000)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/daemon.go:331 +0x59
+flac_analyzer/orchestrator/dispatcher.(*WorkerDaemonClient).ExtractAll(0x32ec2311a000, {0x7ff6732a6b40, 0x32ec2409f810}, {0x32ec240a2590?, {0x32ec241f6d40?, 0x3fbb985ad5400000?}, 0x32ec239b7320?})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/daemon.go:249 +0x7d0
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).worker.func1(0x32ec23140400, 0x1, {0x32ec2392bf28, 0x7, 0x7}, {{0x32ec23d46a80, 0x61}, 0x21bf8e44, {0x32ec239669c0, 0x31}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:1351 +0x1ee6
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).worker(0x32ec23140400, 0x1)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:1491 +0x1fc
+created by flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Start in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:440 +0x191
+
+goroutine 57 [select, 5 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).StartDlqRetryScheduler.func1()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:998 +0x225
+created by flac_analyzer/orchestrator/dispatcher.(*Dispatcher).StartDlqRetryScheduler in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:975 +0x74
+
+goroutine 58 [select, 5 minutes]:
+main.startConfigFileWatcher.func1()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:469 +0x1bc
+created by main.startConfigFileWatcher in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:459 +0x125
+
+goroutine 59 [IO wait, 54 minutes]:
+internal/poll.runtime_pollWait(0x1fb788aa400, 0x72)
+	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x32ec23c27290?, 0x7ff6729b7d06?, 0x0)
+	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*FD).waitIO(0x32ec23c27290?, 0x32ec23325aa8?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:228 +0x4c
+internal/poll.(*FD).execIO(0x32ec2310c0e0, 0x72, 0x32ec23325b18)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:311 +0x365
+internal/poll.(*FD).acceptOne(0x32ec2310c0e0, 0x738, {0x32ec2317e5a0?, 0x32ec23325bb4?, 0x32ec23325be0?})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:1129 +0x79
+internal/poll.(*FD).Accept(0x32ec2310c0e0, 0x32ec23325d00)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:1164 +0x190
+net.(*netFD).accept(0x32ec2310c0e0)
+	C:/Program Files/Go/src/net/fd_windows.go:202 +0x4b
+net.(*TCPListener).accept(0x32ec230da680)
+	C:/Program Files/Go/src/net/tcpsock_posix.go:159 +0x1b
+net.(*TCPListener).Accept(0x32ec230da680)
+	C:/Program Files/Go/src/net/tcpsock.go:387 +0x30
+net/http.(*Server).Serve(0x32ec2329a100, {0x7ff6732a5fd0, 0x32ec230da680})
+	C:/Program Files/Go/src/net/http/server.go:3434 +0x30c
+net/http.(*Server).ListenAndServe(0x32ec2329a100)
+	C:/Program Files/Go/src/net/http/server.go:3360 +0x72
+main.main.func5()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:400 +0x9d
+created by main.main in goroutine 1
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:398 +0x12bb
+
+goroutine 60 [syscall, 74 minutes]:
+os/signal.signal_recv()
+	C:/Program Files/Go/src/runtime/sigqueue.go:152 +0x98
+os/signal.loop()
+	C:/Program Files/Go/src/os/signal/signal_unix.go:23 +0x13
+created by os/signal.Notify.func1.1 in goroutine 1
+	C:/Program Files/Go/src/os/signal/signal.go:152 +0x1f
+
+goroutine 43 [syscall, 74 minutes]:
+syscall.syscalln(0x0?, 0x0?, {0x32ec23987b68?, 0x0?, 0x0?})
+	C:/Program Files/Go/src/runtime/syscall_windows.go:431 +0x4e
+syscall.SyscallN(0x0?, {0x32ec23987b68?, 0x0?, 0x55?})
+	C:/Program Files/Go/src/syscall/dll_windows.go:99 +0x1e
+syscall.readFile(0x3ac, {0x32ec23608356?, 0xcaa, 0x7ff672a095c0?}, 0x7ff673158920?, 0x7?)
+	C:/Program Files/Go/src/syscall/zsyscall_windows.go:1030 +0xba
+syscall.ReadFile(...)
+	C:/Program Files/Go/src/syscall/syscall_windows.go:510
+internal/poll.(*FD).Read.func1(0x7ff6738fbe00?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:586 +0x4a
+internal/poll.(*FD).execIO(0x32ec23196540, 0x72, 0x32ec23987d88)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:304 +0x2c9
+internal/poll.(*FD).Read(0x32ec23196540, {0x32ec23608356, 0xcaa, 0xcaa})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:585 +0x290
+os.(*File).read(...)
+	C:/Program Files/Go/src/os/file_posix.go:30
+os.(*File).Read(0x32ec23604038, {0x32ec23608356?, 0x32ec23987e80?, 0x7ff6729c2374?})
+	C:/Program Files/Go/src/os/file.go:144 +0x4f
+bufio.(*Scanner).Scan(0x32ec23987f28)
+	C:/Program Files/Go/src/bufio/scan.go:219 +0x47b
+flac_analyzer/orchestrator/dispatcher.(*WorkerDaemonClient).streamStderr(0x32ec2311a000, {0x7ff6732a4a18?, 0x32ec23604038?})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/daemon.go:192 +0xa8
+created by flac_analyzer/orchestrator/dispatcher.(*WorkerDaemonClient).startProcess in goroutine 42
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/daemon.go:145 +0xa05
+
+goroutine 23434 [chan send, 47 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Enqueue(0x32ec23140400, {{0x32ec23a66550, 0x43}, 0xbccb5e9, {0x32ec23e8c500, 0x31}, 0x2, 0x9e0244, 0x149778c, {0x32ec23c993b0, ...}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:446 +0x47
+main.main.func2({0x7ff6732a5dc0, 0x32ec236e4000}, 0x32ec236e0000)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:339 +0x6f5
+net/http.HandlerFunc.ServeHTTP(0x32ec23236000?, {0x7ff6732a5dc0?, 0x32ec236e4000?}, 0x32ec2392fb58?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff6729c2dc5?, {0x7ff6732a5dc0, 0x32ec236e4000}, 0x32ec236e0000)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x7ff6732a39d0?}, {0x7ff6732a5dc0?, 0x32ec236e4000?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec23ac2ea0, {0x7ff6732a6a98, 0x32ec2331c570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 59
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 23386 [chan send, 41 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Enqueue(0x32ec23140400, {{0x32ec236160c0, 0x3f}, 0x197abe58, {0x32ec23616540, 0x31}, 0x3, 0x14c8230, 0x22267b0, {0x32ec232347a0, ...}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:446 +0x47
+main.main.func2({0x7ff6732a5dc0, 0x32ec239100f0}, 0x32ec23958280)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:339 +0x6f5
+net/http.HandlerFunc.ServeHTTP(0x32ec23236000?, {0x7ff6732a5dc0?, 0x32ec239100f0?}, 0x32ec23625b58?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff6729c2dc5?, {0x7ff6732a5dc0, 0x32ec239100f0}, 0x32ec23958280)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x7ff6732a39d0?}, {0x7ff6732a5dc0?, 0x32ec239100f0?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec23b4aab0, {0x7ff6732a6a98, 0x32ec2331c570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 59
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 23373 [chan send, 43 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Enqueue(0x32ec23140400, {{0x32ec23b314f0, 0x43}, 0x17148afa, {0x32ec2353ae80, 0x31}, 0x3, 0xff28d4, 0x1a3b7d0, {0x32ec2375e6e0, ...}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:446 +0x47
+main.main.func2({0x7ff6732a5dc0, 0x32ec23910000}, 0x32ec23958000)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:339 +0x6f5
+net/http.HandlerFunc.ServeHTTP(0x32ec23236000?, {0x7ff6732a5dc0?, 0x32ec23910000?}, 0x32ec23629b58?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff6729c2dc5?, {0x7ff6732a5dc0, 0x32ec23910000}, 0x32ec23958000)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x7ff6732a39d0?}, {0x7ff6732a5dc0?, 0x32ec23910000?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec23917680, {0x7ff6732a6a98, 0x32ec2331c570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 59
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 28307 [syscall]:
+syscall.syscalln(0x0?, 0x0?, {0x32ec23667a70?, 0x32ec23667a50?, 0x0?})
+	C:/Program Files/Go/src/runtime/syscall_windows.go:431 +0x4e
+syscall.SyscallN(0x32ec23667a80?, {0x32ec23667a70?, 0x1fb787b23a8?, 0x4ab?})
+	C:/Program Files/Go/src/syscall/dll_windows.go:99 +0x1e
+syscall.readFile(0x508, {0x32ec23306000?, 0x200, 0x7ff672ab5dbf?}, 0x7ff673158920?, 0x1b?)
+	C:/Program Files/Go/src/syscall/zsyscall_windows.go:1030 +0xba
+syscall.ReadFile(...)
+	C:/Program Files/Go/src/syscall/syscall_windows.go:510
+internal/poll.(*FD).Read.func1(0x7ff6738fbe00?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:586 +0x4a
+internal/poll.(*FD).execIO(0x32ec23196b40, 0x72, 0x32ec23667c90)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:304 +0x2c9
+internal/poll.(*FD).Read(0x32ec23196b40, {0x32ec23306000, 0x200, 0x200})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:585 +0x290
+os.(*File).read(...)
+	C:/Program Files/Go/src/os/file_posix.go:30
+os.(*File).Read(0x32ec231020d8, {0x32ec23306000?, 0x1e?, 0x0?})
+	C:/Program Files/Go/src/os/file.go:144 +0x4f
+bytes.(*Buffer).ReadFrom(0x32ec24110b40, {0x7ff6732a2140, 0x32ec231020d8})
+	C:/Program Files/Go/src/bytes/buffer.go:229 +0x98
+io.copyBuffer({0x7ff6732a1d20, 0x32ec24110b40}, {0x7ff6732a2140, 0x32ec231020d8}, {0x0, 0x0, 0x0})
+	C:/Program Files/Go/src/io/io.go:415 +0x151
+io.Copy(...)
+	C:/Program Files/Go/src/io/io.go:388
+os.genericWriteTo(0x2?, {0x7ff6732a1d20?, 0x32ec24110b40?})
+	C:/Program Files/Go/src/os/file.go:295 +0x35
+os.(*File).WriteTo(0x7ff672e078a0?, {0x7ff6732a1d20?, 0x32ec24110b40?})
+	C:/Program Files/Go/src/os/file.go:273 +0x49
+io.copyBuffer({0x7ff6732a1d20, 0x32ec24110b40}, {0x7ff6732a1900, 0x32ec231020d8}, {0x0, 0x0, 0x0})
+	C:/Program Files/Go/src/io/io.go:411 +0x9d
+io.Copy(...)
+	C:/Program Files/Go/src/io/io.go:388
+os/exec.(*Cmd).writerDescriptor.func1()
+	C:/Program Files/Go/src/os/exec/exec.go:602 +0x34
+os/exec.(*Cmd).Start.func2(0x32ec2427c080?)
+	C:/Program Files/Go/src/os/exec/exec.go:757 +0x2c
+created by os/exec.(*Cmd).Start in goroutine 151
+	C:/Program Files/Go/src/os/exec/exec.go:756 +0x9c5
+
+goroutine 23354 [chan send, 45 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Enqueue(0x32ec23140400, {{0x32ec237ac4b0, 0x49}, 0x169ed347, {0x32ec23bf2100, 0x31}, 0x7, 0x402a884, 0x4dfe4dc, {0x32ec232ff698, ...}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:446 +0x47
+main.main.func2({0x7ff6732a5dc0, 0x32ec23968000}, 0x32ec23212000)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:339 +0x6f5
+net/http.HandlerFunc.ServeHTTP(0x32ec23236000?, {0x7ff6732a5dc0?, 0x32ec23968000?}, 0x32ec23ec5b58?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff6729c2dc5?, {0x7ff6732a5dc0, 0x32ec23968000}, 0x32ec23212000)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x7ff6732a39d0?}, {0x7ff6732a5dc0?, 0x32ec23968000?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec231f4d80, {0x7ff6732a6a98, 0x32ec2331c570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 59
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 28310 [IO wait]:
+internal/poll.runtime_pollWait(0x1fb78145600, 0x72)
+	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+internal/poll.(*pollDesc).wait(0x32ec240c7470?, 0x7ff6729b7d06?, 0x0)
+	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+internal/poll.(*FD).waitIO(0x7ff6738fbe00?, 0x32ec24b0bcb0?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:228 +0x4c
+internal/poll.(*FD).execIO(0x32ec2321c2a0, 0x72, 0x32ec2394bea8)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:311 +0x365
+internal/poll.(*FD).Read(0x32ec2321c2a0, {0x32ec23ff2c61, 0x1, 0x1})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:600 +0x20e
+net.(*netFD).Read(0x32ec2321c2a0, {0x32ec23ff2c61?, 0x1?, 0x32ec2394bf70?})
+	C:/Program Files/Go/src/net/fd_posix.go:68 +0x25
+net.(*conn).Read(0x32ec23c02500, {0x32ec23ff2c61?, 0x0?, 0x0?})
+	C:/Program Files/Go/src/net/net.go:196 +0x45
+net/http.(*connReader).backgroundRead(0x32ec23ff2c40)
+	C:/Program Files/Go/src/net/http/server.go:702 +0x33
+created by net/http.(*connReader).startBackgroundRead in goroutine 28209
+	C:/Program Files/Go/src/net/http/server.go:698 +0xb6
+
+goroutine 23433 [chan send, 50 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Enqueue(0x32ec23140400, {{0x32ec23a68600, 0x3f}, 0x19ad5f9b, {0x32ec23a68740, 0x31}, 0x2, 0x4f5060, 0x138903c, {0x32ec238dced0, ...}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:446 +0x47
+main.main.func2({0x7ff6732a5dc0, 0x32ec231ba0f0}, 0x32ec234f4000)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:339 +0x6f5
+net/http.HandlerFunc.ServeHTTP(0x32ec23236000?, {0x7ff6732a5dc0?, 0x32ec231ba0f0?}, 0x32ec23ec1b58?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff6729c2dc5?, {0x7ff6732a5dc0, 0x32ec231ba0f0}, 0x32ec234f4000)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x7ff6732a39d0?}, {0x7ff6732a5dc0?, 0x32ec231ba0f0?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec23ac2e10, {0x7ff6732a6a98, 0x32ec2331c570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 59
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 24179 [syscall, 41 minutes]:
+syscall.syscalln(0x0?, 0x0?, {0x32ec2365bb78?, 0x7ff672a3f0d0?, 0x0?})
+	C:/Program Files/Go/src/runtime/syscall_windows.go:431 +0x4e
+syscall.SyscallN(0x32ec240ffbf0?, {0x32ec2365bb78?, 0x7ff672a3f3ab?, 0x8?})
+	C:/Program Files/Go/src/syscall/dll_windows.go:99 +0x1e
+syscall.readFile(0x684, {0x32ec2403e6fb?, 0x905, 0x1d?}, 0x7ff673158920?, 0x1d?)
+	C:/Program Files/Go/src/syscall/zsyscall_windows.go:1030 +0xba
+syscall.ReadFile(...)
+	C:/Program Files/Go/src/syscall/syscall_windows.go:510
+internal/poll.(*FD).Read.func1(0x7ff6738fbe00?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:586 +0x4a
+internal/poll.(*FD).execIO(0x32ec23129140, 0x72, 0x32ec2365bd98)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:304 +0x2c9
+internal/poll.(*FD).Read(0x32ec23129140, {0x32ec2403e6fb, 0x905, 0x905})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:585 +0x290
+os.(*File).read(...)
+	C:/Program Files/Go/src/os/file_posix.go:30
+os.(*File).Read(0x32ec23224108, {0x32ec2403e6fb?, 0x32ec2365be90?, 0x7ff6729c2374?})
+	C:/Program Files/Go/src/os/file.go:144 +0x4f
+bufio.(*Scanner).Scan(0x32ec2365bf48)
+	C:/Program Files/Go/src/bufio/scan.go:219 +0x47b
+flac_analyzer/orchestrator/dispatcher.startDemucsDaemonProcessComplex.func1()
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/demucs_daemon.go:102 +0xcf
+created by flac_analyzer/orchestrator/dispatcher.startDemucsDaemonProcessComplex in goroutine 157
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/demucs_daemon.go:100 +0x5c9
+
+goroutine 28309 [select]:
+os/exec.(*Cmd).watchCtx(0x32ec2318aea0, 0x32ec23c982a0)
+	C:/Program Files/Go/src/os/exec/exec.go:797 +0xb1
+created by os/exec.(*Cmd).Start in goroutine 151
+	C:/Program Files/Go/src/os/exec/exec.go:783 +0x989
+
+goroutine 23431 [chan send, 48 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Enqueue(0x32ec23140400, {{0x32ec2379f4c0, 0x3f}, 0x184064b0, {0x32ec2379f5c0, 0x31}, 0x2, 0x50d48c, 0xf1bcb4, {0x32ec23f1d1a0, ...}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:446 +0x47
+main.main.func2({0x7ff6732a5dc0, 0x32ec23b100f0}, 0x32ec231d8280)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:339 +0x6f5
+net/http.HandlerFunc.ServeHTTP(0x32ec23236000?, {0x7ff6732a5dc0?, 0x32ec23b100f0?}, 0x32ec23bdfb58?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff6729c2dc5?, {0x7ff6732a5dc0, 0x32ec23b100f0}, 0x32ec231d8280)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x7ff6732a39d0?}, {0x7ff6732a5dc0?, 0x32ec23b100f0?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec23ac2cf0, {0x7ff6732a6a98, 0x32ec2331c570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 59
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 23491 [chan send, 46 minutes]:
+flac_analyzer/orchestrator/dispatcher.(*Dispatcher).Enqueue(0x32ec23140400, {{0x32ec23e34d20, 0x44}, 0x15fb9ca6, {0x32ec23a68c00, 0x31}, 0x2, 0x71f49c, 0x11ed280, {0x32ec238dcfd8, ...}, ...})
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go:446 +0x47
+main.main.func2({0x7ff6732a5dc0, 0x32ec231ba1e0}, 0x32ec234f43c0)
+	C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go:339 +0x6f5
+net/http.HandlerFunc.ServeHTTP(0x32ec23236000?, {0x7ff6732a5dc0?, 0x32ec231ba1e0?}, 0x32ec2347fb58?)
+	C:/Program Files/Go/src/net/http/server.go:2286 +0x29
+net/http.(*ServeMux).ServeHTTP(0x7ff6729c2dc5?, {0x7ff6732a5dc0, 0x32ec231ba1e0}, 0x32ec234f43c0)
+	C:/Program Files/Go/src/net/http/server.go:2828 +0x1c7
+net/http.serverHandler.ServeHTTP({0x7ff6732a39d0?}, {0x7ff6732a5dc0?, 0x32ec231ba1e0?}, 0x1?)
+	C:/Program Files/Go/src/net/http/server.go:3311 +0x8e
+net/http.(*conn).serve(0x32ec232e0000, {0x7ff6732a6a98, 0x32ec2331c570})
+	C:/Program Files/Go/src/net/http/server.go:2073 +0x650
+created by net/http.(*Server).Serve in goroutine 59
+	C:/Program Files/Go/src/net/http/server.go:3464 +0x485
+
+goroutine 28308 [syscall]:
+syscall.syscalln(0x0?, 0x0?, {0x32ec23c51ac8?, 0x32ec240a9410?, 0x0?})
+	C:/Program Files/Go/src/runtime/syscall_windows.go:431 +0x4e
+syscall.SyscallN(0x32ec23c51afc?, {0x32ec23c51ac8?, 0x7ff672a3e84a?, 0x32ec23c51b08?})
+	C:/Program Files/Go/src/syscall/dll_windows.go:99 +0x1e
+syscall.readFile(0x484, {0x32ec242d0000?, 0x8000, 0x7ff672ab5dbf?}, 0x7ff673158920?, 0x7ff672ab5e37?)
+	C:/Program Files/Go/src/syscall/zsyscall_windows.go:1030 +0xba
+syscall.ReadFile(...)
+	C:/Program Files/Go/src/syscall/syscall_windows.go:510
+internal/poll.(*FD).Read.func1(0x7ff6738fbe00?)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:586 +0x4a
+internal/poll.(*FD).execIO(0x32ec23196cc0, 0x72, 0x32ec23c51ce8)
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:304 +0x2c9
+internal/poll.(*FD).Read(0x32ec23196cc0, {0x32ec242d0000, 0x8000, 0x8000})
+	C:/Program Files/Go/src/internal/poll/fd_windows.go:585 +0x290
+os.(*File).read(...)
+	C:/Program Files/Go/src/os/file_posix.go:30
+os.(*File).Read(0x32ec231020f0, {0x32ec242d0000?, 0x7ff67316cb60?, 0x32ec23c51d01?})
+	C:/Program Files/Go/src/os/file.go:144 +0x4f
+io.copyBuffer({0x7ff6732a2c00, 0x32ec242142d0}, {0x7ff6732a2140, 0x32ec231020f0}, {0x0, 0x0, 0x0})
+	C:/Program Files/Go/src/io/io.go:429 +0x190
+io.Copy(...)
+	C:/Program Files/Go/src/io/io.go:388
+os.genericWriteTo(0x0?, {0x7ff6732a2c00?, 0x32ec242142d0?})
+	C:/Program Files/Go/src/os/file.go:295 +0x35
+os.(*File).WriteTo(0x7ff672a28b7f?, {0x7ff6732a2c00?, 0x32ec242142d0?})
+	C:/Program Files/Go/src/os/file.go:273 +0x49
+io.copyBuffer({0x7ff6732a2c00, 0x32ec242142d0}, {0x7ff6732a1900, 0x32ec231020f0}, {0x0, 0x0, 0x0})
+	C:/Program Files/Go/src/io/io.go:411 +0x9d
+io.Copy(...)
+	C:/Program Files/Go/src/io/io.go:388
+os/exec.(*Cmd).writerDescriptor.func1()
+	C:/Program Files/Go/src/os/exec/exec.go:602 +0x34
+os/exec.(*Cmd).Start.func2(0x32ec24264310?)
+	C:/Program Files/Go/src/os/exec/exec.go:757 +0x2c
+created by os/exec.(*Cmd).Start in goroutine 151
+	C:/Program Files/Go/src/os/exec/exec.go:756 +0x9c5
+

@@ -18,8 +18,13 @@ func (d *Dispatcher) executeDemucsStage(
 	currentCfg Config,
 	stems []string,
 ) (string, int, map[string]StemInfo, *WorkerArenaSet, error) {
+	ctxDemucs, cancelDemucs := context.WithTimeout(context.Background(), 300*time.Second)
+	defer cancelDemucs()
+
 	d.LogInfo("[W-%d] [IO Monad] Waiting for Adaptive Demucs execution slot (limit: %d)...", id, d.demucsScheduler.GetLimit())
-	d.demucsScheduler.Acquire()
+	if err := d.demucsScheduler.AcquireWithContext(ctxDemucs); err != nil {
+		return "", 0, nil, nil, fmt.Errorf("failed to acquire Demucs slot (timeout/cancelled): %w", err)
+	}
 	defer d.demucsScheduler.Release()
 
 	if delaySec := currentCfg.ShmAllocationDelaySec; delaySec > 0 {
@@ -107,8 +112,6 @@ func (d *Dispatcher) executeDemucsStage(
 		endSampleParam = -1
 	}
 	demucsStageStart := time.Now()
-	ctxDemucs, cancelDemucs := context.WithTimeout(context.Background(), 300*time.Second)
-	defer cancelDemucs()
 
 	demucsClient, dErr := d.demucsPool.Acquire(ctxDemucs)
 	if dErr != nil {

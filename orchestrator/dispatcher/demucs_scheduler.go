@@ -149,6 +149,23 @@ func (s *AdaptiveDemucsScheduler) Acquire() {
 	}
 }
 
+func (s *AdaptiveDemucsScheduler) AcquireWithContext(ctx context.Context) error {
+	metrics.AnalyzerDemucsQueueWaiters.Inc()
+	waitStart := time.Now()
+	err := s.semaphore.AcquireWithContext(ctx)
+	metrics.AnalyzerDemucsQueueWaiters.Dec()
+	if err != nil {
+		return err
+	}
+	metrics.AnalyzerDemucsSlotsInUse.Inc()
+	metrics.AnalyzerDemucsDaemonActiveSlots.Inc()
+
+	if s.statsTracker != nil {
+		s.statsTracker.RecordDemucsWait(time.Since(waitStart))
+	}
+	return nil
+}
+
 func (s *AdaptiveDemucsScheduler) Release() {
 	s.semaphore.Release()
 	metrics.AnalyzerDemucsSlotsInUse.Dec()

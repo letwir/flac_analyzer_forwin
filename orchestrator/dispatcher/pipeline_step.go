@@ -32,6 +32,7 @@ func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
 
 	metrics.AnalyzerQueueLength.Dec()
 	metrics.AnalyzerActiveWorkers.Inc()
+	defer metrics.AnalyzerActiveWorkers.Dec()
 
 	memInfo, _ := sysinfo.GetMemoryInfo()
 	var availPhys uint64 = 0
@@ -91,7 +92,6 @@ func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
 			d.LogInfo("[W-%d] [IO Monad] Skip processing: Hash %s already exists in PostgreSQL", id, trackHash)
 			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
 			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
-			metrics.AnalyzerActiveWorkers.Dec()
 			taskSuccess = true
 			return
 		}
@@ -139,7 +139,6 @@ func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
 	}
 
 	d.ingestQueue <- ingestPayload
-	metrics.AnalyzerActiveWorkers.Dec()
 	taskSuccess = true
 	d.LogInfo("[W-%d] Compute & tagging completed, dispatched to IngestWorker: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
 }

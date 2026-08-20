@@ -1,6 +1,10 @@
+// Mor: DynamicSemaphore -> TestVerification
+// Functor: f_test ∘ g_sem
+// Semantics: Category: DynamicSemaphore Concurrency & Context Cancellation Verification
 package dispatcher
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -71,4 +75,29 @@ func TestDynamicSemaphore_DynamicResize(t *testing.T) {
 	if sem.GetInUse() != 0 {
 		t.Fatalf("expected inUse 0, got %d", sem.GetInUse())
 	}
+}
+
+func TestDynamicSemaphore_AcquireWithContext(t *testing.T) {
+	sem := NewDynamicSemaphore(1)
+	sem.Acquire()
+
+	// タイムアウトによる安全離脱テスト
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := sem.AcquireWithContext(ctx)
+	if err == nil {
+		t.Fatalf("expected timeout context error, got nil")
+	}
+
+	// 解放後の正常取得テスト
+	sem.Release()
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel2()
+
+	err2 := sem.AcquireWithContext(ctx2)
+	if err2 != nil {
+		t.Fatalf("expected successful acquisition, got error: %v", err2)
+	}
+	sem.Release()
 }

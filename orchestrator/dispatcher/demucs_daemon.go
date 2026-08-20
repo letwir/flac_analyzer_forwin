@@ -184,11 +184,10 @@ func (c *DemucsDaemonClient) CheckHash(ctx context.Context, payload DemucsCheckH
 
 	select {
 	case <-ctx.Done():
-		c.isAlive = false
-		_ = c.cmd.Process.Kill()
+		_ = c.closeLocked()
 		return nil, ctx.Err()
 	case err := <-errChan:
-		c.isAlive = false
+		_ = c.closeLocked()
 		return nil, err
 	case resp := <-respChan:
 		if resp.Status != "success" {
@@ -217,7 +216,7 @@ func (c *DemucsDaemonClient) Separate(ctx context.Context, payload DemucsSeparat
 	}
 
 	if _, err := c.stdin.Write(append(reqBytes, '\n')); err != nil {
-		c.isAlive = false
+		_ = c.closeLocked()
 		return nil, fmt.Errorf("failed to send separate request to Demucs daemon-%d: %w", c.id, err)
 	}
 
@@ -240,11 +239,10 @@ func (c *DemucsDaemonClient) Separate(ctx context.Context, payload DemucsSeparat
 
 	select {
 	case <-ctx.Done():
-		c.isAlive = false
-		_ = c.cmd.Process.Kill()
+		_ = c.closeLocked()
 		return nil, ctx.Err()
 	case err := <-errChan:
-		c.isAlive = false
+		_ = c.closeLocked()
 		return nil, err
 	case resp := <-respChan:
 		if resp.Status != "success" {
@@ -255,9 +253,11 @@ func (c *DemucsDaemonClient) Separate(ctx context.Context, payload DemucsSeparat
 	}
 }
 
-func (c *DemucsDaemonClient) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// closeLocked terminates stdin and kills daemon process while caller already holds c.mu.
+func (c *DemucsDaemonClient) closeLocked() error {
+	if !c.isAlive {
+		return nil
+	}
 	c.isAlive = false
 	if c.stdin != nil {
 		_ = c.stdin.Close()
@@ -267,6 +267,12 @@ func (c *DemucsDaemonClient) Close() error {
 		_ = c.cmd.Wait()
 	}
 	return nil
+}
+
+func (c *DemucsDaemonClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closeLocked()
 }
 
 type DemucsDaemonPool struct {

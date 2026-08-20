@@ -1,3 +1,6 @@
+// Mor: WorkerDaemon -> DaemonTestVerification
+// Functor: f_test ∘ g_daemon
+// Semantics: Category: WorkerDaemon NDJSON IPC & Lock-free Lifecycle Test Suite
 package dispatcher
 
 import (
@@ -129,6 +132,45 @@ func TestDaemonPoolThunderingHerd(t *testing.T) {
 	}
 	if spawning != 0 {
 		t.Errorf("Leaked spawning count: %d", spawning)
+	}
+}
+
+func TestDaemonCloseLocked_DeadlockFree(t *testing.T) {
+	parentDir := findProjectRoot()
+	pythonPath := "python.exe"
+	venvPython := filepath.Join(parentDir, ".venv", "Scripts", "python.exe")
+	if _, err := os.Stat(venvPython); err == nil {
+		pythonPath = venvPython
+	}
+
+	client, err := NewWorkerDaemonClient(998, pythonPath, parentDir, nil, func(format string, v ...interface{}) {})
+	if err != nil {
+		t.Fatalf("Failed to create worker daemon client: %v", err)
+	}
+
+	// タイムアウト付きで即座にキャンセルされるコンテキストで ExtractAll を呼び出し、デッドロックなく復帰するか検証
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+	time.Sleep(5 * time.Millisecond) // 確実にタイムアウトさせる
+
+	doneCh := make(chan error, 1)
+	go func() {
+		_, extractErr := client.ExtractAll(ctx, ExtractAllPayload{})
+		doneCh <- extractErr
+	}()
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("ExtractAll deadlocked on cancelled context!")
+	case err := <-doneCh:
+		if err == nil {
+			t.Errorf("Expected context cancelled error, got nil")
+		}
+	}
+
+	// すでに close されたクライアントへの Close() 二重呼び出しもデッドロックしないこと
+	if err := client.Close(); err != nil {
+		t.Errorf("Double Close() returned error: %v", err)
 	}
 }
 

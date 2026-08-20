@@ -252,7 +252,6 @@ func (d *Dispatcher) failTask(task TaskPayload, errMsg string) {
 	d.LogError("[Dispatcher] Task Failed: %s (Track %d) -> %s", task.FlacPath, task.TrackNumber, errMsg)
 	d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailed, errMsg)
 	metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
-	metrics.AnalyzerActiveWorkers.Dec()
 }
 
 func (d *Dispatcher) worker(id int) {

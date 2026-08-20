@@ -1,3 +1,20 @@
+# Walkthrough: WorkerDaemon 自己デッドロック解消 & 進捗停止タスクの FAILED 遷移・自動リカバリ (Watchdog Protection)
+
+- **Summary**: `WorkerDaemonClient.ExtractAll` においてエラー時やコンテキストタイムアウト時に発生していた再入不能ミューテックスの二重ロック（自己デッドロック）を `closeLocked()` 導入により完全根絶。さらに進捗停止タスクの確実な検知と `state.StatusFailed` への記録、リソース（SHM、GPUセマフォ、一時ディレクトリ）の安全解放、および `DynamicSemaphore` / `AdaptiveDemucsScheduler` の `AcquireWithContext` 導入による永久待機フリーのフェイルフォワードリカバリを実現。
+- **Changes**:
+  - `orchestrator/dispatcher/daemon.go`: `closeLocked()` プライベートメソッドを導入。`ExtractAll`、`Ping` 等のロック保持コンテキストからのクローズを `closeLocked()` に切り替え、`Close()` を `c.mu.Lock(); defer c.mu.Unlock(); return c.closeLocked()` にリファクタリング。ADV-4 に従い `startProcess` を `startProcessComplex` に改名。
+  - `orchestrator/dispatcher/demucs_daemon.go`: ADV-2 に従い `DemucsDaemonClient` にも `closeLocked()` パターンを統一適用。
+  - `orchestrator/dispatcher/daemon_pool.go`: ADV-4 に従い `doSpawn` を `doSpawnComplex` に改名し、圏論ヘッダを付与。
+  - `orchestrator/dispatcher/semaphore.go`: ADV-3 に従い `sync.Cond` をチャネルブロードキャスト (`notifyCh`) に移行し、`AcquireWithContext(ctx context.Context) error` を実装。
+  - `orchestrator/dispatcher/demucs_scheduler.go`: `AcquireWithContext(ctx context.Context) error` を追加。
+  - `orchestrator/dispatcher/pipeline_demucs.go`: `executeDemucsStage` で `d.demucsScheduler.AcquireWithContext(ctxDemucs)` を使用し、スロット獲得待機でのタイムアウト離脱を保証。
+  - `orchestrator/dispatcher/pipeline_step.go`: ADV-1 に従い `executeTaskPipeline` の先頭で `metrics.AnalyzerActiveWorkers.Inc()` 直後に `defer metrics.AnalyzerActiveWorkers.Dec()` を配置し、各早期リターンブランチの個別 `Dec()` を整理。タイムアウトやエラー時は即座に `d.failTask(task, err.Error())` を実行して `StatusFailed` に記録し安全に次のタスクへ進む。
+  - `orchestrator/dispatcher/dispatcher.go`: `failTask` 内の重複 `metrics.AnalyzerActiveWorkers.Dec()` を削除し strict RAII に統一。
+  - `orchestrator/dispatcher/semaphore_test.go` & `daemon_test.go`: `TestDynamicSemaphore_AcquireWithContext` および `TestDaemonCloseLocked_DeadlockFree` テストを追加。
+- **Verification**:
+  - `go test -v ./...` (orchestrator): 全単体テスト 100% PASS (14.967s)
+  - `go build -o orchestrator.exe .`: ビルド成功 (PASS)
+
 # Walkthrough: 物理 RAM 安全圏超過時の SSD/TMP ディスク退避モード (Disk Mode Fallback)
 
 - **Summary**: 物理 RAM の安全圏（空き容量）を超える巨大な長尺トラック（ASMR、ハイレゾ、長大コンピレーション等）に対し、音源分離（7ステム）を完全に維持したまま、共有メモリ (SHM) から SSD 一時ファイル (`.npy` / `mmap_mode='r'`) への動的退避（Disk Mode）を導入し、Gatekeeper による永久ブロックと OOM を完全根絶。

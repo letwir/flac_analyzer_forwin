@@ -1,3 +1,6 @@
+// Mor: Context -> WorkerDaemonClient
+// Functor: f_pool ∘ g_spawn
+// Semantics: Category: Thread-Safe Worker Daemon Connection Pool
 package dispatcher
 
 import (
@@ -109,7 +112,7 @@ func (p *WorkerDaemonPool) Acquire(ctx context.Context) (*WorkerDaemonClient, er
 			p.nextID++
 			p.mu.Unlock()
 
-			return p.doSpawn(ctx, id)
+			return p.doSpawnComplex(ctx, id)
 		}
 		p.mu.Unlock()
 
@@ -146,10 +149,10 @@ func (p *WorkerDaemonPool) spawnSlot(ctx context.Context) (*WorkerDaemonClient, 
 	p.nextID++
 	p.mu.Unlock()
 
-	return p.doSpawn(ctx, id)
+	return p.doSpawnComplex(ctx, id)
 }
 
-func (p *WorkerDaemonPool) doSpawn(ctx context.Context, id int) (*WorkerDaemonClient, error) {
+func (p *WorkerDaemonPool) doSpawnComplex(ctx context.Context, id int) (*WorkerDaemonClient, error) {
 	// ADV-1: spawningCount decrement MUST be in a defer block for strict RAII
 	defer func() {
 		p.mu.Lock()

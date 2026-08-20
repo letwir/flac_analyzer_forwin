@@ -1,3 +1,20 @@
+# Implementation Plan: WorkerDaemon 自己デッドロック解消 & 進捗停止タスクの FAILED 遷移・自動リカバリ (Watchdog Protection)
+
+- **Goal**:
+  1. `WorkerDaemonClient.ExtractAll` における再入不能ミューテックスの二重ロック（自己デッドロック）を完全に根絶し、100曲処理後のデーモン再起動時やタイムアウト時でも安全に終了・再生成できるようにする。
+  2. オーケストレーターが進捗の停止（タイムアウトやエラー）を検知した場合、タスクを `state.StatusFailed`（FAILED）として記録し、リソース（SHM、GPUセマフォ、一時ディレクトリ等）を確実にクリーンアップして、後続タスクの処理へと安全に前進（フェイルフォワード）させる。
+  3. `DynamicSemaphore` / `AdaptiveDemucsScheduler` に `AcquireWithContext` を導入し、スロット取得待ちでもコンテキストキャンセル / タイムアウトで確実に離脱可能にする。
+- **Target**: `orchestrator/dispatcher/daemon.go`, `orchestrator/dispatcher/daemon_pool.go`, `orchestrator/dispatcher/semaphore.go`, `orchestrator/dispatcher/demucs_scheduler.go`, `orchestrator/dispatcher/pipeline_demucs.go`, `orchestrator/dispatcher/pipeline_step.go`, `orchestrator/dispatcher/daemon_test.go`, `orchestrator/dispatcher/semaphore_test.go`.
+- **Feature**:
+  - `daemon.go`: `closeLocked()` メソッド新設。`ExtractAll`、`Ping` 等のロック保持コンテキストからのクローズを `closeLocked()` に切り替え、二重ロックを防止。
+  - `daemon_pool.go`: `Release` / `Close` のロック競合低減。
+  - `semaphore.go`: `AcquireWithContext(ctx context.Context) error` 実装。
+  - `demucs_scheduler.go`: `AcquireWithContext(ctx context.Context) error` 実装。
+  - `pipeline_demucs.go`: `d.demucsScheduler.AcquireWithContext(ctxDemucs)` 使用。
+  - `pipeline_step.go`: 各ステージのタイムアウト発生時に `d.failTask(task, err.Error())` で DB を `FAILED` に更新し、リソースを安全解放して即座に次のタスクへ進む。
+  - `daemon_test.go` & `semaphore_test.go`: 自己デッドロック防止テスト & タイムアウト離脱テストの追加。
+- **Status**: Proposed
+
 # Implementation Plan: 物理 RAM 安全圏超過時の SSD/TMP ディスク退避モード (Disk Mode Fallback)
 
 - **Goal**: 物理 RAM の安全圏（空き容量）を超える巨大な長尺トラック（ASMR、ハイレゾ、長大コンピレーション等）に対し、音源分離（7ステム）を完全に維持したまま、共有メモリ (SHM) から SSD 一時ファイル (`.npy` / `mmap_mode='r'`) への動的退避（Disk Mode）を導入し、Gatekeeper による永久ブロックと OOM を完全根絶する。
@@ -8,7 +25,7 @@
   - `demucs_daemon.py`: `mode == "disk"` 時に 7 ステムを SSD 一時ディレクトリへ `.npy` 保存し `storage_type: "file"` を返却。
   - `worker_daemon.py`: `storage_type == "file"` 時に `np.load(file_path, mmap_mode='r')` による Zero-copy ディスクマップ読み込み＆ 1 ステム処理完了毎のメモリ即時解放。
   - `config.toml`: `enable_disk_mode_fallback = true`, `disk_mode_ram_threshold_ratio = 0.8` の追加。
-- **Status**: Proposed
+- **Status**: Completed
 
 # Implementation Plan: Demucs Resident Daemon & Adaptive GPU Single/Dual Scheduler
 
