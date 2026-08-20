@@ -1,5 +1,6 @@
 # ISSUE
 
+- [x]DONE 【Feature】 物理 RAM 安全圏超過時の SSD/TMP ディスク退避モード (Disk Mode Fallback) 実装（ASMR / 長尺トラック 104GB 見積もり時の Gatekeeper NOGO 永久ブロック根絶 ＆ 7ステム維持）
 - [x]DONE 【Fix】 flac_decode.py の flac CLI 範囲デコード例外 (rc=1) 修正（-F / --silent / proc.communicate / 指数バックオフリトライ導入）
 - [x]DONE 【Fix】 ingester.py の stdout ログ混入による Orchestrator の Pre-Hash Duplicate Check (mixハッシュチェック) スキップ失敗バグの修正
 - [x]DONE 【Fix】 PostgreSQL 直接書き込みのタイムアウト欠如による無限ハング修正 ＆ DB Ingestion の独立非同期ワーカー化 (db_timeout_sec = 20)

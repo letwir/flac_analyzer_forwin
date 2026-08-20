@@ -1,6 +1,20 @@
 
 # History Log
 
+### 2026-08-20 21:05:00
+
+- Category: Feature & Architecture / Disk Mode Fallback for Long & ASMR Tracks on Safe RAM Limit Exceeded
+- Summary: 2〜3時間を超える長尺・ASMR・ハイレゾ音源において、Demucs 7ステム分離のメモリ見積もりが 104GB に達し Gatekeeper で永久ブロックされていた問題を解消。物理 RAM 安全圏（空き容量の80%）を超過するタスクに対し、ステム数を削減することなく、共有メモリ (SHM) から SSD 一時ファイル (`.npy` / `mmap_mode='r'`) への動的退避（Disk Mode Fallback）を導入。実効 RAM を 2GB にクランプしつつ SSD 空き容量で防衛判定することで、OOM やコミット制限（WinError 1455）を完全回避しながら 7 ステムを完全維持して最高速で完走可能にした。
+- Decisions:
+  - `orchestrator/dispatcher/shm_utils.go`: `EstimateShmSize` 系統の `uint64` 拡張、`EstimateDemucsDiskBytes(task)`、純粋判定射 `DetermineStorageModePure` を実装。
+  - `orchestrator/dispatcher/dispatcher.go`: `GatekeeperInput` / `EvaluateGoNoGoPure` に Disk Mode 判定を統合。ADV-01（`activeInFlightRamBytes` をクランプ後 2GB に同期）、ADV-03（Disk Mode 時に Step 4/4.5/Step 5 の SHM 処理を安全スキップ）を適用。一時ディレクトリ `%TEMP%\flac_analyzer_cache\<trackHash>` を管理し `defer cleanupCache(trackHash)` で確実にクリーンアップ。
+  - `orchestrator/dispatcher/daemon.go` & `demucs_daemon.go`: `DemucsSeparatePayload` に `StorageMode`, `TempDir` を追加。`StemInfo` に `StorageType`, `FilePath` を追加。
+  - `demucs_daemon.py`: `storage_mode == "disk"` 時に 7 ステム波形を SSD 一時ディレクトリへ `.npy` 保存しメタデータを返却。
+  - `worker_daemon.py`: `storage_type == "file"` 時に `np.load(file_path, mmap_mode='r')` による Zero-copy ディスクマップ読み込み。ADV-02（`finally` 節で `y_np._mmap.close()` を明示的にクローズし Windows ファイル共有違反ロック WinError 32/5 を完全防止）を適用。
+  - `config.toml`, `config.toml.example`, `config_test.toml`, `main.go`: `enable_disk_mode_fallback = true`, `disk_mode_ram_threshold_ratio = 0.8` を追加。
+  - `orchestrator/dispatcher/gatekeeper_test.go`: `TestDetermineStorageModePure` および `TestEvaluateGoNoGoPure_DiskMode` を追加。
+- Files: [shm_utils.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/shm_utils.go), [dispatcher.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/dispatcher.go), [daemon.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/daemon.go), [demucs_daemon.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/demucs_daemon.go), [demucs_daemon.py](file:///C:/Users/letwir/repo/flac_analyzer_forwin/demucs_daemon.py), [worker_daemon.py](file:///C:/Users/letwir/repo/flac_analyzer_forwin/worker_daemon.py), [gatekeeper_test.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/dispatcher/gatekeeper_test.go), [config.toml](file:///C:/Users/letwir/repo/flac_analyzer_forwin/config.toml), [config.toml.example](file:///C:/Users/letwir/repo/flac_analyzer_forwin/config.toml.example), [config_test.toml](file:///C:/Users/letwir/repo/flac_analyzer_forwin/config_test.toml), [main.go](file:///C:/Users/letwir/repo/flac_analyzer_forwin/orchestrator/main.go)
+
 ### 2026-08-20 20:50:00
 
 - Category: Bugfix & Architecture / Decoupled Asynchronous DB Ingestion & Timeout Protection

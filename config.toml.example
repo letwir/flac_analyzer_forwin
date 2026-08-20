@@ -42,6 +42,10 @@ max_working_set_mb = 16384        # 起動時初期最大ワーキングセッ�
 # Gatekeeper (メモリ事前判定) の NOGO 時リトライ待機秒数 (デフォルト: 20秒)
 gatekeeper_retry_delay_sec = 20
 
+# 物理 RAM 安全圏超過時の SSD/TMP ディスク退避モード (Disk Mode Fallback)
+enable_disk_mode_fallback = true      # 推定 RAM が安全閾値超過時に SSD 一時ファイル経由へ自動退避 (デフォルト: true)
+disk_mode_ram_threshold_ratio = 0.8  # 空き RAM に対する Disk Mode 切替閾値割合 (デフォルト: 0.8 = 80%)
+
 # 設定ファイル (config.toml) の変更検知・ホットリロード監視間隔 (秒, デフォルト: 600秒 = 10分)
 config_watch_interval_sec = 600
 

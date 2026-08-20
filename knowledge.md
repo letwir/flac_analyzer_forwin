@@ -1,4 +1,15 @@
 <knowledge>
+  <api id="DISK_MODE_FALLBACK_AND_RAM_SAFETY">
+    <title>Disk Mode Fallback and RAM Safety for Massive Audio Tracks</title>
+    - **概要**: 2〜3時間を超える長尺・ASMR・ハイレゾ音源において、Demucs 7ステム分離のメモリ見積もりが 104GB（104,243 MB）に達し、物理空き RAM を超過して Gatekeeper で永久ブロックされる問題。
+    - **解決策 (Disk Mode Fallback)**:
+      - **純粋判定射 `DetermineStorageModePure`**: 推定 RAM（`EstimateDemucsTotalRamBytes`）が安全閾値（`effectiveAvail * 0.8`）または空き容量を超える場合、決定論的に `StorageModeDisk` を選択する。
+      - **RAM クランプ & SSD 空き容量チェック**: Disk Mode 時の実効 RAM を 2.0GB（1.0GB バッファ + 1.0GB モデル）にクランプし、Gatekeeper は SSD 空き容量（`AvailDisk >= requiredDisk`）で防衛判定を行うことで、NOGO ブロックを完全根絶。
+      - **ADV-01 In-Flight RAM 同期**: `d.activeInFlightRamBytes` への加算・減算をクランプ後の 2.0GB と同期させ、後続ワーカーの餓死を防止。
+      - **ADV-02 Windows mmap 明示的クローズ**: Python 側で `np.load(..., mmap_mode='r')` した `np.memmap` の `_mmap.close()` を `finally` 節で明示的に呼び出し、Windows ファイル共有違反ロック（WinError 5 / 32 / Access is denied）を根絶。
+      - **ADV-03 SHM スキップガード**: Disk Mode では Step 4 (`FreezeAll`), Step 4.5 (`VerifyIntegrity`), Step 5 (`UnfreezeAll`) の SHM 制御をスキップ。
+      - **7ステム完全維持**: ステム削減を行わず、全 7 ステムを SSD 一時ディレクトリへ `.npy` 保存し、`worker_daemon.py` からオンデマンドで Zero-copy 仮想メモリマップ読み込みして Librosa / Tensor DSP / Essentia のフル特徴量抽出を完遂する。
+  </api>
   <api id="DECOUPLED_DB_INGESTION_AND_TIMEOUT_RESILIENCY">
     <title>Decoupled Asynchronous DB Ingestion and Timeout Resiliency</title>
     - **概要**: 高負荷な音響解析パイプライン（CPU/GPU密集型）において、解析結果のデータベース（PostgreSQL）書き込みを同期的に行うと、TailscaleやWAN等のリモート接続時のネットワーク不調・コネクションストールによって全解析ワーカーが永久ブロック（ハング）する危険性がある。

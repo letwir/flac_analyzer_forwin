@@ -21,9 +21,11 @@ type DaemonRequest struct {
 	Payload ExtractAllPayload `json:"payload,omitempty"`
 }
 
-// StemInfo represents shared memory location & dimensions for a single stem
+// StemInfo represents shared memory or disk file location & dimensions for a single stem
 type StemInfo struct {
-	ShmTag      string  `json:"shm_tag"`
+	ShmTag      string  `json:"shm_tag,omitempty"`
+	StorageType string  `json:"storage_type,omitempty"`
+	FilePath    string  `json:"file_path,omitempty"`
 	Shape       []int64 `json:"shape"`
 	Dtype       string  `json:"dtype"`
 	FileSize    int64   `json:"file_size,omitempty"`

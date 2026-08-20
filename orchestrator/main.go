@@ -62,6 +62,8 @@ type Config struct {
 		EstimatedDemucsVramGB   float64 `toml:"estimated_demucs_vram_gb"`
 		EnableGpuThrottle       *bool   `toml:"enable_gpu_throttle"`
 		DbTimeoutSec            int     `toml:"db_timeout_sec"`
+		EnableDiskModeFallback  *bool   `toml:"enable_disk_mode_fallback"`
+		DiskModeRamThresholdRatio float64 `toml:"disk_mode_ram_threshold_ratio"`
 	} `toml:"orchestrator"`
 	PythonEnv map[string]string `toml:"python_env"`
 }
@@ -642,6 +644,16 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		dbTimeoutSec = 20
 	}
 
+	enableDiskFallback := true
+	if cfg.Orchestrator.EnableDiskModeFallback != nil {
+		enableDiskFallback = *cfg.Orchestrator.EnableDiskModeFallback
+	}
+
+	diskModeRamRatio := cfg.Orchestrator.DiskModeRamThresholdRatio
+	if diskModeRamRatio <= 0 || diskModeRamRatio > 1.0 {
+		diskModeRamRatio = 0.8
+	}
+
 	resolvedPythonEnv := resolvePythonEnv(cfg.PythonEnv, numCPU, cfg.Orchestrator.NumWorkers)
 
 	dispConfig := &dispatcher.Config{
@@ -661,20 +673,22 @@ func loadAndValidateConfig(configPath string, totalRamGB float64, numCPU int, ex
 		QueueDir:                   cfg.Orchestrator.QueueDir,
 		DatabaseURL:                cfg.Database.URL,
 
-		PythonEnv:               resolvedPythonEnv,
-		LogLevel:                logLevel,
-		EventLog:                elog,
-		SkipDupByHash:           skipDup,
-		EnableVirtualLock:       enableVirtualLock,
-		GatekeeperRetryDelaySec: gatekeeperRetryDelay,
-		ConfigWatchIntervalSec:  configWatchInterval,
-		EnableDlqRetry:          enableDlqRetry,
-		DlqRetryIntervalSec:     dlqRetryInterval,
-		MaxGpuUtilizationRatio:  maxGpuUtilRatio,
-		MinAvailVramGB:          minAvailVramGB,
-		EstimatedDemucsVramGB:   estimatedDemucsVramGB,
-		EnableGpuThrottle:       enableGpuThrottle,
-		DBTimeoutSec:            dbTimeoutSec,
+		PythonEnv:                  resolvedPythonEnv,
+		LogLevel:                   logLevel,
+		EventLog:                   elog,
+		SkipDupByHash:              skipDup,
+		EnableVirtualLock:          enableVirtualLock,
+		GatekeeperRetryDelaySec:    gatekeeperRetryDelay,
+		ConfigWatchIntervalSec:     configWatchInterval,
+		EnableDlqRetry:             enableDlqRetry,
+		DlqRetryIntervalSec:        dlqRetryInterval,
+		MaxGpuUtilizationRatio:     maxGpuUtilRatio,
+		MinAvailVramGB:             minAvailVramGB,
+		EstimatedDemucsVramGB:      estimatedDemucsVramGB,
+		EnableGpuThrottle:          enableGpuThrottle,
+		DBTimeoutSec:               dbTimeoutSec,
+		EnableDiskModeFallback:     enableDiskFallback,
+		DiskModeRamThresholdRatio:  diskModeRamRatio,
 	}
 
 	return &cfg, dispConfig, nil

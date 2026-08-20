@@ -103,36 +103,59 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any) -> dict[str
     stem_context = separator.separate(y_stereo, sr)
     inference_duration = time.perf_counter() - t_inf_start
 
+    storage_mode = payload.get("storage_mode", "shm")
+    temp_dir = payload.get("temp_dir", "")
+
     stems_meta: dict[str, Any] = {}
-    t_shm_start = time.perf_counter()
+    t_storage_start = time.perf_counter()
 
     file_size = os.path.getsize(flac_path) if os.path.exists(flac_path) else 0
     stem_items = stem_context.stems.items() if hasattr(stem_context, "stems") else stem_context.items()
 
-    # ステム波形の共有メモリ書き込み
-    for stem_name, audio_ctx in stem_items:
-        if stem_name not in shm_tags:
-            continue
-        tag = shm_tags[stem_name]
-        data = audio_ctx.y
+    if storage_mode == "disk" and temp_dir:
+        os.makedirs(temp_dir, exist_ok=True)
+        for stem_name, audio_ctx in stem_items:
+            data = audio_ctx.y
+            if data.ndim == 1:
+                data = data[np.newaxis, :]
+            data = np.ascontiguousarray(data, dtype=np.float32)
 
-        # (1, N) または (N,) を float32 形状に整えますわ
-        if data.ndim == 1:
-            data = data[np.newaxis, :]
-        data = np.ascontiguousarray(data, dtype=np.float32)
+            file_path = os.path.join(temp_dir, f"{stem_name}.npy")
+            np.save(file_path, data)
 
-        # 共有メモリへ書き込み、完了後即座にアンマップ (Advisory 1: Error 1450 完全防止)
-        shm = shm_interop.write_to_shm(tag, data, file_size=file_size)
-        shm.close()
+            stems_meta[stem_name] = {
+                "storage_type": "file",
+                "file_path": file_path,
+                "shape": list(data.shape),
+                "dtype": str(data.dtype),
+                "file_size": file_size
+            }
+    else:
+        # ステム波形の共有メモリ書き込み (SHM Mode)
+        for stem_name, audio_ctx in stem_items:
+            if stem_name not in shm_tags:
+                continue
+            tag = shm_tags[stem_name]
+            data = audio_ctx.y
 
-        stems_meta[stem_name] = {
-            "shm_tag": tag,
-            "shape": list(data.shape),
-            "dtype": str(data.dtype),
-            "file_size": file_size
-        }
+            # (1, N) または (N,) を float32 形状に整えますわ
+            if data.ndim == 1:
+                data = data[np.newaxis, :]
+            data = np.ascontiguousarray(data, dtype=np.float32)
 
-    shm_duration = time.perf_counter() - t_shm_start
+            # 共有メモリへ書き込み、完了後即座にアンマップ (Advisory 1: Error 1450 完全防止)
+            shm = shm_interop.write_to_shm(tag, data, file_size=file_size)
+            shm.close()
+
+            stems_meta[stem_name] = {
+                "storage_type": "shm",
+                "shm_tag": tag,
+                "shape": list(data.shape),
+                "dtype": str(data.dtype),
+                "file_size": file_size
+            }
+
+    storage_duration = time.perf_counter() - t_storage_start
 
     return {
         "status": "success",
@@ -142,7 +165,7 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any) -> dict[str
         "profile": {
             "decode": decode_duration,
             "inference": inference_duration,
-            "shm_write": shm_duration
+            "storage_write": storage_duration
         }
     }
 

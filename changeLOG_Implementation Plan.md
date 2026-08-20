@@ -1,3 +1,15 @@
+# Implementation Plan: 物理 RAM 安全圏超過時の SSD/TMP ディスク退避モード (Disk Mode Fallback)
+
+- **Goal**: 物理 RAM の安全圏（空き容量）を超える巨大な長尺トラック（ASMR、ハイレゾ、長大コンピレーション等）に対し、音源分離（7ステム）を完全に維持したまま、共有メモリ (SHM) から SSD 一時ファイル (`.npy` / `mmap_mode='r'`) への動的退避（Disk Mode）を導入し、Gatekeeper による永久ブロックと OOM を完全根絶する。
+- **Target**: `orchestrator/dispatcher/shm_utils.go`, `orchestrator/dispatcher/dispatcher.go`, `orchestrator/dispatcher/gatekeeper_test.go`, `demucs_daemon.py`, `worker_daemon.py`, `config.toml`, `config.toml.example`, `config_test.toml`.
+- **Feature**:
+  - `shm_utils.go`: `uint64` 拡張（4GB 超オーバーフロー完全防止）、`EstimateDemucsDiskBytes(task)`、純粋判定射 `DetermineStorageModePure(task, availPhys, minAvailRam, cfg)`。
+  - `dispatcher.go`: `StorageModeDisk` 判定時の RAM 要求量クランプ（1ステム分 2〜4GB）＆ SSD 空き容量チェック、SHM 確保スキップ、Demucs & WorkerDaemon への一時ディレクトリ伝達、`defer cleanupCache(trackHash)` による確実な一時ファイル削除。
+  - `demucs_daemon.py`: `mode == "disk"` 時に 7 ステムを SSD 一時ディレクトリへ `.npy` 保存し `storage_type: "file"` を返却。
+  - `worker_daemon.py`: `storage_type == "file"` 時に `np.load(file_path, mmap_mode='r')` による Zero-copy ディスクマップ読み込み＆ 1 ステム処理完了毎のメモリ即時解放。
+  - `config.toml`: `enable_disk_mode_fallback = true`, `disk_mode_ram_threshold_ratio = 0.8` の追加。
+- **Status**: Proposed
+
 # Implementation Plan: Demucs Resident Daemon & Adaptive GPU Single/Dual Scheduler
 
 - **Goal**: Demucs 波形分離処理において、曲ごとの Python プロセス新規起動およびモデルロードオーバーヘッド（2〜4秒/曲）を常駐型ワーカーデーモン (`DemucsDaemonPool` & `demucs_daemon.py`) に集約し、さらに GPU 負荷率（<50%）と VRAM 空き容量（>=4GB）に応じて「基本シングルタスク直列化 ⇔ 余裕時デュアルタスク並行」を切り替えるアダプティブスケジューラー (`AdaptiveDemucsScheduler`) を導入する。

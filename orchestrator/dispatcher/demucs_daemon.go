@@ -19,7 +19,9 @@ import (
 
 type DemucsSeparatePayload struct {
 	FlacPath    string            `json:"flac_path"`
-	ShmTags     map[string]string `json:"shm_tags"`
+	ShmTags     map[string]string `json:"shm_tags,omitempty"`
+	StorageMode string            `json:"storage_mode,omitempty"`
+	TempDir     string            `json:"temp_dir,omitempty"`
 	StartSample int64             `json:"start_sample"`
 	EndSample   int64             `json:"end_sample"`
 	UseDml      bool              `json:"use_dml"`

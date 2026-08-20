@@ -117,6 +117,8 @@ type Config struct {
 	EstimatedDemucsVramGB        float64
 	EnableGpuThrottle            bool
 	DBTimeoutSec                 int
+	EnableDiskModeFallback       bool
+	DiskModeRamThresholdRatio    float64
 }
 
 
@@ -356,6 +358,12 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	}
 	if oldCfg.DBTimeoutSec != newCfg.DBTimeoutSec {
 		diff["db_timeout_sec"] = fmt.Sprintf("%d -> %d", oldCfg.DBTimeoutSec, newCfg.DBTimeoutSec)
+	}
+	if oldCfg.EnableDiskModeFallback != newCfg.EnableDiskModeFallback {
+		diff["enable_disk_mode_fallback"] = fmt.Sprintf("%v -> %v", oldCfg.EnableDiskModeFallback, newCfg.EnableDiskModeFallback)
+	}
+	if oldCfg.DiskModeRamThresholdRatio != newCfg.DiskModeRamThresholdRatio {
+		diff["disk_mode_ram_threshold_ratio"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.DiskModeRamThresholdRatio, newCfg.DiskModeRamThresholdRatio)
 	}
 
 	d.config = newCfg
@@ -683,6 +691,8 @@ func PurgeOrphanedQueueAndCacheFiles(queueDir string, maxAge time.Duration) {
 
 // GatekeeperInput encapsulates all parameters required for pure pre-flight dispatch decisions.
 type GatekeeperInput struct {
+	StorageMode       StorageMode
+	EstimatedTaskDisk uint64
 	AvailPhys         uint64
 	InFlightRam       uint64
 	EstimatedTaskRam  uint64
@@ -704,6 +714,7 @@ type GatekeeperDecision struct {
 	IsGo                bool
 	WaitDuration        time.Duration
 	Reason              string
+	StorageMode         StorageMode
 	EstimatedRamBytes   uint64
 	EffectiveAvailBytes uint64
 	RequiredBytes       uint64
@@ -724,11 +735,16 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 	}
 
 	// 1. Disk Space Check (Storage Defense)
-	if in.MinAvailDisk > 0 && in.AvailDisk < in.MinAvailDisk {
+	requiredDisk := in.MinAvailDisk
+	if in.StorageMode == StorageModeDisk {
+		requiredDisk += in.EstimatedTaskDisk
+	}
+	if requiredDisk > 0 && in.AvailDisk < requiredDisk {
 		return GatekeeperDecision{
 			IsGo:              false,
 			WaitDuration:      retryDelay,
-			Reason:            fmt.Sprintf("Available Disk Space (%.2f GB) < Required MinAvailDisk (%.2f GB)", float64(in.AvailDisk)/(1024*1024*1024), float64(in.MinAvailDisk)/(1024*1024*1024)),
+			Reason:            fmt.Sprintf("Available Disk Space (%.2f GB) < Required (%.2f GB = Task %.2f GB + MinAvail %.2f GB)", float64(in.AvailDisk)/(1024*1024*1024), float64(requiredDisk)/(1024*1024*1024), float64(in.EstimatedTaskDisk)/(1024*1024*1024), float64(in.MinAvailDisk)/(1024*1024*1024)),
+			StorageMode:       in.StorageMode,
 			EstimatedRamBytes: in.EstimatedTaskRam,
 			MemoryLoad:        in.MemoryLoad,
 			AvailDiskBytes:    in.AvailDisk,
@@ -750,6 +766,7 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 			IsGo:                false,
 			WaitDuration:        retryDelay,
 			Reason:              fmt.Sprintf("Effective Avail RAM (%d MB = Avail %d MB - InFlight %d MB) < Required (%d MB = Task %d MB + MinAvail %d MB)", effectiveAvailBytes/1024/1024, in.AvailPhys/1024/1024, in.InFlightRam/1024/1024, requiredBytes/1024/1024, in.EstimatedTaskRam/1024/1024, in.MinAvailRam/1024/1024),
+			StorageMode:         in.StorageMode,
 			EstimatedRamBytes:   in.EstimatedTaskRam,
 			EffectiveAvailBytes: effectiveAvailBytes,
 			RequiredBytes:       requiredBytes,
@@ -764,6 +781,7 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 			IsGo:                false,
 			WaitDuration:        retryDelay,
 			Reason:              fmt.Sprintf("System MemoryLoad too high (%d%% >= 90%%)", in.MemoryLoad),
+			StorageMode:         in.StorageMode,
 			EstimatedRamBytes:   in.EstimatedTaskRam,
 			EffectiveAvailBytes: effectiveAvailBytes,
 			RequiredBytes:       requiredBytes,
@@ -781,6 +799,7 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 				IsGo:                false,
 				WaitDuration:        retryDelay,
 				Reason:              fmt.Sprintf("GPU Utilization too high (%.1f%% >= %.1f%% threshold)", in.GpuUtilization, in.MaxGpuUtilization*100),
+				StorageMode:         in.StorageMode,
 				EstimatedRamBytes:   in.EstimatedTaskRam,
 				EffectiveAvailBytes: effectiveAvailBytes,
 				RequiredBytes:       requiredBytes,
@@ -801,6 +820,7 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 					IsGo:                false,
 					WaitDuration:        retryDelay,
 					Reason:              fmt.Sprintf("Available VRAM (%.2f GB) < Required (%.2f GB = Task %.2f GB + MinAvail %.2f GB)", float64(in.AvailVram)/(1024*1024*1024), float64(requiredVram)/(1024*1024*1024), float64(in.EstimatedTaskVram)/(1024*1024*1024), float64(in.MinAvailVram)/(1024*1024*1024)),
+					StorageMode:         in.StorageMode,
 					EstimatedRamBytes:   in.EstimatedTaskRam,
 					EffectiveAvailBytes: effectiveAvailBytes,
 					RequiredBytes:       requiredBytes,
@@ -820,6 +840,7 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 		IsGo:                true,
 		WaitDuration:        0,
 		Reason:              "Approved",
+		StorageMode:         in.StorageMode,
 		EstimatedRamBytes:   in.EstimatedTaskRam,
 		EffectiveAvailBytes: effectiveAvailBytes,
 		RequiredBytes:       requiredBytes,
@@ -833,7 +854,6 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 
 // EvaluateGoNoGo queries live system memory, disk, and GPU status and delegates the preflight decision to EvaluateGoNoGoPure.
 func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.Duration) {
-	estimatedRam := EstimateDemucsTotalRamBytes(task)
 	memInfo, err := sysinfo.GetMemoryInfo()
 	if err != nil || memInfo == nil {
 		return true, 0
@@ -852,6 +872,15 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 		estimatedVramBytes = uint64(1.0 * 1024 * 1024 * 1024)
 	}
 
+	storageMode, effectiveTaskRam, estimatedDiskBytes := DetermineStorageModePure(
+		task,
+		memInfo.AvailPhys,
+		inFlight,
+		minAvailBytes,
+		currentCfg.DiskModeRamThresholdRatio,
+		currentCfg.EnableDiskModeFallback,
+	)
+
 	retryDelay := time.Duration(currentCfg.GatekeeperRetryDelaySec) * time.Second
 	if retryDelay <= 0 {
 		retryDelay = 20 * time.Second
@@ -859,7 +888,7 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 
 	// Disk space check: inspect queue_dir, temp dir, and source file dir
 	var availDisk uint64 = math.MaxUint64
-	if minAvailDiskBytes > 0 {
+	if minAvailDiskBytes > 0 || storageMode == StorageModeDisk {
 		checkPaths := []string{currentCfg.QueueDir, os.TempDir()}
 		if task.FlacPath != "" {
 			checkPaths = append(checkPaths, filepath.Dir(task.FlacPath))
@@ -886,9 +915,11 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 	}
 
 	input := GatekeeperInput{
+		StorageMode:       storageMode,
+		EstimatedTaskDisk: estimatedDiskBytes,
 		AvailPhys:         memInfo.AvailPhys,
 		InFlightRam:       inFlight,
-		EstimatedTaskRam:  estimatedRam,
+		EstimatedTaskRam:  effectiveTaskRam,
 		MinAvailRam:       minAvailBytes,
 		MemoryLoad:        memInfo.MemoryLoad,
 		AvailDisk:         availDisk,
@@ -911,11 +942,14 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 		return false, decision.WaitDuration
 	}
 
-	if minAvailDiskBytes > 0 {
-		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], GPU Util: %.1f%%, Min Avail Disk: %.2f GB)",
+	if storageMode == StorageModeDisk {
+		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved [Disk Mode Fallback] (Task RAM Clamped: %d MB, Disk Needed: %.2f GB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], GPU Util: %.1f%%, Avail Disk: %.2f GB)",
+			workerID, decision.EstimatedRamBytes/1024/1024, float64(estimatedDiskBytes)/(1024*1024*1024), decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024, gpuUtil, float64(availDisk)/(1024*1024*1024))
+	} else if minAvailDiskBytes > 0 {
+		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved [SHM Mode] (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], GPU Util: %.1f%%, Min Avail Disk: %.2f GB)",
 			workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024, gpuUtil, float64(availDisk)/(1024*1024*1024))
 	} else {
-		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], GPU Util: %.1f%%)",
+		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved [SHM Mode] (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], GPU Util: %.1f%%)",
 			workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024, gpuUtil)
 	}
 	return true, 0
@@ -1008,22 +1042,43 @@ func (d *Dispatcher) worker(id int) {
 			metrics.AnalyzerQueueLength.Dec()
 			metrics.AnalyzerActiveWorkers.Inc()
 			
-			estimatedRam := EstimateDemucsTotalRamBytes(task)
+			memInfo, _ := sysinfo.GetMemoryInfo()
+			var availPhys uint64 = 0
+			if memInfo != nil {
+				availPhys = memInfo.AvailPhys
+			}
+			currentCfg := d.GetConfig()
+			minAvailBytes := uint64(currentCfg.MinAvailRamGB * 1024 * 1024 * 1024)
+
 			d.inFlightMutex.Lock()
-			d.activeInFlightRamBytes += estimatedRam
+			inFlight := d.activeInFlightRamBytes
+			d.inFlightMutex.Unlock()
+
+			storageMode, effectiveTaskRam, _ := DetermineStorageModePure(
+				task,
+				availPhys,
+				inFlight,
+				minAvailBytes,
+				currentCfg.DiskModeRamThresholdRatio,
+				currentCfg.EnableDiskModeFallback,
+			)
+
+			// ADV-01: Synchronize activeInFlightRamBytes with clamped effective RAM
+			d.inFlightMutex.Lock()
+			d.activeInFlightRamBytes += effectiveTaskRam
 			d.inFlightMutex.Unlock()
 
 			defer func() {
 				d.inFlightMutex.Lock()
-				if d.activeInFlightRamBytes >= estimatedRam {
-					d.activeInFlightRamBytes -= estimatedRam
+				if d.activeInFlightRamBytes >= effectiveTaskRam {
+					d.activeInFlightRamBytes -= effectiveTaskRam
 				} else {
 					d.activeInFlightRamBytes = 0
 				}
 				d.inFlightMutex.Unlock()
 			}()
 			
-			d.LogInfo("[W-%d] [IO Monad] Starting processing: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
+			d.LogInfo("[W-%d] [IO Monad] Starting processing (%s mode): %s (Track %d)", id, storageMode, task.FlacPath, task.TrackNumber)
 			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusRunning, "")
 			
 			var trackHash string
@@ -1034,7 +1089,7 @@ func (d *Dispatcher) worker(id int) {
 				cleanupCache(trackHash)
 			}()
 			
-			if d.GetConfig().SkipDupByHash {
+			if currentCfg.SkipDupByHash {
 				hashStageStart := time.Now()
 				isSingleTrack := task.StartSample == 0 && (task.EndSample <= 0 || task.EndSample == task.FileSize)
 				var fastMD5 string
@@ -1115,10 +1170,14 @@ func (d *Dispatcher) worker(id int) {
 				}
 			}
 
-			currentCfg := d.GetConfig()
-			ratio := currentCfg.ShmExpansionRatio
-			if ratio <= 0 { ratio = 3.5 }
-			estimatedSize := EstimateShmSizeForTaskWithRatio(task, ratio)
+			cacheDir := filepath.Join(os.TempDir(), "flac_analyzer_cache", trackHash)
+			if storageMode == StorageModeDisk {
+				if err := os.MkdirAll(cacheDir, 0755); err != nil {
+					d.failTask(task, fmt.Sprintf("Failed to create disk cache dir: %v", err))
+					return
+				}
+				d.LogInfo("[W-%d] [DiskMode] Using SSD temp directory for stem spooling: %s", id, cacheDir)
+			}
 
 			d.LogInfo("[W-%d] [IO Monad] Waiting for Adaptive Demucs execution slot (limit: %d)...", id, d.demucsScheduler.GetLimit())
 			d.demucsScheduler.Acquire()
@@ -1128,73 +1187,82 @@ func (d *Dispatcher) worker(id int) {
 				time.Sleep(time.Duration(delaySec) * time.Second)
 			}
 
-			shmAllocStart := time.Now()
-			arenaSet := d.arenaPool.GetWorkerArenaSet(id)
+			var arenaSet *WorkerArenaSet
+			var tagsMap map[string]string
 			var allocError error
 
-			d.allocMutex.Lock()
-			for {
-				availPhys, err := GetAvailableMemory()
-				if err != nil {
-					d.LogWarn("[W-%d] Memory check failed: %v", id, err)
-					break 
-				}
-				// 全ステム合計の共有メモリ割り当て予定容量 (len(stems)) + 作業用余力 2GB を確認
-				totalStemsNeeded := uint64(estimatedSize) * uint64(len(stems))
-				requiredMem := totalStemsNeeded + (2 * 1024 * 1024 * 1024) 
-				if availPhys > requiredMem { break }
-				d.LogInfo("[W-%d] Waiting for memory for all stems (%d MB total)... (Avail: %d MB)", id, totalStemsNeeded/1024/1024, availPhys/1024/1024)
+			if storageMode == StorageModeSHM {
+				ratio := currentCfg.ShmExpansionRatio
+				if ratio <= 0 { ratio = 3.5 }
+				estimatedSize64 := EstimateShmSizeForTaskWithRatio(task, ratio)
+				estimatedSize := uint32(estimatedSize64)
 
-				d.allocMutex.Unlock()
-				time.Sleep(3 * time.Second)
+				shmAllocStart := time.Now()
+				arenaSet = d.arenaPool.GetWorkerArenaSet(id)
+
 				d.allocMutex.Lock()
-			}
-
-			retryCount := currentCfg.ShmRetryCount
-			if retryCount <= 0 {
-				retryCount = 5
-			}
-			retryDelaySec := currentCfg.ShmRetryDelaySec
-			if retryDelaySec <= 0 {
-				retryDelaySec = 8
-			}
-
-			for attempt := 1; attempt <= retryCount; attempt++ {
-				allocError = nil
-				for _, stem := range stems {
-					_, err := arenaSet.GetOrCreateArena(stem, estimatedSize)
+				for {
+					availPhysMem, err := GetAvailableMemory()
 					if err != nil {
-						allocError = fmt.Errorf("Failed to allocate/reuse SHM arena for %s (attempt %d/%d): %v", stem, attempt, retryCount, err)
-						break
+						d.LogWarn("[W-%d] Memory check failed: %v", id, err)
+						break 
 					}
-				}
-				if allocError == nil {
-					break
-				}
+					totalStemsNeeded := uint64(estimatedSize) * uint64(len(stems))
+					requiredMem := totalStemsNeeded + (2 * 1024 * 1024 * 1024) 
+					if availPhysMem > requiredMem { break }
+					d.LogInfo("[W-%d] Waiting for memory for all stems (%d MB total)... (Avail: %d MB)", id, totalStemsNeeded/1024/1024, availPhysMem/1024/1024)
 
-				if attempt < retryCount {
-					d.LogWarn("[W-%d] SHM arena allocation limit hit (attempt %d/%d): %v. Throttling queue & sleeping %d seconds...", id, attempt, retryCount, allocError, retryDelaySec)
 					d.allocMutex.Unlock()
-					time.Sleep(time.Duration(retryDelaySec) * time.Second)
+					time.Sleep(3 * time.Second)
 					d.allocMutex.Lock()
 				}
-			}
-			d.allocMutex.Unlock()
 
-			if d.statsTracker != nil {
-				d.statsTracker.RecordShmAllocDuration(time.Since(shmAllocStart))
-				d.statsTracker.RecordStageDuration("shm_alloc", time.Since(shmAllocStart))
-			}
+				retryCount := currentCfg.ShmRetryCount
+				if retryCount <= 0 {
+					retryCount = 5
+				}
+				retryDelaySec := currentCfg.ShmRetryDelaySec
+				if retryDelaySec <= 0 {
+					retryDelaySec = 8
+				}
 
-			if allocError != nil {
-				d.demucsScheduler.Release()
-				_ = arenaSet.UnfreezeAll()
-				d.failTask(task, allocError.Error())
-				metrics.AnalyzerTasksTotal.WithLabelValues("oom_failed").Inc()
-				return
-			}
+				for attempt := 1; attempt <= retryCount; attempt++ {
+					allocError = nil
+					for _, stem := range stems {
+						_, err := arenaSet.GetOrCreateArena(stem, estimatedSize)
+						if err != nil {
+							allocError = fmt.Errorf("Failed to allocate/reuse SHM arena for %s (attempt %d/%d): %v", stem, attempt, retryCount, err)
+							break
+						}
+					}
+					if allocError == nil {
+						break
+					}
 
-			tagsMap := arenaSet.GetTagsMap()
+					if attempt < retryCount {
+						d.LogWarn("[W-%d] SHM arena allocation limit hit (attempt %d/%d): %v. Throttling queue & sleeping %d seconds...", id, attempt, retryCount, allocError, retryDelaySec)
+						d.allocMutex.Unlock()
+						time.Sleep(time.Duration(retryDelaySec) * time.Second)
+						d.allocMutex.Lock()
+					}
+				}
+				d.allocMutex.Unlock()
+
+				if d.statsTracker != nil {
+					d.statsTracker.RecordShmAllocDuration(time.Since(shmAllocStart))
+					d.statsTracker.RecordStageDuration("shm_alloc", time.Since(shmAllocStart))
+				}
+
+				if allocError != nil {
+					d.demucsScheduler.Release()
+					_ = arenaSet.UnfreezeAll()
+					d.failTask(task, allocError.Error())
+					metrics.AnalyzerTasksTotal.WithLabelValues("oom_failed").Inc()
+					return
+				}
+
+				tagsMap = arenaSet.GetTagsMap()
+			}
 
 			// 3. Demucs via Resident DemucsDaemonPool
 			endSampleParam = task.EndSample
@@ -1207,7 +1275,7 @@ func (d *Dispatcher) worker(id int) {
 			if dErr != nil {
 				cancelDemucs()
 				d.demucsScheduler.Release()
-				_ = arenaSet.UnfreezeAll()
+				if arenaSet != nil { _ = arenaSet.UnfreezeAll() }
 				d.failTask(task, fmt.Sprintf("Failed to acquire Demucs daemon for separation: %v", dErr))
 				return
 			}
@@ -1215,6 +1283,8 @@ func (d *Dispatcher) worker(id int) {
 			sepResp, sepErr := demucsClient.Separate(ctxDemucs, DemucsSeparatePayload{
 				FlacPath:    task.FlacPath,
 				ShmTags:     tagsMap,
+				StorageMode: string(storageMode),
+				TempDir:     cacheDir,
 				StartSample: task.StartSample,
 				EndSample:   endSampleParam,
 				UseDml:      false,
@@ -1228,7 +1298,7 @@ func (d *Dispatcher) worker(id int) {
 			}
 
 			if sepErr != nil {
-				_ = arenaSet.UnfreezeAll()
+				if arenaSet != nil { _ = arenaSet.UnfreezeAll() }
 				d.failTask(task, fmt.Sprintf("Demucs daemon separation failed: %v", sepErr))
 				return
 			}
@@ -1245,16 +1315,19 @@ func (d *Dispatcher) worker(id int) {
 				}
 			}
 
-			// 4. Freeze Shared Memory (PAGE_READONLY)
-			if err := arenaSet.FreezeAll(); err != nil {
-				d.LogWarn("[Worker %d] Failed to freeze SHM arenas: %v", id, err)
-			}
+			// ADV-03: Step 4 Freeze & Step 4.5 Integrity are only performed for SHM mode
+			if storageMode == StorageModeSHM && arenaSet != nil {
+				// 4. Freeze Shared Memory (PAGE_READONLY)
+				if err := arenaSet.FreezeAll(); err != nil {
+					d.LogWarn("[Worker %d] Failed to freeze SHM arenas: %v", id, err)
+				}
 
-			// 4.5 Go In-Process SHM Integrity Verification (eliminates functor_precache.py python startup)
-			if err := arenaSet.VerifyIntegrity(stems); err != nil {
-				_ = arenaSet.UnfreezeAll()
-				d.failTask(task, fmt.Sprintf("SHM integrity verification failed: %v", err))
-				return
+				// 4.5 Go In-Process SHM Integrity Verification
+				if err := arenaSet.VerifyIntegrity(stems); err != nil {
+					_ = arenaSet.UnfreezeAll()
+					d.failTask(task, fmt.Sprintf("SHM integrity verification failed: %v", err))
+					return
+				}
 			}
 
 			// 5. Feature Extraction via WorkerDaemonPool (Librosa, Tensor, Essentia in single in-memory call)
@@ -1264,7 +1337,7 @@ func (d *Dispatcher) worker(id int) {
 			cancelAcquire()
 
 			if daemonErr != nil {
-				_ = arenaSet.UnfreezeAll()
+				if arenaSet != nil { _ = arenaSet.UnfreezeAll() }
 				d.failTask(task, fmt.Sprintf("Failed to acquire worker daemon: %v", daemonErr))
 				return
 			}
@@ -1280,7 +1353,7 @@ func (d *Dispatcher) worker(id int) {
 			d.daemonPool.Release(daemonClient)
 
 			if daemonExtractErr != nil {
-				_ = arenaSet.UnfreezeAll()
+				if arenaSet != nil { _ = arenaSet.UnfreezeAll() }
 				d.failTask(task, fmt.Sprintf("Worker daemon extraction failed: %v", daemonExtractErr))
 				return
 			}
@@ -1303,19 +1376,19 @@ func (d *Dispatcher) worker(id int) {
 
 			libOutBytes, err := json.Marshal(daemonResp.Librosa)
 			if err != nil {
-				_ = arenaSet.UnfreezeAll()
+				if arenaSet != nil { _ = arenaSet.UnfreezeAll() }
 				d.failTask(task, fmt.Sprintf("Failed to marshal Librosa features: %v", err))
 				return
 			}
 			tensorOutBytes, err := json.Marshal(daemonResp.Tensor)
 			if err != nil {
-				_ = arenaSet.UnfreezeAll()
+				if arenaSet != nil { _ = arenaSet.UnfreezeAll() }
 				d.failTask(task, fmt.Sprintf("Failed to marshal Tensor features: %v", err))
 				return
 			}
 			essOutBytes, err := json.Marshal(daemonResp.Essentia)
 			if err != nil {
-				_ = arenaSet.UnfreezeAll()
+				if arenaSet != nil { _ = arenaSet.UnfreezeAll() }
 				d.failTask(task, fmt.Sprintf("Failed to marshal Essentia features: %v", err))
 				return
 			}
@@ -1324,8 +1397,9 @@ func (d *Dispatcher) worker(id int) {
 			tensorOut := string(tensorOutBytes)
 			essOut := string(essOutBytes)
 
-			// 共有メモリアリーナを次回タスクのために Unfreeze (PAGE_READWRITE 復元) してプールへ維持しますわ！
-			_ = arenaSet.UnfreezeAll()
+			if storageMode == StorageModeSHM && arenaSet != nil {
+				_ = arenaSet.UnfreezeAll()
+			}
 			
 			// 6. Write Output and Run Ingester
 			baseName := filepath.Base(task.FlacPath)

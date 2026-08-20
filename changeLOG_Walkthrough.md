@@ -1,3 +1,17 @@
+# Walkthrough: 物理 RAM 安全圏超過時の SSD/TMP ディスク退避モード (Disk Mode Fallback)
+
+- **Summary**: 物理 RAM の安全圏（空き容量）を超える巨大な長尺トラック（ASMR、ハイレゾ、長大コンピレーション等）に対し、音源分離（7ステム）を完全に維持したまま、共有メモリ (SHM) から SSD 一時ファイル (`.npy` / `mmap_mode='r'`) への動的退避（Disk Mode）を導入し、Gatekeeper による永久ブロックと OOM を完全根絶。
+- **Changes**:
+  - `orchestrator/dispatcher/shm_utils.go`: `uint64` 拡張、`EstimateDemucsDiskBytes`、`DetermineStorageModePure` 実装。
+  - `orchestrator/dispatcher/dispatcher.go`: Disk Mode 時の RAM クランプ（2GB）＆ SSD 空き容量チェック、SHM スキップ、一時ディレクトリ作成、ADV-01（`activeInFlightRamBytes` 同期）＆ ADV-03（Step 4/4.5 SHM スキップガード）適用。
+  - `demucs_daemon.py`: `storage_mode == "disk"` 時に 7 ステムを SSD 一時ディレクトリへ `.npy` 保存。
+  - `worker_daemon.py`: `storage_type == "file"` 時に `np.load(..., mmap_mode='r')` オンデマンド読込＆ ADV-02（`np.memmap._mmap.close()`）適用。
+  - `config.toml`, `config.toml.example`, `config_test.toml`: `enable_disk_mode_fallback = true`, `disk_mode_ram_threshold_ratio = 0.8` 追加。
+  - `gatekeeper_test.go`: Disk Mode の単体テスト新設。
+- **Verification**:
+  - `go test -v ./...`: All PASS (13.302s)
+  - `proof-checker.exe`: 0 Errors (PASS)
+
 # Walkthrough: WorkerDaemon NumPy / PyTorch インポートの補完 & 全単体テストオールグリーン
 
 - **Summary**: `worker_daemon.py` に `import numpy as np` および `import torch` を追加し、テンソル特徴量抽出時の `NameError: name 'np' is not defined` を解消。

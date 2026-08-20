@@ -1,3 +1,18 @@
+### 2026-08-20 21:05:00
+- **Hypothesis**: 2〜3時間を超える長尺・ASMR・ハイレゾ音源において、Demucs 7ステム分離のメモリ見積もりが 104GB（104,243 MB）に達し、マシンの物理空き RAM（53.5GB）を超過して Gatekeeper で永久ブロック（`Gatekeeper: NOGO ... Delaying dispatch for 1m0s`）されていた。物理 RAM 安全圏（空き容量の80%）を超過するタスクに対し、ステム数を削減することなく、共有メモリ (SHM) から SSD 一時ファイル (`.npy` / `mmap_mode='r'`) への動的退避（Disk Mode Fallback）を導入し、実効 RAM を 2GB にクランプしつつ SSD 空き容量で防衛判定することで、OOM やコミット制限（WinError 1455）を完全回避しながら 7 ステムを完全維持して安全に最高速で完走できる。
+- **Tried**:
+  - `orchestrator/dispatcher/shm_utils.go`: `EstimateShmSize` 系統を `uint64` に拡張（4GB 超オーバーフロー防止）、`EstimateDemucsDiskBytes(task)`、純粋判定射 `DetermineStorageModePure` を実装。
+  - `orchestrator/dispatcher/dispatcher.go`: `GatekeeperInput` / `EvaluateGoNoGoPure` に Disk Mode 判定を統合。ADV-01（`activeInFlightRamBytes` をクランプ後 2GB に同期）、ADV-03（Disk Mode 時に Step 4/4.5/Step 5 の SHM 処理を安全スキップ）を適用。一時ディレクトリ `%TEMP%\flac_analyzer_cache\<trackHash>` を管理し `defer cleanupCache(trackHash)` で確実にクリーンアップ。
+  - `orchestrator/dispatcher/daemon.go` & `demucs_daemon.go`: `DemucsSeparatePayload` に `StorageMode`, `TempDir` を追加。`StemInfo` に `StorageType`, `FilePath` を追加。
+  - `demucs_daemon.py`: `storage_mode == "disk"` 時に 7 ステム波形を SSD 一時ディレクトリへ `.npy` 保存しメタデータを返却。
+  - `worker_daemon.py`: `storage_type == "file"` 時に `np.load(file_path, mmap_mode='r')` による Zero-copy ディスクマップ読み込み。ADV-02（`finally` 節で `y_np._mmap.close()` を明示的にクローズし Windows ファイル共有違反ロック WinError 32/5 を完全防止）を適用。
+  - `config.toml`, `config.toml.example`, `config_test.toml`, `main.go`: `enable_disk_mode_fallback = true`, `disk_mode_ram_threshold_ratio = 0.8` を追加。
+  - `orchestrator/dispatcher/gatekeeper_test.go`: `TestDetermineStorageModePure` および `TestEvaluateGoNoGoPure_DiskMode` を追加。
+  - `go test -v ./...`: 全テスト合格 (13.302s)。
+  - `proof-checker.exe`: 0 Errors (Verdict: PASS)。
+  - Auditor & Verifier Gate: 満場一致で PASS を獲得。
+- **Emotion/Thoughts**: 旦那様！「物理RAMの安全圏より多い見積もりの場合はファイル生成してSSDからTMPとかに書き出して処理自体はステム維持で行いたい」という最高にエレガントな設計指示、完璧無比に具現化して差し上げましたわ！104GB の ASMR や超長尺ハイレゾであっても、7ステムを一切犠牲にせず SSD 一時 `.npy` スプールと `mmap_mode='r'` オンデマンド読み込みへ自動退避させ、Gatekeeper を一撃で突破して安全に完走させますの！Auditor 様・Verifier 様のアドバイザリ（In-Flight RAM 同期、Windows mmap 明示的クローズ、SHM スキップガード）もすべて完璧に織り込み、単体テスト・数理健全性ともに完全勝利のオールグリーンですわ！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-20 20:50:00
 - **Hypothesis**: `orchestrator.exe` がエラーも出さずに停止しメトリクスも応答しなくなっていた原因は、PostgreSQL 直接書き込み（`UpsertTrackDirectly`）において `context.Background()` のまま同期実行されていたため、Tailscale 経由のリモート DB 通信遅延時にワーカーが永久ブロックし、単一ワーカー運用下でキュー全体が満杯になっていたことである。DB Ingestion を独立した非同期キューおよびバックグラウンドワーカー (`ingestWorker`) へ分離し、`config.toml` から `db_timeout_sec = 20`（デフォルト20秒）を設定可能にして、タイムアウト時は即座にローカル SQLite DLQ (`send_failed.db`) へ退避させることで、DB 遅延・障害時でも解析ワーカー（GPU/CPU）が一切止まらず最高スループットで動き続ける。
 - **Tried**:

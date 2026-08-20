@@ -277,3 +277,78 @@ func TestEstimateDemucsTotalRamBytes(t *testing.T) {
 		t.Fatalf("Expected longRam (%d) > shortRam (%d)", longRam, shortRam)
 	}
 }
+
+func TestDetermineStorageModePure(t *testing.T) {
+	// Normal 3-minute track (~30MB FLAC): Should be SHM
+	normalTask := TaskPayload{
+		FileSize: 30 * 1024 * 1024,
+	}
+	availPhys := uint64(32 * 1024 * 1024 * 1024) // 32 GB
+	minAvailRam := uint64(2 * 1024 * 1024 * 1024)
+
+	mode, _, diskBytes := DetermineStorageModePure(normalTask, availPhys, 0, minAvailRam, 0.8, true)
+	if mode != StorageModeSHM {
+		t.Fatalf("Expected StorageModeSHM for normal track, got %v", mode)
+	}
+	if diskBytes != 0 {
+		t.Fatalf("Expected diskBytes=0 for SHM mode, got %d", diskBytes)
+	}
+
+	// Massive ASMR track (2.5GB FLAC / 104GB estimated RAM): Should trigger Disk Mode
+	massiveTask := TaskPayload{
+		FileSize: int64(2.5 * 1024 * 1024 * 1024),
+	}
+	modeLarge, taskRamLarge, diskBytesLarge := DetermineStorageModePure(massiveTask, availPhys, 0, minAvailRam, 0.8, true)
+	if modeLarge != StorageModeDisk {
+		t.Fatalf("Expected StorageModeDisk for massive track, got %v", modeLarge)
+	}
+	if taskRamLarge != 2*1024*1024*1024 {
+		t.Fatalf("Expected clamped taskRam=2GB for Disk mode, got %d", taskRamLarge)
+	}
+	if diskBytesLarge == 0 {
+		t.Fatalf("Expected non-zero diskBytes for Disk mode")
+	}
+
+	// If enableDiskFallback is false: Must remain SHM even for massive task
+	modeNoFallback, _, _ := DetermineStorageModePure(massiveTask, availPhys, 0, minAvailRam, 0.8, false)
+	if modeNoFallback != StorageModeSHM {
+		t.Fatalf("Expected StorageModeSHM when fallback disabled, got %v", modeNoFallback)
+	}
+}
+
+func TestEvaluateGoNoGoPure_DiskMode(t *testing.T) {
+	// Massive task in Disk Mode with 32GB RAM and 50GB disk space -> Approved!
+	input := GatekeeperInput{
+		StorageMode:       StorageModeDisk,
+		EstimatedTaskDisk: 15 * 1024 * 1024 * 1024, // 15 GB SSD required
+		AvailPhys:         32 * 1024 * 1024 * 1024, // 32 GB
+		InFlightRam:       0,
+		EstimatedTaskRam:  2 * 1024 * 1024 * 1024,  // Clamped 2 GB
+		MinAvailRam:       2 * 1024 * 1024 * 1024,  // 2 GB
+		MemoryLoad:        40,
+		AvailDisk:         50 * 1024 * 1024 * 1024, // 50 GB SSD available
+		MinAvailDisk:      5 * 1024 * 1024 * 1024,  // 5 GB minimum
+		GpuUtilization:    30.0,
+		AvailVram:         4 * 1024 * 1024 * 1024,
+		MinAvailVram:      512 * 1024 * 1024,
+		EstimatedTaskVram: 1024 * 1024 * 1024,
+		MaxGpuUtilization: 0.85,
+		EnableGpuThrottle: true,
+		RetryDelay:        20 * time.Second,
+	}
+
+	decision := EvaluateGoNoGoPure(input)
+	if !decision.IsGo {
+		t.Fatalf("Expected IsGo=true for Disk Mode with sufficient SSD, got false (reason: %s)", decision.Reason)
+	}
+	if decision.StorageMode != StorageModeDisk {
+		t.Fatalf("Expected decision.StorageMode=disk, got %v", decision.StorageMode)
+	}
+
+	// Disk space insufficient for Disk Mode (AvailDisk 10GB < Required 20GB [15GB task + 5GB min])
+	input.AvailDisk = 10 * 1024 * 1024 * 1024
+	decisionDiskLow := EvaluateGoNoGoPure(input)
+	if decisionDiskLow.IsGo {
+		t.Fatalf("Expected IsGo=false when SSD space is insufficient for Disk Mode, got true")
+	}
+}

@@ -51,15 +51,24 @@ def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: A
     tensor_total_sec = 0.0
     essentia_total_sec = 0.0
 
-    # 1. 各ステムの処理 (Advisory 2: try...finally shm.close() を徹底)
+    # 1. 各ステムの処理 (Advisory 2 / ADV-02: try...finally で shm.close() と np.memmap._mmap.close() を徹底)
     for stem_name, info in stems_info.items():
-        tag_name = info["shm_tag"]
+        storage_type = info.get("storage_type", "shm")
+        file_path = info.get("file_path")
+        tag_name = info.get("shm_tag", "")
         shape = tuple(info["shape"])
         dtype_name = info["dtype"]
         file_size = info.get("file_size", 0)
         spectro_path = info.get("spectro_path")
 
-        shm, y_np = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name, file_size=file_size)
+        shm = None
+        if storage_type == "file" and file_path and os.path.exists(file_path):
+            # SSD からのオンデマンド Zero-copy mmap 読み込み (Disk Mode)
+            y_np = np.load(file_path, mmap_mode="r")
+        else:
+            # 共有メモリ (SHM) からの読み込み
+            shm, y_np = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name, file_size=file_size)
+
         try:
             ctx = AudioContext(y=y_np, sr=sr, source=stem_name, spectro_path=spectro_path)
             try:
@@ -79,7 +88,7 @@ def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: A
                 # B. PyTorch Tensor 特徴量抽出 (GPU cuFFT Wiener-Khinchin HNR/NAP & Bulk STFT)
                 t_ten_start = time.perf_counter()
                 with torch.no_grad():
-                    # 共有メモリ mmap 配列の read-only 警告を防止しつつ GPU 転送
+                    # 共有メモリ / mmap 配列の read-only 警告を防止しつつ GPU 転送
                     y_tensor = torch.from_numpy(np.require(y_np, requirements=['C', 'W']))
                     stem_feats = extract_tensor_features(y_tensor, sr, device, spectro_path=spectro_path)
                     extracted_tensor[stem_name] = stem_feats
@@ -96,8 +105,15 @@ def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: A
                 ctx.clear()
 
         finally:
-            # Advisory 2: Windows 共有メモリハンドルをタスク毎に確実に解放 (1450防止)
-            shm.close()
+            if shm is not None:
+                shm.close()
+            # ADV-02: Windows での os.RemoveAll (Access is denied WinError 5/32) 防止のため mmap ハンドルを明示的にクローズ
+            if hasattr(y_np, "_mmap") and y_np._mmap is not None:
+                try:
+                    y_np._mmap.close()
+                except Exception:
+                    pass
+            del y_np
 
     total_sec = time.perf_counter() - t_start
 

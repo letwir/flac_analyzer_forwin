@@ -12,6 +12,8 @@ max_gpu_utilization_ratio = 0.85
 min_avail_vram_gb = 0.5
 estimated_demucs_vram_gb = 1.0
 shm_allocation_delay_sec = 2
+enable_disk_mode_fallback = true
+disk_mode_ram_threshold_ratio = 0.8
 queue_dir = "../testFLAC"
 test_flac_dir = "../testFLAC"
 
