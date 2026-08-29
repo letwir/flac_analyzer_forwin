@@ -52,6 +52,7 @@ type TaskPayload struct {
 	TrackNumber  int    `json:"trackNumber"`
 	StartSample  int64  `json:"startSample"`
 	EndSample    int64  `json:"endSample"`
+	SampleRate   int    `json:"sampleRate,omitempty"`
 	Title        string `json:"title"`
 	Artist       string `json:"artist"`
 	Album        string `json:"album"`

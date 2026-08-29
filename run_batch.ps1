@@ -14,6 +14,12 @@
 
 .PARAMETER DryRun
     有効にすると、コマンドを実行せずに、実行予定のコマンドを表示するだけにとどめますわ。
+
+.PARAMETER SingleTask
+    常駐ETLを使用せず、FLACごとにGoを起動してCUEトラックを1件ずつ同期解析し、保存完了後に終了します。
+
+.PARAMETER Unreg
+    SingleTaskでSQLiteとPostgreSQLをトラック単位に照合し、双方で未登録または再試行可能なトラックだけを解析します。
 #>
 
 [CmdletBinding()]
@@ -29,10 +35,22 @@ param (
     [switch]$Test,
     [switch]$DryRun,
     [switch]$Rough,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$SingleTask,
+    [switch]$Unreg
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Unreg -and -not $SingleTask) {
+    Write-Host "❌ -Unreg は -SingleTask と組み合わせてください。" -ForegroundColor Red
+    exit 2
+}
+if ($Unreg -and $Force) {
+    Write-Host "❌ -Unreg と -Force は併用できません。" -ForegroundColor Red
+    exit 2
+}
+
 $env:PYTHONUTF8 = 1
 # PowerShellの出力エンコーディングを完全にUTF-8へ切り替えますわ！
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -113,18 +131,33 @@ if ($isSingleFile) {
     Write-Host " 📂 ルートパス  : $MusicRoot" -ForegroundColor Gray
 }
 Write-Host " 🎯 ターゲット  : $targetScript" -ForegroundColor Gray
-Write-Host " ⚡ 並列投下数  : $Concurrency スレッド" -ForegroundColor Gray
+if ($SingleTask) {
+    $singleModeLabel = if ($Unreg) { "SingleTask + Unreg（両DB未登録トラックのみ）" } else { "SingleTask（CUEトラック直列・完了待機）" }
+    Write-Host " 🧵 実行モード  : $singleModeLabel" -ForegroundColor Gray
+} else {
+    Write-Host " ⚡ 並列投下数  : $Concurrency スレッド" -ForegroundColor Gray
+}
 Write-Host "=========================================" -ForegroundColor DarkGray
 
 # Orchestratorの起動チェックと自動起動 (Phase 1: Init Gray/Yellow Warning)
-$orchestratorProcess = Get-Process -Name "orchestrator" -ErrorAction SilentlyContinue
-if (-not $orchestratorProcess) {
-    Write-Host "⚠️ Orchestrator が起動していらっしゃらないため、自動起動いたしますわ！" -ForegroundColor DarkYellow
-    $orchestratorExe = Join-Path $PSScriptRoot "orchestrator.exe"
-    if (-not (Test-Path -LiteralPath $orchestratorExe)) {
-        $orchestratorExe = Join-Path $PSScriptRoot "orchestrator\orchestrator.exe"
-    }
+$orchestratorProcess = Get-Process -Name "orchestrator", "single-orchestrator" -ErrorAction SilentlyContinue
+$orchestratorExe = Join-Path $PSScriptRoot "orchestrator.exe"
+if (-not (Test-Path -LiteralPath $orchestratorExe)) {
+    $orchestratorExe = Join-Path $PSScriptRoot "orchestrator\orchestrator.exe"
+}
 
+if ($SingleTask) {
+	$orchestratorExe = Join-Path $PSScriptRoot "single-orchestrator.exe"
+    if ($orchestratorProcess) {
+        Write-Host "❌ SingleTask は常駐 orchestrator 停止後に実行してください（PID: $($orchestratorProcess.Id -join ', ')）。" -ForegroundColor Red
+        exit 1
+    }
+    if (-not (Test-Path -LiteralPath $orchestratorExe)) {
+        Write-Host "❌ single-orchestrator.exe が見つかりません。init.bat で更新版をビルドしてください。" -ForegroundColor Red
+        exit 1
+    }
+} elseif (-not $orchestratorProcess) {
+    Write-Host "⚠️ Orchestrator が起動していらっしゃらないため、自動起動いたしますわ！" -ForegroundColor DarkYellow
     if (Test-Path -LiteralPath $orchestratorExe) {
         Start-Process -FilePath $orchestratorExe -WorkingDirectory $PSScriptRoot
         Start-Sleep -Seconds 2 # 起動を少し待ちますわ
@@ -166,7 +199,37 @@ $effectiveConcurrency = if ($isSingleFile -or $Concurrency -le 1) { 1 } else { $
 $forceBool = $Force.IsPresent
 $dryRunBool = $DryRun.IsPresent
 
-# Phase 3: 並列キュー投下 (ForEach-Object -Parallel)
+# Phase 3: 単発同期実行、または並列キュー投下
+$singleFailures = 0
+if ($SingleTask) {
+    foreach ($flacPath in $flacPaths) {
+        if ([string]::IsNullOrWhiteSpace($flacPath)) { continue }
+        $idx = [BatchCounter]::Next()
+        $running = Get-Process -Name "orchestrator", "single-orchestrator" -ErrorAction SilentlyContinue
+        if ($running) {
+            Write-Host "[$idx] ❌ 常駐 orchestrator を検出したため中断します（PID: $($running.Id -join ', ')）。" -ForegroundColor Red
+            $singleFailures++
+            break
+        }
+        $singleArgs = @("-single-file", $flacPath)
+        if ($forceBool) { $singleArgs += "-force" }
+        if ($Unreg) { $singleArgs += "-unreg" }
+        if ($dryRunBool -and $Unreg) { $singleArgs += "-check-only" }
+        if ($dryRunBool -and -not $Unreg) {
+            Write-Host "[$idx] [DryRun] $orchestratorExe $($singleArgs -join ' ')" -ForegroundColor Gray
+            continue
+        }
+        & $orchestratorExe @singleArgs
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[$idx] ❌ 単発解析失敗 (Exit $LASTEXITCODE): $flacPath" -ForegroundColor Red
+            $singleFailures++
+        } elseif ($dryRunBool -and $Unreg) {
+            Write-Host "[$idx] ✅ 未登録照合完了（解析・DB更新なし）: $flacPath" -ForegroundColor Green
+        } else {
+            Write-Host "[$idx] ✅ 単発解析完了: $flacPath" -ForegroundColor Green
+        }
+    }
+} else {
 $flacPaths | ForEach-Object -ThrottleLimit $effectiveConcurrency -Parallel {
     $flacPath = $_
     if ([string]::IsNullOrWhiteSpace($flacPath)) { return }
@@ -202,11 +265,17 @@ $flacPaths | ForEach-Object -ThrottleLimit $effectiveConcurrency -Parallel {
         Write-Host "[$idx] ❌ 実行エラーが発生いたしましたわ: $flacPath ($_)" -ForegroundColor Red
     }
 }
+}
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Magenta
-Write-Host " 🎉 バッチ処理(タスク投下)が無事に終了いたしましたわ！" -ForegroundColor DarkMagenta
-Write-Host " 📊 合計投下数  : $([BatchCounter]::GetTotal()) 件" -ForegroundColor White
+if ($SingleTask) {
+    Write-Host " 🎉 SingleTask バッチが終了しました（失敗: $singleFailures 件）" -ForegroundColor DarkMagenta
+    Write-Host " 📊 合計処理数  : $([BatchCounter]::GetTotal()) 件" -ForegroundColor White
+} else {
+    Write-Host " 🎉 バッチ処理(タスク投下)が無事に終了いたしましたわ！" -ForegroundColor DarkMagenta
+    Write-Host " 📊 合計投下数  : $([BatchCounter]::GetTotal()) 件" -ForegroundColor White
+}
 $stopWatch.Stop()
 Write-Host " ⏱️ 投下所要時間: $($stopWatch.Elapsed.ToString())" -ForegroundColor White
 Write-Host "=========================================" -ForegroundColor Magenta
@@ -219,4 +288,8 @@ if ($Test) {
     if (Test-Path $dummyPythonScript) {
         Remove-Item -Path $dummyPythonScript -Force | Out-Null
     }
+}
+
+if ($SingleTask -and $singleFailures -gt 0) {
+    exit 1
 }

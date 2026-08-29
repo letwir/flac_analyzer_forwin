@@ -21,8 +21,21 @@ import (
 // Gatekeeper -> HashCheck -> Demucs (SHM/Disk) -> Feature Extract (Daemon) -> Tagging -> Ingest Queue
 // SideEffectFn: executeTaskPipeline (IO Monad)
 func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
+	d.executeTaskPipelineWithMode(id, task, false)
+}
+
+func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synchronousIngest bool) {
 	taskStartTime := time.Now()
 	taskSuccess := false
+	var arenaSet *WorkerArenaSet
+	defer func() {
+		// SHM arenas are owned by a worker for reuse, but retaining a long-track
+		// arena after the task pins its pages and makes the RAM guard observe
+		// low system availability even when no task is in flight.
+		if arenaSet != nil {
+			arenaSet.Close()
+		}
+	}()
 	defer func() {
 		if d.statsTracker != nil {
 			d.statsTracker.RecordTaskCompletion(task.FlacPath, time.Since(taskStartTime), taskSuccess)
@@ -107,7 +120,11 @@ func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
 	}
 
 	// 2. Demucs Separation Stage (SHM/Disk)
-	computedHash, demucsSR, demucsStems, arenaSet, demucsErr := d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
+	var demucsStems map[string]StemInfo
+	var demucsSR int
+	var computedHash string
+	var demucsErr error
+	computedHash, demucsSR, demucsStems, arenaSet, demucsErr = d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
 	if demucsErr != nil {
 		d.failTask(task, demucsErr.Error())
 		return
@@ -121,6 +138,12 @@ func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
 	if featErr != nil {
 		d.failTask(task, featErr.Error())
 		return
+	}
+	// Feature extraction has closed its read handles, so release the producer
+	// mappings before tagging and ingestion continue.
+	if arenaSet != nil {
+		arenaSet.Close()
+		arenaSet = nil
 	}
 
 	// 4. Tagging & Queue Output Stage
@@ -138,7 +161,11 @@ func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
 		TensorJSON:   json.RawMessage(feats.TensorOut),
 	}
 
-	d.ingestQueue <- ingestPayload
+	if synchronousIngest {
+		d.processIngestPayloadComplex(ingestPayload)
+	} else {
+		d.ingestQueue <- ingestPayload
+	}
 	taskSuccess = true
 	d.LogInfo("[W-%d] Compute & tagging completed, dispatched to IngestWorker: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
 }
@@ -161,7 +188,7 @@ func (d *Dispatcher) checkDuplicateHash(id int, task TaskPayload) (bool, string,
 		if endSampleParam == 0 {
 			endSampleParam = -1
 		}
-		ctxHash, cancelHash := context.WithTimeout(context.Background(), 120*time.Second)
+		ctxHash, cancelHash := context.WithTimeout(d.currentExecutionContext(), 120*time.Second)
 		defer cancelHash()
 
 		demucsClient, dErr := d.demucsPool.Acquire(ctxHash)

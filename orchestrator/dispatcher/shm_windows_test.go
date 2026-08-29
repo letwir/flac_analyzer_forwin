@@ -329,6 +329,16 @@ func TestComputeAdaptiveTimeoutPure(t *testing.T) {
 	}
 	_ = expectedShort
 
+	highRateTask := TaskPayload{
+		StartSample: 0,
+		EndSample:   96000 * 60,
+		SampleRate:  96000,
+	}
+	highRateDur := ComputeAdaptiveTimeoutPure(highRateTask, 300, 1.5, 7200)
+	if highRateDur.Seconds() != 390 {
+		t.Errorf("Expected 390s for a 1-minute 96kHz track, got %v", highRateDur)
+	}
+
 	// Case 2: Standard 5-minute track (44100 * 300 samples)
 	stdTask := TaskPayload{
 		StartSample: 0,
@@ -376,4 +386,3 @@ func TestComputeAdaptiveTimeoutPure(t *testing.T) {
 		t.Errorf("Expected 1200s for single FLAC file fallback, got %v", fileDur)
 	}
 }
-

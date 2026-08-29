@@ -23,6 +23,7 @@ type CueInspectTrack struct {
 type CueInspectResult struct {
 	Status      string            `json:"status"`
 	Filepath    string            `json:"filepath"`
+	SampleRate  int               `json:"sample_rate"`
 	Album       FlexibleString    `json:"album"`
 	AlbumArtist FlexibleString    `json:"album_artist"`
 	Tracks      []CueInspectTrack `json:"tracks"`

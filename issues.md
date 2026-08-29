@@ -9,6 +9,16 @@
 - [x]DONE 【Verify】 実機 CUDA / GPU 実行環境における ONNX 推論および PyTorch の動作確認とパフォーマンス検証
 - [x]DONE 【Docs】 requirements.txt に記載された依存バージョンの整合性解消（PyTorchのONNX統一のドキュメント不一致修正）
 
+- [-]WIP 【Investigate/Orchestrator】 タスク停滞の律速箇所を特定（2026-08-22）
+  - 観測: pprof/metrics/HTTP は応答するが、`PENDING=5499`、`RUNNING=1` が長時間不変。CPU/GPU は低負荷、メモリ使用率は約83〜86%、ディスクI/Oは継続。
+  - 観測: 設定上のワーカー数は1、Demucs同時実行数は1。タスク/ファイル処理時間、GPU待ち、Demucs/Tensor待ちメトリクスは実質記録なし。
+  - pprof確認: `FetchGpuMetricsComplex`（PowerShell/CIM経由のGPU監視）が10秒CPU profileの約100%を占有し、`runtime.cgocall`・プロセスI/O・`WaitForSingleObject` が支配的。GPU監視デーモンの観測負荷は確認済み。
+  - 追加ログ観測: `DemucsDaemon-1` が 14:00:38 に HTDemucs ONNX 推論を開始し、14:12:39 に分離完了。`ONNX_LOCK` 同期区間を含む約12分の長時間処理で、単一のDemucsスロット（`DemucsConcurrentLimit=1`）を占有していた可能性が高い。
+  - 追加ログ観測: DLQ retry は 14:09:45 以降10分周期で毎回正常起動し、「DLQは空」と終了。DLQ scheduler / retry_ingest は律速ではない。
+  - 追加ログ観測: 15:33:47 に Track 9 が `daemon ExtractAll context cancelled: context deadline exceeded` でFAILED。15:33:48 には `GPU Utilization too high (100.0% >= 85.0%)` によりGatekeeperが60秒 dispatch delayへ移行。
+  - 判断更新: 完全ハングではなく、長時間のHTDemucs/ExtractAll処理が5分系コンテキスト期限を超過し、その直後にGPU飽和防御が次タスクを抑制する流れを確認。主律速は `worker daemon extraction` とGPU飽和（`ONNX_LOCK`/Demucs単一スロット）で、GPU監視PowerShell/CIM負荷は副次的な観測オーバーヘッド。
+  - 次の確認: `ExtractAll` の実処理時間・入力トラック長・GPU飽和時間を突合し、`FeatureExtractTimeoutSec=300` とGPU Gatekeeper 60秒遅延の妥当性を評価する。
+
 ## 状態遷移・README修正 (4会話ロードマップ)
 - [x]DONE #1 【Feature】 DLQ退避時(exit code 2): 10分後 retry_ingest.py 自動実行、再失敗時はDLQ保持のまま FAILED 設定するロジック実装
 - [x]DONE #2 【Docs】 README.md: functor_precache.py の実態（npy保存廃止、SHMアタッチ検証のみ）を反映

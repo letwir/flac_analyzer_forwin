@@ -15,7 +15,6 @@ import (
 	"flac_analyzer/orchestrator/config"
 	"flac_analyzer/orchestrator/dispatcher"
 	"flac_analyzer/orchestrator/logger"
-	"flac_analyzer/orchestrator/state"
 )
 
 var reloadMutex sync.Mutex
@@ -105,7 +104,6 @@ func startConfigFileWatcher(
 // SideEffectFn: setupTaskServer
 func setupTaskServer(
 	disp *dispatcher.Dispatcher,
-	stateDB *state.DB,
 	configPath string,
 	totalRamGB float64,
 	numCPU int,
@@ -140,8 +138,9 @@ func setupTaskServer(
 			}
 			log.Printf("Fallback to single track processing for %s: %s", payload.FlacPath, warnMsg)
 			cueRes = &dispatcher.CueInspectResult{
-				Status:   "fallback",
-				Filepath: payload.FlacPath,
+				Status:     "fallback",
+				Filepath:   payload.FlacPath,
+				SampleRate: payload.SampleRate,
 				Tracks: []dispatcher.CueInspectTrack{
 					{
 						TrackNumber: 1,
@@ -164,12 +163,13 @@ func setupTaskServer(
 			taskItem.TrackNumber = tr.TrackNumber
 			taskItem.StartSample = tr.StartSample
 			taskItem.EndSample = tr.EndSample
+			taskItem.SampleRate = cueRes.SampleRate
 			taskItem.Title = tr.Title.String()
 			taskItem.Artist = tr.Artist.String()
 			taskItem.Album = cueRes.Album.String()
 			taskItem.AlbumArtist = cueRes.AlbumArtist.String()
 
-			shouldRun, dbErr := stateDB.CheckOrInsertWithForce(taskItem.FlacPath, taskItem.TrackNumber, taskItem.Force)
+			shouldRun, dbErr := disp.EnqueueDurable(taskItem)
 			if dbErr != nil {
 				log.Printf("DB error for %s track %d: %v", taskItem.FlacPath, taskItem.TrackNumber, dbErr)
 				continue
@@ -180,7 +180,6 @@ func setupTaskServer(
 				continue
 			}
 
-			_ = disp.Enqueue(taskItem)
 			enqueuedCount++
 		}
 

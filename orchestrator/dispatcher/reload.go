@@ -69,6 +69,9 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	if oldCfg.GatekeeperRetryDelaySec != newCfg.GatekeeperRetryDelaySec {
 		diff["gatekeeper_retry_delay_sec"] = fmt.Sprintf("%d -> %d", oldCfg.GatekeeperRetryDelaySec, newCfg.GatekeeperRetryDelaySec)
 	}
+	if oldCfg.GatekeeperMaxRetries != newCfg.GatekeeperMaxRetries {
+		diff["gatekeeper_max_retries"] = fmt.Sprintf("%d -> %d", oldCfg.GatekeeperMaxRetries, newCfg.GatekeeperMaxRetries)
+	}
 	if oldCfg.ConfigWatchIntervalSec != newCfg.ConfigWatchIntervalSec {
 		diff["config_watch_interval_sec"] = fmt.Sprintf("%d -> %d", oldCfg.ConfigWatchIntervalSec, newCfg.ConfigWatchIntervalSec)
 	}

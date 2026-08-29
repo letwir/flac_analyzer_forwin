@@ -85,7 +85,13 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 		effectiveAvailBytes = 0
 	}
 
+	// Disk Mode intentionally separates the task's working-set reservation
+	// from the SHM safety floor: audio stems are spooled to disk, so requiring
+	// the full SHM reserve here would defeat the fallback and starve the queue.
 	requiredBytes := in.EstimatedTaskRam + in.MinAvailRam
+	if in.StorageMode == StorageModeDisk {
+		requiredBytes = in.EstimatedTaskRam
+	}
 	if effectiveAvailBytes < requiredBytes {
 		return GatekeeperDecision{
 			IsGo:                false,

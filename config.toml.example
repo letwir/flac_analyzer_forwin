@@ -41,6 +41,7 @@ max_working_set_mb = 16384        # 起動時初期最大ワーキングセッ�
 
 # Gatekeeper (メモリ事前判定) の NOGO 時リトライ待機秒数 (デフォルト: 20秒)
 gatekeeper_retry_delay_sec = 20
+gatekeeper_max_retries = 5       # NOGOが連続したタスクをFAILED_MAYBE_RETRYへ退避する回数
 
 # 物理 RAM 安全圏超過時の SSD/TMP ディスク退避モード (Disk Mode Fallback)
 enable_disk_mode_fallback = true      # 推定 RAM が安全閾値超過時に SSD 一時ファイル経由へ自動退避 (デフォルト: true)

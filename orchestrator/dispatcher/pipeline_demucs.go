@@ -8,6 +8,20 @@ import (
 	"time"
 )
 
+func waitForExecutionDelay(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // executeDemucsStage allocates SHM arenas (if SHM mode) and executes Demucs source separation via DemucsDaemonPool.
 // SideEffectFn: executeDemucsStage (IO Monad)
 func (d *Dispatcher) executeDemucsStage(
@@ -24,7 +38,7 @@ func (d *Dispatcher) executeDemucsStage(
 		currentCfg.AdaptiveTimeoutRatio,
 		currentCfg.MaxAdaptiveTimeoutSec,
 	)
-	ctxDemucs, cancelDemucs := context.WithTimeout(context.Background(), timeoutDur)
+	ctxDemucs, cancelDemucs := context.WithTimeout(d.currentExecutionContext(), timeoutDur)
 	defer cancelDemucs()
 
 	d.LogInfo("[W-%d] [IO Monad] Waiting for Adaptive Demucs execution slot (limit: %d)...", id, d.demucsScheduler.GetLimit())
@@ -34,12 +48,21 @@ func (d *Dispatcher) executeDemucsStage(
 	defer d.demucsScheduler.Release()
 
 	if delaySec := currentCfg.ShmAllocationDelaySec; delaySec > 0 {
-		time.Sleep(time.Duration(delaySec) * time.Second)
+		if err := waitForExecutionDelay(ctxDemucs, time.Duration(delaySec)*time.Second); err != nil {
+			return "", 0, nil, nil, fmt.Errorf("SHM allocation delay cancelled: %w", err)
+		}
 	}
 
 	var arenaSet *WorkerArenaSet
 	var tagsMap map[string]string
 	var allocError error
+	closeArenaOnError := func() {
+		if arenaSet != nil {
+			_ = arenaSet.UnfreezeAll()
+			arenaSet.Close()
+			arenaSet = nil
+		}
+	}
 
 	if storageMode == StorageModeSHM {
 		ratio := currentCfg.ShmExpansionRatio
@@ -66,7 +89,10 @@ func (d *Dispatcher) executeDemucsStage(
 			d.LogInfo("[W-%d] Waiting for memory for all stems (%d MB total)... (Avail: %d MB)", id, totalStemsNeeded/1024/1024, availPhysMem/1024/1024)
 
 			d.allocMutex.Unlock()
-			time.Sleep(3 * time.Second)
+			if err := waitForExecutionDelay(ctxDemucs, 3*time.Second); err != nil {
+				closeArenaOnError()
+				return "", 0, nil, nil, fmt.Errorf("memory wait cancelled: %w", err)
+			}
 			d.allocMutex.Lock()
 		}
 
@@ -94,7 +120,10 @@ func (d *Dispatcher) executeDemucsStage(
 			if attempt < retryCount {
 				d.LogWarn("[W-%d] SHM arena allocation limit hit (attempt %d/%d): %v. Throttling queue & sleeping %d seconds...", id, attempt, retryCount, allocError, retryDelaySec)
 				d.allocMutex.Unlock()
-				time.Sleep(time.Duration(retryDelaySec) * time.Second)
+				if err := waitForExecutionDelay(ctxDemucs, time.Duration(retryDelaySec)*time.Second); err != nil {
+					closeArenaOnError()
+					return "", 0, nil, nil, fmt.Errorf("SHM retry delay cancelled: %w", err)
+				}
 				d.allocMutex.Lock()
 			}
 		}
@@ -106,7 +135,7 @@ func (d *Dispatcher) executeDemucsStage(
 		}
 
 		if allocError != nil {
-			_ = arenaSet.UnfreezeAll()
+			closeArenaOnError()
 			return "", 0, nil, nil, allocError
 		}
 
@@ -121,9 +150,7 @@ func (d *Dispatcher) executeDemucsStage(
 
 	demucsClient, dErr := d.demucsPool.Acquire(ctxDemucs)
 	if dErr != nil {
-		if arenaSet != nil {
-			_ = arenaSet.UnfreezeAll()
-		}
+		closeArenaOnError()
 		return "", 0, nil, nil, fmt.Errorf("failed to acquire Demucs daemon for separation: %w", dErr)
 	}
 
@@ -143,9 +170,7 @@ func (d *Dispatcher) executeDemucsStage(
 	}
 
 	if sepErr != nil {
-		if arenaSet != nil {
-			_ = arenaSet.UnfreezeAll()
-		}
+		closeArenaOnError()
 		return "", 0, nil, nil, fmt.Errorf("Demucs daemon separation failed: %w", sepErr)
 	}
 
@@ -165,7 +190,7 @@ func (d *Dispatcher) executeDemucsStage(
 			d.LogWarn("[Worker %d] Failed to freeze SHM arenas: %v", id, err)
 		}
 		if err := arenaSet.VerifyIntegrity(stems); err != nil {
-			_ = arenaSet.UnfreezeAll()
+			closeArenaOnError()
 			return "", 0, nil, nil, fmt.Errorf("SHM integrity verification failed: %w", err)
 		}
 	}

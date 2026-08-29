@@ -64,6 +64,7 @@ def main():
         output = {
             "status": "success",
             "filepath": filepath,
+            "sample_rate": handle.sample_rate,
             "album": album,
             "album_artist": album_artist,
             "tracks": tracks

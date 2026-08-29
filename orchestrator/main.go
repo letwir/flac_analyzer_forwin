@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -23,11 +24,39 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() (exitCode int) {
 	var configPath string
 	var logLevelStr string
+	var singleFile string
+	var forceSingle bool
+	var unregSingle bool
+	var checkOnly bool
 	flag.StringVar(&configPath, "config", "", "Path to config.toml")
 	flag.StringVar(&logLevelStr, "log-level", "", "Log level (debug, info, warn, error)")
+	flag.StringVar(&singleFile, "single-file", "", "Analyze one FLAC/CUE file sequentially and exit")
+	flag.BoolVar(&forceSingle, "force", false, "Re-analyze completed tracks in single-file mode")
+	flag.BoolVar(&unregSingle, "unreg", false, "Run only tracks absent from completed SQLite/PostgreSQL registration")
+	flag.BoolVar(&checkOnly, "check-only", false, "Perform -unreg preflight without claims or analysis")
 	flag.Parse()
+	if err := validateSingleModeOptions(singleFile, forceSingle, unregSingle, checkOnly); err != nil {
+		log.Printf("Invalid command options: %v", err)
+		return 2
+	}
+
+	releaseLock, err := acquireLifecycleLock()
+	if err != nil {
+		log.Printf("Cannot start orchestrator: %v", err)
+		return 1
+	}
+	defer func() {
+		if err := releaseLock(); err != nil {
+			log.Printf("Lifecycle lock cleanup failed: %v", err)
+			exitCode = 1
+		}
+	}()
 
 	if configPath == "" {
 		candidates := []string{"config.toml", "../config.toml", "orchestrator/config.toml"}
@@ -74,6 +103,10 @@ func main() {
 		)
 	}
 
+	if checkOnly {
+		return runUnregCheckOnly(singleFile, *dispConfig)
+	}
+
 	// Auto-detect host hardware specs and update HARDWARE_SPECS.md
 	specsPath := "HARDWARE_SPECS.md"
 	if _, err := os.Stat(specsPath); os.IsNotExist(err) {
@@ -81,10 +114,12 @@ func main() {
 			specsPath = "../HARDWARE_SPECS.md"
 		}
 	}
-	if err := sysinfo.UpdateHardwareSpecsFile(specsPath); err != nil {
-		log.Printf("Warning: Failed to auto-detect hardware specs for HARDWARE_SPECS.md: %v", err)
-	} else {
-		log.Printf("Successfully auto-detected hardware specs and updated %s", specsPath)
+	if singleFile == "" {
+		if err := sysinfo.UpdateHardwareSpecsFile(specsPath); err != nil {
+			log.Printf("Warning: Failed to auto-detect hardware specs for HARDWARE_SPECS.md: %v", err)
+		} else {
+			log.Printf("Successfully auto-detected hardware specs and updated %s", specsPath)
+		}
 	}
 
 	// Enable Virtual Lock setting
@@ -118,16 +153,7 @@ func main() {
 	}
 
 	// 3. Initialize State DB
-	dbPath := "orchestrator/orchestrator.db"
-	if _, err := os.Stat("orchestrator/orchestrator.db"); os.IsNotExist(err) {
-		if _, err := os.Stat("orchestrator.db"); err == nil {
-			dbPath = "orchestrator.db"
-		} else if _, err := os.Stat("orchestrator"); err == nil {
-			dbPath = "orchestrator/orchestrator.db"
-		} else {
-			dbPath = "orchestrator.db"
-		}
-	}
+	dbPath := stateDBPath()
 
 	stateDB, err := state.InitDB(dbPath)
 	if err != nil {
@@ -141,17 +167,81 @@ func main() {
 			err,
 		)
 	}
-	defer stateDB.Close()
+	defer func() {
+		if err := stateDB.Close(); err != nil {
+			log.Printf("State DB close failed: %v", err)
+			exitCode = 1
+		}
+	}()
 
 	// 3.1 Reset stale tasks from previous interrupted runs
-	if resetCount, err := stateDB.ResetStaleTasks(); err != nil {
-		log.Printf("Warning: Failed to reset stale tasks: %v", err)
-	} else if resetCount > 0 {
-		log.Printf("Reset %d interrupted/stale tasks to FAILED state for clean retry", resetCount)
+	if singleFile == "" {
+		if resetCount, err := stateDB.ResetStaleTasks(); err != nil {
+			log.Printf("Warning: Failed to reset stale tasks: %v", err)
+		} else if resetCount > 0 {
+			log.Printf("Recovered %d interrupted/stale tasks for durable retry", resetCount)
+		}
+
+		// 3.2 Purge orphaned cache directories and stale queue JSON files
+		dispatcher.PurgeOrphanedQueueAndCacheFiles(dispConfig.QueueDir, 1*time.Hour)
 	}
 
-	// 3.2 Purge orphaned cache directories and stale queue JSON files
-	dispatcher.PurgeOrphanedQueueAndCacheFiles(dispConfig.QueueDir, 1*time.Hour)
+	if singleFile != "" {
+		dispConfig.NumWorkers = 1
+		dispConfig.DemucsConcurrentLimit = 1
+		disp := dispatcher.NewDispatcher(*dispConfig, stateDB)
+		payload, err := dispatcher.NewSingleFilePayload(singleFile, forceSingle)
+		if err != nil {
+			log.Printf("Single-file input error: %v", err)
+			disp.Stop()
+			return 1
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		releaseExecutionContext := disp.BindSingleExecutionContext(ctx)
+		defer releaseExecutionContext()
+		failed := false
+		tasks, err := disp.ExpandSingleFile(payload)
+		if err != nil {
+			log.Printf("Single-file CUE inspection failed: %v", err)
+			disp.Stop()
+			return 1
+		}
+		if unregSingle {
+			preflight, err := disp.FilterUnregisteredSingleTasks(ctx, tasks)
+			if err != nil {
+				log.Printf("Unregistered preflight failed: %v", err)
+				disp.Stop()
+				return 1
+			}
+			log.Printf(
+				"Unregistered preflight complete: eligible=%d sqlite_skipped=%d postgres_skipped=%d",
+				len(preflight.Eligible),
+				preflight.SQLiteSkipped,
+				preflight.PostgreSQLSkipped,
+			)
+			tasks = preflight.Eligible
+		}
+		for _, task := range tasks {
+			if err := ctx.Err(); err != nil {
+				failed = true
+				log.Printf("Single-file batch cancelled before track %d: %v", task.TrackNumber, err)
+				break
+			}
+			executed, runErr := disp.RunSingleTask(ctx, task)
+			if runErr != nil {
+				failed = true
+				log.Printf("Single task failed: %s track %d: %v", task.FlacPath, task.TrackNumber, runErr)
+			} else if !executed {
+				log.Printf("Single task skipped (already completed): %s track %d", task.FlacPath, task.TrackNumber)
+			}
+		}
+		disp.Stop()
+		if failed {
+			return 1
+		}
+		return 0
+	}
 
 	// 4. Initialize Metrics Server
 	go func() {
@@ -184,7 +274,7 @@ func main() {
 	startConfigFileWatcher(watcherCtx, configPath, disp, totalRamGB, numCPU, logLevelStr, elog, dispConfig.ConfigWatchIntervalSec)
 
 	// 6. Setup Task Receiver and Admin HTTP Server
-	srv := setupTaskServer(disp, stateDB, configPath, totalRamGB, numCPU, logLevelStr, elog)
+	srv := setupTaskServer(disp, configPath, totalRamGB, numCPU, logLevelStr, elog)
 
 	go func() {
 		log.Println("Listening for tasks on :8080/task (Admin: /reload, /config)")
@@ -216,4 +306,68 @@ func main() {
 
 	disp.Stop()
 	log.Println("Shutdown complete.")
+	return 0
+}
+
+func validateSingleModeOptions(singleFile string, force, unreg, checkOnly bool) error {
+	if unreg && singleFile == "" {
+		return errors.New("-unreg requires -single-file")
+	}
+	if unreg && force {
+		return errors.New("-unreg and -force cannot be combined")
+	}
+	if checkOnly && !unreg {
+		return errors.New("-check-only requires -unreg")
+	}
+	return nil
+}
+
+func stateDBPath() string {
+	if _, err := os.Stat("orchestrator/orchestrator.db"); err == nil {
+		return "orchestrator/orchestrator.db"
+	}
+	if _, err := os.Stat("orchestrator.db"); err == nil {
+		return "orchestrator.db"
+	}
+	if _, err := os.Stat("orchestrator"); err == nil {
+		return "orchestrator/orchestrator.db"
+	}
+	return "orchestrator.db"
+}
+
+func runUnregCheckOnly(singleFile string, cfg dispatcher.Config) (exitCode int) {
+	stateDB, err := state.OpenReadOnly(stateDBPath())
+	if err != nil {
+		log.Printf("Unregistered check-only could not open SQLite state read-only: %v", err)
+		return 1
+	}
+	defer func() {
+		if err := stateDB.Close(); err != nil {
+			log.Printf("Read-only SQLite close failed: %v", err)
+			exitCode = 1
+		}
+	}()
+
+	payload, err := dispatcher.NewSingleFilePayload(singleFile, false)
+	if err != nil {
+		log.Printf("Single-file input error: %v", err)
+		return 1
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	preflight, err := dispatcher.CheckUnregisteredSingleFile(ctx, cfg, stateDB, payload)
+	if err != nil {
+		log.Printf("Unregistered check-only failed: %v", err)
+		return 1
+	}
+	log.Printf(
+		"Unregistered check-only complete: eligible=%d sqlite_skipped=%d postgres_skipped=%d",
+		len(preflight.Eligible),
+		preflight.SQLiteSkipped,
+		preflight.PostgreSQLSkipped,
+	)
+	for _, task := range preflight.Eligible {
+		log.Printf("Eligible unregistered track: %s track %d", task.FlacPath, task.TrackNumber)
+	}
+	return 0
 }

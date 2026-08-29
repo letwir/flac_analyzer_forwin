@@ -35,7 +35,7 @@ func (d *Dispatcher) executeFeaturesStage(
 		currentCfg.MaxAdaptiveTimeoutSec,
 	)
 
-	ctxAcquire, cancelAcquire := context.WithTimeout(context.Background(), 120*time.Second)
+	ctxAcquire, cancelAcquire := context.WithTimeout(d.currentExecutionContext(), 120*time.Second)
 	daemonClient, daemonErr := d.daemonPool.Acquire(ctxAcquire)
 	cancelAcquire()
 
@@ -51,7 +51,7 @@ func (d *Dispatcher) executeFeaturesStage(
 		TrackHash: trackHash,
 		Stems:     demucsStems,
 	}
-	ctxExtract, cancelExtract := context.WithTimeout(context.Background(), timeoutDur)
+	ctxExtract, cancelExtract := context.WithTimeout(d.currentExecutionContext(), timeoutDur)
 	defer cancelExtract()
 
 	daemonResp, daemonExtractErr := daemonClient.ExtractAll(ctxExtract, extractPayload)

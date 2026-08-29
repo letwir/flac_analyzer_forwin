@@ -86,7 +86,7 @@ func (d *Dispatcher) runPythonScript(
 		}
 	}
 	cmdArgs := append([]string{scriptPath}, args...)
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(d.currentExecutionContext(), 120*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, pythonPath, cmdArgs...)

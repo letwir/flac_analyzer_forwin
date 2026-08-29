@@ -1,13 +1,17 @@
 package dispatcher
 
-import "time"
+import (
+	"time"
+
+	"flac_analyzer/orchestrator/planner"
+)
 
 // StorageMode represents the waveform IPC transfer mechanism (Zero-copy SHM or Disk Spooling).
-type StorageMode string
+type StorageMode = planner.StorageMode
 
 const (
-	StorageModeSHM  StorageMode = "shm"
-	StorageModeDisk StorageMode = "disk"
+	StorageModeSHM  = planner.StorageModeSHM
+	StorageModeDisk = planner.StorageModeDisk
 )
 
 // EstimateShmSize calculates the required shared memory size for a single stem
@@ -52,44 +56,15 @@ func EstimateShmSizeForTaskWithRatio(task TaskPayload, ratio float64) uint64 {
 
 // EstimateDemucsDiskBytes calculates the total SSD disk space required for all 7 stems in Disk Mode.
 func EstimateDemucsDiskBytes(task TaskPayload) uint64 {
-	stemsCount := uint64(7) // mix, bass, drums, vocals, other, guitar, piano
-	var basePcmBytes uint64
-
-	if task.StartSample >= 0 && task.EndSample > task.StartSample {
-		numSamples := uint64(task.EndSample - task.StartSample)
-		basePcmBytes = numSamples * 2 * 4
-	} else {
-		basePcmBytes = EstimateShmSize(task.FileSize)
-	}
-
-	return basePcmBytes * stemsCount
+	estimate := planner.EstimateTaskResources(toPlannerTask(task), planner.DefaultResourceProfile())
+	return estimate.DiskBytes
 }
 
 // EstimateDemucsTotalRamBytes estimates the total memory (stems + PyTorch buffer + processing margin)
 // required for Demucs and feature extraction based on CUE track samples or FLAC file size.
 func EstimateDemucsTotalRamBytes(task TaskPayload) uint64 {
-	stemsCount := uint64(7) // mix, bass, drums, vocals, other, guitar, piano
-	var basePcmBytes uint64
-
-	if task.StartSample >= 0 && task.EndSample > task.StartSample {
-		// CUE track calculation: samples * 2 (channels) * 4 (float32 bytes)
-		numSamples := uint64(task.EndSample - task.StartSample)
-		basePcmBytes = numSamples * 2 * 4
-	} else {
-		// Standalone FLAC fallback: estimated single stem size * stemsCount
-		singleStemShm := EstimateShmSize(task.FileSize)
-		basePcmBytes = singleStemShm
-	}
-
-	// Total PCM buffer for all stems
-	totalStemsRam := basePcmBytes * stemsCount
-
-	// Safety margin factor (1.8x for PyTorch intermediate tensors & Librosa buffers)
-	// Plus 1.0 GB fixed footprint for PyTorch model weights & runtime
-	fixedFootprintBytes := uint64(1024 * 1024 * 1024)
-	estimatedTotal := uint64(float64(totalStemsRam)*1.8) + fixedFootprintBytes
-
-	return estimatedTotal
+	estimate := planner.EstimateTaskResources(toPlannerTask(task), planner.DefaultResourceProfile())
+	return estimate.ShmRamBytes
 }
 
 // DetermineStorageModePure evaluates whether a task can be processed in Zero-copy SHM
@@ -102,35 +77,12 @@ func DetermineStorageModePure(
 	diskModeThresholdRatio float64,
 	enableDiskFallback bool,
 ) (mode StorageMode, effectiveTaskRam uint64, estimatedDisk uint64) {
-	estimatedRam := EstimateDemucsTotalRamBytes(task)
-	estimatedDiskBytes := EstimateDemucsDiskBytes(task)
+	estimate := planner.EstimateTaskResources(toPlannerTask(task), planner.DefaultResourceProfile())
+	return planner.SelectStorageMode(estimate, availPhys, inFlightRam, minAvailRam, diskModeThresholdRatio, enableDiskFallback)
+}
 
-	if !enableDiskFallback {
-		return StorageModeSHM, estimatedRam, 0
-	}
-
-	if diskModeThresholdRatio <= 0 || diskModeThresholdRatio > 1.0 {
-		diskModeThresholdRatio = 0.8
-	}
-
-	var effectiveAvail uint64
-	if availPhys > inFlightRam {
-		effectiveAvail = availPhys - inFlightRam
-	} else {
-		effectiveAvail = 0
-	}
-
-	safeThreshold := uint64(float64(effectiveAvail) * diskModeThresholdRatio)
-	requiredWithMin := estimatedRam + minAvailRam
-
-	// If estimated RAM exceeds safe available threshold or raw effective memory, switch to Disk Mode.
-	if requiredWithMin > safeThreshold || effectiveAvail < requiredWithMin {
-		// Disk Mode footprint: 1.0 GB single-stem processing buffer + 1.0 GB PyTorch runtime = 2.0 GB clamped
-		clampedRam := uint64(2 * 1024 * 1024 * 1024)
-		return StorageModeDisk, clampedRam, estimatedDiskBytes
-	}
-
-	return StorageModeSHM, estimatedRam, 0
+func toPlannerTask(task TaskPayload) planner.TaskSpec {
+	return planner.TaskSpec{FileSize: task.FileSize, StartSample: task.StartSample, EndSample: task.EndSample}
 }
 
 // ComputeAdaptiveTimeoutPure calculates a dynamic, safe timeout duration scaled to track length.
@@ -156,9 +108,13 @@ func ComputeAdaptiveTimeoutPure(
 	}
 
 	var trackSec float64
+	sampleRate := task.SampleRate
+	if sampleRate <= 0 {
+		sampleRate = 44100
+	}
 	if task.EndSample > task.StartSample {
-		// Sample count is explicit (CUE track slice). 44.1kHz base reference.
-		trackSec = float64(task.EndSample-task.StartSample) / 44100.0
+		// CUE/FLAC metadata supplies exact sample bounds and sample rate when available.
+		trackSec = float64(task.EndSample-task.StartSample) / float64(sampleRate)
 	} else if task.FileSize > 0 {
 		// Single whole FLAC file. 16-bit 44.1kHz stereo PCM ≈ 176.4 KB/s.
 		// For high-res/compressed FLAC, provide conservative lower-bound of 600s.

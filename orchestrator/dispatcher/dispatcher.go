@@ -5,12 +5,14 @@ package dispatcher
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"flac_analyzer/orchestrator/logger"
@@ -24,9 +26,16 @@ import (
 type Dispatcher struct {
 	configMu               sync.RWMutex
 	config                 Config
+	executionCtxMu         sync.RWMutex
+	executionCtx           context.Context
 	db                     *state.DB
 	pgDB                   *sql.DB
 	taskQueue              chan TaskPayload
+	taskWakeCh             chan struct{}
+	taskFeederCtx          context.Context
+	cancelTaskFeeder       context.CancelFunc
+	taskFeederWg           sync.WaitGroup
+	activeTaskCount        int32
 	ingestQueue            chan IngestPayload
 	ingestWg               sync.WaitGroup
 	ingestCtx              context.Context
@@ -47,6 +56,15 @@ type Dispatcher struct {
 	demucsScheduler        *AdaptiveDemucsScheduler
 }
 
+func (d *Dispatcher) currentExecutionContext() context.Context {
+	d.executionCtxMu.RLock()
+	defer d.executionCtxMu.RUnlock()
+	if d.executionCtx != nil {
+		return d.executionCtx
+	}
+	return context.Background()
+}
+
 // NewDispatcher initializes all child worker pools, semaphores, and database connections.
 // SideEffectFn: NewDispatcher
 func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
@@ -58,7 +76,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 			conn.SetConnMaxLifetime(5 * time.Minute)
 			pgConn = conn
 		} else {
-			log.Printf("[WARN] [Dispatcher] Failed to open PostgreSQL connection (%v), will fallback", err)
+			log.Printf("[WARN] [Dispatcher] Failed to initialize PostgreSQL connection; database-backed features are unavailable")
 		}
 	}
 
@@ -103,12 +121,23 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 	cfg.DBTimeoutSec = dbTimeout
 
 	ingestCtx, cancelIngest := context.WithCancel(context.Background())
+	taskFeederCtx, cancelTaskFeeder := context.WithCancel(context.Background())
+	queueCapacity := cfg.NumWorkers * 2
+	if queueCapacity < 2 {
+		queueCapacity = 2
+	}
+	if queueCapacity > 64 {
+		queueCapacity = 64
+	}
 
 	return &Dispatcher{
 		config:                 cfg,
 		db:                     db,
 		pgDB:                   pgConn,
-		taskQueue:              make(chan TaskPayload, 1000),
+		taskQueue:              make(chan TaskPayload, queueCapacity),
+		taskWakeCh:             make(chan struct{}, 1),
+		taskFeederCtx:          taskFeederCtx,
+		cancelTaskFeeder:       cancelTaskFeeder,
 		ingestQueue:            make(chan IngestPayload, 1000),
 		ingestCtx:              ingestCtx,
 		cancelIngest:           cancelIngest,
@@ -193,20 +222,40 @@ func (d *Dispatcher) Start() {
 	d.ingestWg.Add(1)
 	go d.ingestWorker()
 
+	// SQLiteを受付Queueとして使い、メモリQueueには実行可能な少量だけを
+	// Feederが補充します。これにより大規模受付がWorkerの処理速度に拘束されません。
+	d.taskFeederWg.Add(1)
+	go d.taskFeeder()
+
 	for i := 1; i <= d.config.NumWorkers; i++ {
 		d.wg.Add(1)
 		go d.worker(i)
 	}
+	d.notifyTaskFeeder()
 }
 
-// Enqueue puts a new TaskPayload into the dispatcher queue.
+// Enqueue durably registers a task before returning. The in-memory channel is
+// filled asynchronously by taskFeeder and is never the acceptance boundary.
 func (d *Dispatcher) Enqueue(task TaskPayload) error {
-	metrics.AnalyzerQueueLength.Inc()
-	d.taskQueue <- task
-	if d.statsTracker != nil {
-		d.statsTracker.SetQueueLength(len(d.taskQueue))
+	_, err := d.EnqueueDurable(task)
+	return err
+}
+
+// EnqueueDurable returns false when the task was already completed, active, or
+// durably queued. The payload is stored before the caller acknowledges intake.
+func (d *Dispatcher) EnqueueDurable(task TaskPayload) (bool, error) {
+	payloadJSON, err := json.Marshal(task)
+	if err != nil {
+		return false, fmt.Errorf("failed to serialize task payload for %s track %d: %w", task.FlacPath, task.TrackNumber, err)
 	}
-	return nil
+	shouldRun, err := d.db.CheckOrInsertWithPayload(task.FlacPath, task.TrackNumber, string(payloadJSON), task.Force)
+	if err != nil {
+		return false, err
+	}
+	if shouldRun {
+		d.notifyTaskFeeder()
+	}
+	return shouldRun, nil
 }
 
 // RegisterFileTracks registers the number of tracks expected for a FLAC file to measure overall file duration.
@@ -224,6 +273,11 @@ func (d *Dispatcher) GetStatsTracker() *StatsTracker {
 // Stop initiates a clean 3-phase shutdown sequence.
 // SideEffectFn: Stop
 func (d *Dispatcher) Stop() {
+	if d.cancelTaskFeeder != nil {
+		d.cancelTaskFeeder()
+	}
+	d.taskFeederWg.Wait()
+
 	// Phase 1: 解析ワーカーキューを閉じ、全解析ワーカーの完了を待機
 	close(d.taskQueue)
 	d.wg.Wait()
@@ -258,21 +312,36 @@ func (d *Dispatcher) worker(id int) {
 	defer d.wg.Done()
 
 	for task := range d.taskQueue {
-		// Gatekeeper Pre-flight Decision (CUE/FLAC Demucs RAM Estimation)
-		gatekeeperStartTime := time.Now()
-		for {
-			isGo, waitDur := d.EvaluateGoNoGo(id, task)
-			if !isGo {
-				time.Sleep(waitDur)
-				continue
-			}
-			break
-		}
-		if d.statsTracker != nil {
-			d.statsTracker.RecordGatekeeperWait(time.Since(gatekeeperStartTime))
-		}
+		atomic.AddInt32(&d.activeTaskCount, 1)
+		func() {
+			defer atomic.AddInt32(&d.activeTaskCount, -1)
 
-		// Execute full sequential DSP pipeline step
-		d.executeTaskPipeline(id, task)
+			admitted := false
+			maxRetries := d.GetConfig().GatekeeperMaxRetries
+			if maxRetries <= 0 {
+				maxRetries = 5
+			}
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				isGo, waitDur := d.EvaluateGoNoGo(id, task)
+				if isGo {
+					admitted = true
+					break
+				}
+				if attempt == maxRetries {
+					d.markTaskMaybeRetry(id, task, attempt)
+					break
+				}
+				if !d.waitForGatekeeperRetry(waitDur) {
+					return
+				}
+			}
+			if !admitted {
+				return
+			}
+
+			// Gatekeeper Pre-flight Decision (CUE/FLAC Demucs RAM Estimation)
+			// Execute full sequential DSP pipeline step
+			d.executeTaskPipeline(id, task)
+		}()
 	}
 }

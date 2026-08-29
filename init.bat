@@ -45,6 +45,8 @@ if errorlevel 1 goto NO_GO
 cd /d "%~dp0orchestrator"
 go build -v -o orchestrator.exe .
 if errorlevel 1 goto BUILD_FAIL
+go build -v -o "%~dp0single-orchestrator.exe" .
+if errorlevel 1 goto BUILD_FAIL
 
 cd /d "%~dp0"
 copy /Y "%~dp0orchestrator\orchestrator.exe" "%~dp0orchestrator.exe" >nul
@@ -55,6 +57,7 @@ echo   ✨ 初期セットアップ ＆ オーケストレータービルドが�
 echo ========================================================================
 echo.
 echo 実行ファイル: %~dp0orchestrator.exe
+echo 単発実行用  : %~dp0single-orchestrator.exe
 echo.
 echo 🚀 以下の手順で解析を開始できますわ:
 echo   1. ルート直下で Go オーケストレーターを起動:

@@ -78,10 +78,10 @@ func TestEvaluateGoNoGoPure_DiskSpaceInsufficient(t *testing.T) {
 
 func TestEvaluateGoNoGoPure_MemoryInsufficient(t *testing.T) {
 	input := GatekeeperInput{
-		AvailPhys:         6 * 1024 * 1024 * 1024,  // 6 GB
-		InFlightRam:       2 * 1024 * 1024 * 1024,  // 2 GB (Effective Avail = 4 GB)
-		EstimatedTaskRam:  3 * 1024 * 1024 * 1024,  // 3 GB
-		MinAvailRam:       2 * 1024 * 1024 * 1024,  // 2 GB (Required = 5 GB)
+		AvailPhys:         6 * 1024 * 1024 * 1024, // 6 GB
+		InFlightRam:       2 * 1024 * 1024 * 1024, // 2 GB (Effective Avail = 4 GB)
+		EstimatedTaskRam:  3 * 1024 * 1024 * 1024, // 3 GB
+		MinAvailRam:       2 * 1024 * 1024 * 1024, // 2 GB (Required = 5 GB)
 		MemoryLoad:        60,
 		AvailDisk:         50 * 1024 * 1024 * 1024,
 		MinAvailDisk:      5 * 1024 * 1024 * 1024,
@@ -240,7 +240,7 @@ func TestEvaluateGoNoGoPure_GpuThrottleDisabled(t *testing.T) {
 		MemoryLoad:        40,
 		AvailDisk:         50 * 1024 * 1024 * 1024,
 		MinAvailDisk:      5 * 1024 * 1024 * 1024,
-		GpuUtilization:    99.0, // High GPU
+		GpuUtilization:    99.0,              // High GPU
 		AvailVram:         100 * 1024 * 1024, // Low VRAM
 		MinAvailVram:      512 * 1024 * 1024,
 		EstimatedTaskVram: 1024 * 1024 * 1024,
@@ -323,8 +323,8 @@ func TestEvaluateGoNoGoPure_DiskMode(t *testing.T) {
 		EstimatedTaskDisk: 15 * 1024 * 1024 * 1024, // 15 GB SSD required
 		AvailPhys:         32 * 1024 * 1024 * 1024, // 32 GB
 		InFlightRam:       0,
-		EstimatedTaskRam:  2 * 1024 * 1024 * 1024,  // Clamped 2 GB
-		MinAvailRam:       2 * 1024 * 1024 * 1024,  // 2 GB
+		EstimatedTaskRam:  2 * 1024 * 1024 * 1024, // Clamped 2 GB
+		MinAvailRam:       2 * 1024 * 1024 * 1024, // 2 GB
 		MemoryLoad:        40,
 		AvailDisk:         50 * 1024 * 1024 * 1024, // 50 GB SSD available
 		MinAvailDisk:      5 * 1024 * 1024 * 1024,  // 5 GB minimum
@@ -343,6 +343,15 @@ func TestEvaluateGoNoGoPure_DiskMode(t *testing.T) {
 	}
 	if decision.StorageMode != StorageModeDisk {
 		t.Fatalf("Expected decision.StorageMode=disk, got %v", decision.StorageMode)
+	}
+
+	// Disk Mode does not add the SHM safety floor to the working-set
+	// reservation; 2GB task RAM is enough when 2.5GB is available.
+	input.AvailPhys = 2500 * 1024 * 1024 * 1024 / 1000
+	input.MinAvailRam = 2 * 1024 * 1024 * 1024
+	decisionLowRam := EvaluateGoNoGoPure(input)
+	if !decisionLowRam.IsGo {
+		t.Fatalf("Expected Disk Mode to pass with task RAM available but SHM reserve unavailable, got false (reason: %s)", decisionLowRam.Reason)
 	}
 
 	// Disk space insufficient for Disk Mode (AvailDisk 10GB < Required 20GB [15GB task + 5GB min])

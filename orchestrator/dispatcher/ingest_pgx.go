@@ -19,11 +19,11 @@ import (
 
 // IngestPayload は各ワーカーから収集された特徴量・推論結果のインメモリ統合データですわ！
 type IngestPayload struct {
-	TrackHash       string          `json:"track_hash"`
-	Task            TaskPayload     `json:"task"`
-	LibrosaJSON     json.RawMessage `json:"librosa_json"`
-	EssentiaJSON    json.RawMessage `json:"essentia_json"`
-	TensorJSON      json.RawMessage `json:"tensor_json"`
+	TrackHash    string          `json:"track_hash"`
+	Task         TaskPayload     `json:"task"`
+	LibrosaJSON  json.RawMessage `json:"librosa_json"`
+	EssentiaJSON json.RawMessage `json:"essentia_json"`
+	TensorJSON   json.RawMessage `json:"tensor_json"`
 }
 
 // IngestResult は PostgreSQL への UPSERT 結果を保持するモナド構造体ですの。
@@ -169,7 +169,11 @@ func (d *Dispatcher) processIngestPayloadComplex(payload IngestPayload) {
 	dbTimeout := time.Duration(timeoutSec) * time.Second
 
 	// Advisory 4: context.WithTimeout に対する RAII defer cancel() の徹底
-	ctx, cancel := context.WithTimeout(d.ingestCtx, dbTimeout)
+	baseCtx := d.currentExecutionContext()
+	if baseCtx == context.Background() {
+		baseCtx = d.ingestCtx
+	}
+	ctx, cancel := context.WithTimeout(baseCtx, dbTimeout)
 	defer cancel()
 
 	ingestStart := time.Now()

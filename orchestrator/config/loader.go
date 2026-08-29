@@ -97,6 +97,11 @@ func NormalizeConfig(
 		gatekeeperRetryDelay = 20
 	}
 
+	gatekeeperMaxRetries := raw.Orchestrator.GatekeeperMaxRetries
+	if gatekeeperMaxRetries <= 0 {
+		gatekeeperMaxRetries = 5
+	}
+
 	configWatchInterval := raw.Orchestrator.ConfigWatchIntervalSec
 	if configWatchInterval <= 0 {
 		configWatchInterval = 600
@@ -213,6 +218,7 @@ func NormalizeConfig(
 		MinWorkingSetMB:            raw.Orchestrator.MinWorkingSetMB,
 		MaxWorkingSetMB:            raw.Orchestrator.MaxWorkingSetMB,
 		GatekeeperRetryDelaySec:    gatekeeperRetryDelay,
+		GatekeeperMaxRetries:       gatekeeperMaxRetries,
 		ConfigWatchIntervalSec:     configWatchInterval,
 		EnableDlqRetry:             enableDlqRetry,
 		DlqRetryIntervalSec:        dlqRetryInterval,
