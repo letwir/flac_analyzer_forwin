@@ -36,6 +36,19 @@ type IngestResult struct {
 
 // MergeFeaturesAndPredictions は Librosa, Tensor, Essentia の各生JSONを PostgreSQL の features / predictions 構造へ統合する純粋射ですわ！
 func MergeFeaturesAndPredictions(librosaRaw, essentiaRaw, tensorRaw json.RawMessage) (json.RawMessage, json.RawMessage, json.RawMessage, error) {
+	var err error
+	librosaRaw, err = wrapWorkerJSON(librosaRaw, "features", true)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("librosa: %w", err)
+	}
+	tensorRaw, err = wrapWorkerJSON(tensorRaw, "features", true)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("tensor: %w", err)
+	}
+	essentiaRaw, err = wrapWorkerJSON(essentiaRaw, "predictions", false)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("essentia: %w", err)
+	}
 	// 1. Librosa features & meta のパース
 	var libData struct {
 		Meta     map[string]interface{} `json:"meta"`
@@ -63,7 +76,9 @@ func MergeFeaturesAndPredictions(librosaRaw, essentiaRaw, tensorRaw json.RawMess
 		Predictions map[string]interface{} `json:"predictions"`
 	}
 	if len(essentiaRaw) > 0 {
-		_ = json.Unmarshal(essentiaRaw, &essData)
+		if err := json.Unmarshal(essentiaRaw, &essData); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to unmarshal essentia JSON: %w", err)
+		}
 	}
 	if essData.Predictions == nil {
 		essData.Predictions = make(map[string]interface{})
@@ -85,6 +100,87 @@ func MergeFeaturesAndPredictions(librosaRaw, essentiaRaw, tensorRaw json.RawMess
 	}
 
 	return metaJSON, mergedFeatures, mergedPredictions, nil
+}
+
+// wrapWorkerJSON owns the persistence envelope. Daemons return bare maps;
+// older queued payloads already contain the envelope and remain supported.
+func wrapWorkerJSON(raw json.RawMessage, key string, stems bool) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, fmt.Errorf("expected JSON object, got null")
+	}
+	wrapped, enveloped := data[key]
+	if enveloped {
+		contents, ok := wrapped.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s must be an object", key)
+		}
+		data = contents
+	}
+	if stems {
+		for name, value := range data {
+			if name != "mix" && name != "demucs" {
+				return nil, fmt.Errorf("unexpected feature field %q", name)
+			}
+			if _, ok := value.(map[string]any); !ok {
+				return nil, fmt.Errorf("stem %q must be an object", name)
+			}
+			if name == "demucs" {
+				for stem, features := range value.(map[string]any) {
+					if _, ok := features.(map[string]any); !ok {
+						return nil, fmt.Errorf("demucs stem %q must be an object", stem)
+					}
+				}
+			}
+		}
+	}
+	if enveloped {
+		return raw, nil
+	}
+	return json.Marshal(map[string]any{key: data})
+}
+
+// prepareIngestJSON supplements worker metadata with the task's track identity.
+// Existing metadata wins; missing fields use the same task used by SQL columns.
+func prepareIngestJSON(payload IngestPayload) (json.RawMessage, json.RawMessage, json.RawMessage, error) {
+	metaJSON, features, predictions, err := MergeFeaturesAndPredictions(payload.LibrosaJSON, payload.EssentiaJSON, payload.TensorJSON)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var featureMap map[string]map[string]any
+	if err := json.Unmarshal(features, &featureMap); err != nil {
+		return nil, nil, nil, err
+	}
+	hasFeatures := len(featureMap["mix"]) > 0
+	for _, stem := range featureMap["demucs"] {
+		if values, ok := stem.(map[string]any); ok && len(values) > 0 {
+			hasFeatures = true
+		}
+	}
+	if !hasFeatures {
+		return nil, nil, nil, fmt.Errorf("refusing to ingest empty features")
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(metaJSON, &meta); err != nil {
+		return nil, nil, nil, err
+	}
+	for key, value := range map[string]any{
+		"title": payload.Task.Title, "artist": payload.Task.Artist,
+		"album": payload.Task.Album, "album_artist": payload.Task.AlbumArtist,
+		"track_number": payload.Task.TrackNumber,
+	} {
+		if _, exists := meta[key]; !exists {
+			meta[key] = value
+		}
+	}
+	metaJSON, err = json.Marshal(meta)
+	return metaJSON, features, predictions, err
 }
 
 // mergeTensorFeaturesPure は Tensor 特徴量 JSON を Librosa features マップへマージする純粋補助射ですわ！
@@ -155,7 +251,9 @@ func (d *Dispatcher) processIngestPayloadComplex(payload IngestPayload) {
 	defer func() {
 		if r := recover(); r != nil {
 			d.LogError("[IngestWorker] Panic recovered during ingestion for %s (Track %d): %v", payload.Task.FlacPath, payload.Task.TrackNumber, r)
-			_ = d.saveToSQLiteDLQ(payload.TrackHash, payload.Task, filepath.Base(payload.Task.FlacPath), payload.LibrosaJSON, payload.TensorJSON, payload.EssentiaJSON)
+			if payload.Task.RepairRecordID == 0 {
+				_ = d.saveToSQLiteDLQ(payload.TrackHash, payload.Task, filepath.Base(payload.Task.FlacPath), payload.LibrosaJSON, payload.TensorJSON, payload.EssentiaJSON)
+			}
 			d.db.UpdateStatus(payload.Task.FlacPath, payload.Task.TrackNumber, state.StatusFailed, fmt.Sprintf("Panic in IngestWorker: %v", r))
 			metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
 		}
@@ -206,11 +304,7 @@ func (d *Dispatcher) processIngestPayloadComplex(payload IngestPayload) {
 // UpsertTrackDirectly は Go オーケストレーターから直接 PostgreSQL (raw.library_flac) へ UPSERT を敢行し、
 // 接続障害・タイムアウト時は SQLite DLQ (send_failed.db) へ完全フォールバックする IO エフェクト射ですわ！
 func (d *Dispatcher) UpsertTrackDirectly(ctx context.Context, payload IngestPayload) IngestResult {
-	metaJSON, featuresJSON, predictionsJSON, err := MergeFeaturesAndPredictions(
-		payload.LibrosaJSON,
-		payload.EssentiaJSON,
-		payload.TensorJSON,
-	)
+	metaJSON, featuresJSON, predictionsJSON, err := prepareIngestJSON(payload)
 	if err != nil {
 		return IngestResult{
 			Success:      false,
@@ -220,6 +314,9 @@ func (d *Dispatcher) UpsertTrackDirectly(ctx context.Context, payload IngestPayl
 
 	filename := filepath.Base(payload.Task.FlacPath)
 	task := payload.Task
+	if task.RepairRecordID > 0 {
+		return d.updateEmptyJSONRecord(ctx, payload, metaJSON, featuresJSON, predictionsJSON)
+	}
 
 	// 1. PostgreSQL への直接 UPSERT を試行 (タイムアウト付き context で厳格保護)
 	if d.pgDB != nil {

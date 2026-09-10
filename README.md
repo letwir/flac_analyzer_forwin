@@ -137,6 +137,35 @@ go build -o orchestrator.exe
 .\orchestrator.exe
 ```
 
+#### 既存環境の更新・空JSONレコードの修復
+
+設定済みの環境では `update.bat` でPython/Goテストとビルドを実行し、
+`orchestrator.exe`・`single-orchestrator.exe`・`orchestrator/orchestrator.exe` を更新できます。
+PowerShell 7、Go、既存の `.venv` が必要です。モデル・依存パッケージの再インストールは行いません。
+対象プログラムを停止してから実行してください。旧バイナリは日時付き `.bak` に保存し、
+差替え失敗時は復元します。自動起動や既存曲の再解析は行いません。
+
+```powershell
+.\update.bat -CheckOnly  # テスト・ビルドのみ（配置しない）
+.\update.bat             # バックアップ後に配置
+
+.\fix.bat                # features = {} のレコードを一覧表示（読取り専用）
+.\fix.bat --id 89476      # IDで限定。--id は複数指定可能
+.\fix.bat --id 89476 --apply  # その曲だけ再解析・FLACタグ書込み・DB修復
+.\fix.bat --file "M:\Music\album.flac" --apply  # 指定ファイル内の空レコードだけ
+```
+
+`fix.bat` は `config.toml` のDBを使い、`features` が厳密に `{}` の既存行だけを対象にします。
+`meta` や `predictions` だけが空の行は対象外です（分類モデル無効時は空の予測が正常です）。
+選んだIDとCUE曲番号を照合し、保存時にもID・パス・曲番号・音源ハッシュ・空状態を再確認します。
+既に正常化した行への上書きや、新規行の作成は行いません。空でない `meta` と `predictions` は保持します。
+修復失敗時は停止し、汎用DLQには投入しません。原因解消後に同じコマンドで再試行してください。
+この操作には対象FLACへのアクセスと、解析モデルが必要です。
+
+FLACタグはmixの既存名（例: `CUE_TRACK01_LIBROSA_BPM`）を維持し、分離音源には
+`CUE_TRACK01_DEMUCS_VOCALS_...` のような接頭辞を付けます。JSON読込失敗・生成タグ0件・
+書込み失敗はタスク失敗として扱います。`-Force` および空JSON修復では対象曲の解析タグを更新します。
+
 #### ステップ 2: 解析リクエストの送信（一括ディレクトリ走査）
 別ウィンドウの PowerShell からディレクトリ走査スクリプトを実行します。高速コマンド (`fd.exe` / `rg.exe`) が利用可能な場合は自動的に Rust 高速走査モードで実行されます。
 

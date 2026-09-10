@@ -34,13 +34,19 @@ func run() (exitCode int) {
 	var forceSingle bool
 	var unregSingle bool
 	var checkOnly bool
+	var fixRecord int64
 	flag.StringVar(&configPath, "config", "", "Path to config.toml")
 	flag.StringVar(&logLevelStr, "log-level", "", "Log level (debug, info, warn, error)")
 	flag.StringVar(&singleFile, "single-file", "", "Analyze one FLAC/CUE file sequentially and exit")
 	flag.BoolVar(&forceSingle, "force", false, "Re-analyze completed tracks in single-file mode")
 	flag.BoolVar(&unregSingle, "unreg", false, "Run only tracks absent from completed SQLite/PostgreSQL registration")
 	flag.BoolVar(&checkOnly, "check-only", false, "Perform -unreg preflight without claims or analysis")
+	flag.Int64Var(&fixRecord, "fix-record", 0, "Repair one existing record with empty features (requires -single-file)")
 	flag.Parse()
+	if fixRecord < 0 || (fixRecord > 0 && (singleFile == "" || forceSingle || unregSingle || checkOnly)) {
+		log.Printf("-fix-record requires -single-file and cannot be combined with -force, -unreg, or -check-only")
+		return 2
+	}
 	if err := validateSingleModeOptions(singleFile, forceSingle, unregSingle, checkOnly); err != nil {
 		log.Printf("Invalid command options: %v", err)
 		return 2
@@ -206,6 +212,17 @@ func run() (exitCode int) {
 			log.Printf("Single-file CUE inspection failed: %v", err)
 			disp.Stop()
 			return 1
+		}
+		if fixRecord > 0 {
+			preflightCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			tasks, err = disp.SelectEmptyJSONRepair(preflightCtx, tasks, fixRecord)
+			cancel()
+			if err != nil {
+				log.Printf("Empty JSON repair preflight failed: %v", err)
+				disp.Stop()
+				return 1
+			}
+			log.Printf("Empty JSON repair record %d: eligible=%d", fixRecord, len(tasks))
 		}
 		if unregSingle {
 			preflight, err := disp.FilterUnregisteredSingleTasks(ctx, tasks)

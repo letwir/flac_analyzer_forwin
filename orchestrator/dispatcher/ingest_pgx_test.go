@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -88,6 +89,74 @@ func TestMergeFeaturesAndPredictions(t *testing.T) {
 	}
 }
 
+func TestPrepareIngestDaemonResponse(t *testing.T) {
+	// Match worker_daemon.py's actual response, including nested scalars/sequences.
+	var response DaemonResponse
+	if err := json.Unmarshal([]byte(`{"status":"success","librosa":{"mix":{"scalars":{"bpm":128},"sequences":{"chords":["C","G"]}},"demucs":{"vocals":{"scalars":{"rms":0.4}}}},"tensor":{"mix":{"hnr":12},"demucs":{"vocals":{"hnr":9}}},"essentia":{"ESSENTIA_MOOD_HAPPY":0.8}}`), &response); err != nil {
+		t.Fatal(err)
+	}
+	encode := func(value any) json.RawMessage {
+		t.Helper()
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	payload := IngestPayload{
+		Task:        TaskPayload{Title: "Remember", Artist: "Artist", Album: "Album", AlbumArtist: "Various", TrackNumber: 1},
+		LibrosaJSON: encode(response.Librosa), TensorJSON: encode(response.Tensor), EssentiaJSON: encode(response.Essentia),
+	}
+	meta, features, predictions, err := prepareIngestJSON(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(features, &got); err != nil {
+		t.Fatal(err)
+	}
+	mix := got["mix"].(map[string]any)
+	if mix["scalars"].(map[string]any)["bpm"] != float64(128) || mix["hnr"] != float64(12) {
+		t.Fatalf("lost mix data: %s", features)
+	}
+	if len(mix["sequences"].(map[string]any)["chords"].([]any)) != 2 {
+		t.Fatalf("lost sequences: %s", features)
+	}
+	vocals := got["demucs"].(map[string]any)["vocals"].(map[string]any)
+	if vocals["scalars"].(map[string]any)["rms"] != 0.4 || vocals["hnr"] != float64(9) {
+		t.Fatalf("lost stem data: %s", features)
+	}
+	if string(predictions) != `{"ESSENTIA_MOOD_HAPPY":0.8}` {
+		t.Fatalf("lost predictions: %s", predictions)
+	}
+	if err := json.Unmarshal(meta, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["title"] != "Remember" || got["track_number"] != float64(1) {
+		t.Fatalf("missing metadata: %s", meta)
+	}
+}
+
+func TestPrepareIngestRejectsInvalidPayload(t *testing.T) {
+	for _, tc := range []struct{ name, lib, tensor, ess string }{
+		{"empty", `{}`, `{}`, `{}`},
+		{"empty stems", `{"mix":{},"demucs":{"vocals":{}}}`, `{}`, `{}`},
+		{"unknown shape", `{"unexpected":123}`, `{}`, `{}`},
+		{"bad tensor", `{"mix":{"bpm":128}}`, `{`, `{}`},
+		{"bad predictions", `{"mix":{"bpm":128}}`, `{}`, `{`},
+		{"invalid wrapped tensor", `{"mix":{"bpm":128}}`, `{"features":[]}`, `{}`},
+		{"invalid stem", `{"mix":{"bpm":128}}`, `{"demucs":{"vocals":2}}`, `{}`},
+		{"null", `null`, `{}`, `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := IngestPayload{LibrosaJSON: json.RawMessage(tc.lib), TensorJSON: json.RawMessage(tc.tensor), EssentiaJSON: json.RawMessage(tc.ess)}
+			if _, _, _, err := prepareIngestJSON(payload); err == nil {
+				t.Fatal("expected rejection")
+			}
+		})
+	}
+}
+
 func TestDLQFallbackDirectly(t *testing.T) {
 	d := &Dispatcher{}
 	tmpDir := t.TempDir()
@@ -103,9 +172,9 @@ func TestDLQFallbackDirectly(t *testing.T) {
 			Title:       "Fallback Song",
 			Artist:      "Fallback Artist",
 		},
-		LibrosaJSON:  json.RawMessage(`{"features": {"mix": {"bpm": 120.0}}}`),
-		EssentiaJSON: json.RawMessage(`{"predictions": {"mood_happy": 0.8}}`),
-		TensorJSON:   json.RawMessage(`{"features": {"mix": {"spectral_flux_mean": 5.0}}}`),
+		LibrosaJSON:  json.RawMessage(`{"mix": {"bpm": 120.0}}`),
+		EssentiaJSON: json.RawMessage(`{"mood_happy": 0.8}`),
+		TensorJSON:   json.RawMessage(`{"mix": {"spectral_flux_mean": 5.0}}`),
 	}
 
 	res := d.UpsertTrackDirectly(context.Background(), payload)
@@ -119,6 +188,27 @@ func TestDLQFallbackDirectly(t *testing.T) {
 	dlqPath := filepath.Join(tmpDir, "send_failed.db")
 	if _, err := os.Stat(dlqPath); os.IsNotExist(err) {
 		t.Fatalf("Expected send_failed.db to be created, but not found")
+	}
+	stored, err := sql.Open("sqlite", dlqPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stored.Close()
+	var meta, features, predictions string
+	if err := stored.QueryRowContext(t.Context(), "SELECT meta, features, predictions FROM failed_payloads WHERE audio_hash = ?", payload.TrackHash).Scan(&meta, &features, &predictions); err != nil {
+		t.Fatal(err)
+	}
+	for label, data := range map[string]string{"meta": meta, "features": features, "predictions": predictions} {
+		var values map[string]any
+		if err := json.Unmarshal([]byte(data), &values); err != nil || len(values) == 0 {
+			t.Fatalf("empty/invalid stored %s: %s (%v)", label, data, err)
+		}
+	}
+	if features != `{"mix":{"bpm":120,"spectral_flux_mean":5}}` {
+		t.Fatalf("lost stored features: %s", features)
+	}
+	if predictions != `{"mood_happy":0.8}` {
+		t.Fatalf("lost stored predictions: %s", predictions)
 	}
 }
 

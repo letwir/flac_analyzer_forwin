@@ -71,6 +71,9 @@ func (d *Dispatcher) executeTaggerStage(
 	if task.TrackNumber > 0 {
 		taggerArgs = append(taggerArgs, "--prefix", fmt.Sprintf("CUE_TRACK%02d", task.TrackNumber))
 	}
+	if task.Force {
+		taggerArgs = append(taggerArgs, "--force")
+	}
 
 	taggerStart := time.Now()
 	tagOut, tagErr := d.runPythonScript("flac_tagger.py", taggerArgs, id, "FlacTagger", logger.ColorGreen, true)
@@ -79,7 +82,7 @@ func (d *Dispatcher) executeTaggerStage(
 		parseAndRecordPythonProfile(d.statsTracker, "tagger", tagOut)
 	}
 	if tagErr != nil {
-		d.LogWarn("[W-%d] FLAC tagger warned/failed for %s: %v", id, task.FlacPath, tagErr)
+		return fmt.Errorf("FLAC tagging failed for %s: %w", task.FlacPath, tagErr)
 	}
 
 	return nil

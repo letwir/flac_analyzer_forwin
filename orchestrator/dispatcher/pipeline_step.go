@@ -94,7 +94,7 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	}()
 
 	// 1. Hash Calculation & Duplicate Detection
-	if currentCfg.SkipDupByHash {
+	if currentCfg.SkipDupByHash && !task.Force {
 		isDup, computedHash, hashErr := d.checkDuplicateHash(id, task)
 		if hashErr != nil {
 			d.failTask(task, hashErr.Error())
@@ -131,6 +131,10 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	}
 	if trackHash == "" {
 		trackHash = computedHash
+	}
+	if task.RepairRecordID > 0 && trackHash != task.RepairAudioHash {
+		d.failTask(task, "Repair refused: audio hash differs from the selected DB record")
+		return
 	}
 
 	// 3. Feature Extraction Stage (Daemon)

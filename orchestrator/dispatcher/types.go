@@ -46,18 +46,20 @@ var ParseLogLevel = logger.ParseLogLevel
 
 // TaskPayload represents an individual track analysis request within the task queue.
 type TaskPayload struct {
-	FlacPath     string `json:"flacPath"`
-	FileSize     int64  `json:"fileSize"`
-	TargetScript string `json:"targetScript"`
-	TrackNumber  int    `json:"trackNumber"`
-	StartSample  int64  `json:"startSample"`
-	EndSample    int64  `json:"endSample"`
-	SampleRate   int    `json:"sampleRate,omitempty"`
-	Title        string `json:"title"`
-	Artist       string `json:"artist"`
-	Album        string `json:"album"`
-	AlbumArtist  string `json:"albumArtist"`
-	Force        bool   `json:"force"`
+	FlacPath        string `json:"flacPath"`
+	FileSize        int64  `json:"fileSize"`
+	TargetScript    string `json:"targetScript"`
+	TrackNumber     int    `json:"trackNumber"`
+	StartSample     int64  `json:"startSample"`
+	EndSample       int64  `json:"endSample"`
+	SampleRate      int    `json:"sampleRate,omitempty"`
+	Title           string `json:"title"`
+	Artist          string `json:"artist"`
+	Album           string `json:"album"`
+	AlbumArtist     string `json:"albumArtist"`
+	Force           bool   `json:"force"`
+	RepairRecordID  int64  `json:"repairRecordId,omitzero"`
+	RepairAudioHash string `json:"repairAudioHash,omitempty"`
 }
 
 // FlexibleString decodes JSON fields that may be represented as a single string or an array of strings.

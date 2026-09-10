@@ -198,6 +198,40 @@ def parse_tags_from_meta_dict(meta: dict, prefix: str = "") -> dict[str, str]:
     return tags
 
 def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, prefix: str = "") -> dict[str, str]:
+    def unwrap(data: dict, key: str) -> dict:
+        if not isinstance(data, dict):
+            raise ValueError(f"{key} input must be an object")
+        value = data.get(key, data)
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} must be an object")
+        return value
+
+    librosa = unwrap(librosa_data, "features")
+    tensor = unwrap(tensor_data, "features")
+    predictions = unwrap(essentia_data, "predictions")
+
+    def stem_map(data: dict, key: str) -> dict:
+        value = data.get(key, {})
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} must be an object")
+        return value
+
+    # Keep existing mix tag names and isolate separated stems with a prefix.
+    lib_mix = stem_map(librosa, "mix") if "mix" in librosa or "demucs" in librosa else librosa
+    ten_mix = stem_map(tensor, "mix") if "mix" in tensor or "demucs" in tensor else tensor
+    tags = _build_single_stem_tags(lib_mix, {"predictions": predictions}, ten_mix, prefix)
+    lib_stems, ten_stems = stem_map(librosa, "demucs"), stem_map(tensor, "demucs")
+    for stem in sorted(lib_stems.keys() | ten_stems.keys()):
+        if not re.fullmatch(r"[A-Za-z0-9_]+", stem):
+            raise ValueError(f"Invalid stem name: {stem!r}")
+        stem_prefix = f"{prefix + '_' if prefix else ''}DEMUCS_{stem.upper()}"
+        tags.update(_build_single_stem_tags(
+            stem_map(lib_stems, stem), {}, stem_map(ten_stems, stem), stem_prefix
+        ))
+    return tags
+
+
+def _build_single_stem_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, prefix: str = "") -> dict[str, str]:
     p = f"{prefix}_" if prefix else ""
     tags: dict[str, str] = {}
 
@@ -250,11 +284,11 @@ def build_flac_tags(librosa_data: dict, essentia_data: dict, tensor_data: dict, 
         if "flatness" in scalars:
             tags[f"{p}LIBROSA_FLATNESS"] = str(_safe_int(scalars["flatness"], 100))
 
-        contrast_bands = scalars.get("contrast_bands", [])
+        contrast_bands = scalars.get("contrast_bands", scalars.get("contrast", []))
         for i, val in enumerate(contrast_bands):
             tags[f"{p}LIBROSA_CONTRAST_B{i}"] = str(_safe_int(val, 100))
 
-        mfccs = scalars.get("mfccs", [])
+        mfccs = scalars.get("mfccs", scalars.get("mfcc", []))
         for i, val in enumerate(mfccs):
             tags[f"{p}LIBROSA_MFCC{i:02d}"] = str(_safe_int(val, 100))
 
@@ -486,36 +520,24 @@ def main():
     retry_count = int(config.get("python_env", {}).get("file_retry_count", 5))
     retry_delay = float(config.get("python_env", {}).get("file_retry_delay_sec", 3))
 
-    librosa_data = {}
-    if os.path.exists(args.json_path):
-        try:
-            with open(args.json_path, "r", encoding="utf-8") as f:
-                librosa_data = json.load(f)
-        except Exception as e:
-            logger.warning(f"Librosa JSON のパースに失敗いたしました: {e}")
-
-    essentia_data = {}
-    if args.predictions_json_path and os.path.exists(args.predictions_json_path):
-        try:
-            with open(args.predictions_json_path, "r", encoding="utf-8") as f:
-                essentia_data = json.load(f)
-        except Exception as e:
-            logger.warning(f"Essentia JSON のパースに失敗いたしました: {e}")
-
-    tensor_data = {}
-    if args.tensor_json_path and os.path.exists(args.tensor_json_path):
-        try:
-            with open(args.tensor_json_path, "r", encoding="utf-8") as f:
-                tensor_data = json.load(f)
-        except Exception as e:
-            logger.warning(f"Tensor JSON のパースに失敗いたしました: {e}")
-
     t_tag_start = time.perf_counter()
-    expected_tags = build_flac_tags(librosa_data, essentia_data, tensor_data, prefix=args.prefix)
+    try:
+        def read_input(path: str) -> dict:
+            if not path:
+                return {}
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+
+        expected_tags = build_flac_tags(
+            read_input(args.json_path), read_input(args.predictions_json_path),
+            read_input(args.tensor_json_path), prefix=args.prefix
+        )
+    except (OSError, ValueError, TypeError, AttributeError) as e:
+        logger.error("タグ入力の読込・変換に失敗しました: %s", e)
+        sys.exit(1)
     if not expected_tags:
-        logger.warning("書き込むべきタグ情報が生成されませんでした。")
-        print(json.dumps({"status": "skipped", "profile": {"write": 0.0}}))
-        sys.exit(0)
+        logger.error("書き込むべきタグ情報が生成されませんでした。")
+        sys.exit(1)
 
     try:
         write_flac_tags_with_retry(
@@ -535,4 +557,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
