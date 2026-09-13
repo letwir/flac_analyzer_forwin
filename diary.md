@@ -1,3 +1,12 @@
+### 2026-09-13 20:25:00
+- **Hypothesis**: `task parked without occupying a worker: admission deferred: gatekeeper NOGO: Dedicated VRAM availability is unknown` の原因は、① `config.toml` に `dedicated_vram_total_gb = 16.0` が未指定であったため `dedicatedVramOverride == 0` となり P1-I2 のフェイルセーフ契約により `m.DedicatedCapacityValid = false` が強制されていたこと、および ② WMI `Win32_VideoController` の生取得において Virtual Desktop Monitor や Microsoft Remote Display Adapter などの仮想/ソフトウェアディスプレイドライバ（4個）が含まれることで `raw.AdapterCount > 1` と判定され `MultiAdapterAmbiguity = true` が発動し、たとえ override を指定しても `raw.AdapterCount != 1` で専用VRAM空き容量が常に unknown に倒されていたことの複合要因。物理PCIデバイス（`PNPDeviceID -like 'PCI*'`）のみをフィルタリングし、`config.toml` に明示的な `dedicated_vram_total_gb = 16.0` を設定することで Gatekeeper の専用VRAM評価が健全化し、ディスパッチが正常に通過する。
+- **Tried**:
+  - `config.toml`: `dedicated_vram_total_gb = 16.0` を追加。
+  - `orchestrator/sysinfo/gpu_windows.go`: `FetchGpuMetricsComplex()` で `Where-Object { $_.PNPDeviceID -like 'PCI*' }` による物理ディスプレイアダプタ抽出ロジック（フォールバック付き）へ改修。
+  - `orchestrator/sysinfo/sysinfo.go` & `zig/update_hardware_specs.py`: `DetectHardwareSpecs()` で同様に物理PCIアダプタを抽出してスペック文字列を正常化。
+  - `.\update.ps1`: テスト全件合格（Python 6件、Go 全パッケージ）の上でバイナリ全3種を正常更新・バックアップ生成。
+- **Emotion/Thoughts**: 旦那様！Gatekeeper が「専用 VRAM の空き容量が不明ですわ！」と頑なに全タスクを停滞（Park）させていた原因を、完璧に解剖・根絶いたしましたわ！WMIの `Win32_VideoController` に Virtual Desktop や RDP の仮想アダプタが紛れ込んでアダプタ数が 4 にカウントされ、マルチアダプタ曖昧性ガードが誤検知していた上に、`config.toml` に RTX 5070 Ti の明示的 16GB override が抜けておりましたの！PCIデバイスへの精密フィルタと override の追加で、もう Gatekeeper もすんなり GO サインを出してタスクを流してくださいますわ！おーほほほほ！ [ワイの指示(PromptDefect):0%] vs [AI認知(AgentDefect):0%]
+
 ### 2026-08-20 23:36:00
 - **Hypothesis**: `worker daemon extraction failed: daemon ExtractAll context cancelled: context deadline exceeded` の原因は、`orchestrator/dispatcher/pipeline_features.go` の `ctxExtract` が `90*time.Second` にハードコードされており、7ステム（mix, bass, drums, vocals, other, guitar, piano）の Librosa / PyTorch / Essentia 特徴量抽出を行う際に、5分以上の楽曲や 55分におよぶ長尺特典トークトラック（Perfume Track 3 等）で 90 秒を超過してデッドラインが切れていたことにある。トラック長に応じた適応的タイムアウト関手 `ComputeAdaptiveTimeoutPure` を導入し、設定ファイル `config.toml` に `feature_extract_timeout_sec`, `demucs_timeout_sec`, `adaptive_timeout_ratio`, `max_adaptive_timeout_sec` を追加することで、あらゆる長さのトラックを安全に完走できる。
 - **Tried**:

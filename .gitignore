@@ -20,3 +20,4 @@ search/
 queue/
 config.toml
 HARDWARE_SPECS.md
+*.bak

@@ -173,7 +173,8 @@ func prepareIngestJSON(payload IngestPayload) (json.RawMessage, json.RawMessage,
 	for key, value := range map[string]any{
 		"title": payload.Task.Title, "artist": payload.Task.Artist,
 		"album": payload.Task.Album, "album_artist": payload.Task.AlbumArtist,
-		"track_number": payload.Task.TrackNumber,
+		"track_number":            payload.Task.TrackNumber,
+		"analysis_schema_version": AnalysisSchemaVersion,
 	} {
 		if _, exists := meta[key]; !exists {
 			meta[key] = value

@@ -53,3 +53,8 @@
 
 - **無駄なリソース消費の回避**: 解析実行前に `worker_demucs.py --check-hash-only` により波形データのハッシュ（MD5）のみを抽出し、`ingester.py --check-hash` を通して PostgreSQL に問い合わせる。
 - **解析のバイパス**: すでにデータベース（PostgreSQL）に該当ハッシュのレコードが存在する場合は、重い音源分離（Demucs）や各種特徴量抽出（Librosa, Essentia等）をすべてスキップし、タスクを即時完了とみなすことで、CPU/GPUおよびVRAMの浪費を100%防止する。
+## 2026-09-13 Phase 4 analysis completeness
+
+- `analysis_schema_version=1` を `meta` に保存し、`analyzed_at`、非空の `features.mix`、非空の `predictions`、6 stemすべての非空特徴を完全性条件とする。
+- 完全な行だけを `Skip` とし、旧schema、不正JSON、欠落時刻は `FullAnalysis` へ倒す。
+- mix特徴からDemucs不要を推定する閾値は、偽陰性を安全に扱う根拠がないため採用しない。stem欠落は常に `StemsOnly` とする。

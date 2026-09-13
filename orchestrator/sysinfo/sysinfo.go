@@ -106,7 +106,9 @@ func DetectHardwareSpecs() (*SystemSpecs, error) {
 
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", `
 		$cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name;
-		$gpu = (Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join ', ';
+		$gpus = @(Get-CimInstance Win32_VideoController | Where-Object { $_.PNPDeviceID -like 'PCI*' });
+		if ($gpus.Count -eq 0) { $gpus = @(Get-CimInstance Win32_VideoController) };
+		$gpu = ($gpus | Select-Object -ExpandProperty Name) -join ', ';
 		$os = (Get-CimInstance Win32_OperatingSystem).Caption;
 		$pagefiles = Get-CimInstance Win32_PageFileUsage | ForEach-Object { "$($_.Name) ($([math]::Round($_.AllocatedBaseSize / 1024, 1)) GB)" };
 		$pagefileStr = $pagefiles -join ', ';
