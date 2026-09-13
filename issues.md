@@ -65,11 +65,11 @@
   - 全7ステムを同時に専用VRAMへ常駐させず、設定可能な上限内で転送・解析・解放する。
   - CUDA OOMは共有GPUメモリへの暗黙退避に依存せず、チャンク縮小またはHostRAM/DiskMmapへ明示降格する。
   - Acceptance: stem 1本ready後、残りstem未公開のまま対応laneが開始すること、および長尺トラックでRAM/VRAM安全域を守ることを検証する。
-- [-] **P3-I4 【Pool】CPU WorkerとGPU Workerの常駐数を分離する**
+- [*] **P3-I4 【Pool】CPU WorkerとGPU Workerの常駐数を分離する**
   - CUDA context / GPU model を持つdaemonは原則1系統とし、CPU daemon数はCPU・RAM予算から独立決定する。
   - プロセスrecycle前後のHostRAM、専用VRAM、共有GPUメモリを計測する。
   - Acceptance: idle時に複数daemonが専用VRAM・共有GPUメモリを重複確保せず、100タスク等の連続実行後も使用量が単調増加しない。
-- [ ] **P3-I5 【Perf】CPU/GPU稼働率の受入基準とベンチマークを定義する**
+- [*] **P3-I5 【Perf】CPU/GPU稼働率の受入基準とベンチマークを定義する**
   - 「フルロード」を瞬間100%ではなく、十分なキューがある測定窓の平均利用率・throughput・p95待機時間で定義する。
   - Acceptance: 代表的な単曲、CUEアルバム、長尺、4〜8並列のベンチ結果を変更前後で比較し、OOMゼロとthroughput非劣化を確認する。
 
