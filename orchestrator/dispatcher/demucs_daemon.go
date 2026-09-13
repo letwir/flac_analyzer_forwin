@@ -18,15 +18,16 @@ import (
 // Semantics: 常駐型 Demucs GPU ワーカーデーモンクライアントおよび接続プール
 
 type DemucsSeparatePayload struct {
-	RequestID   string            `json:"request_id"`
-	FlacPath    string            `json:"flac_path"`
-	ShmTags     map[string]string `json:"shm_tags,omitempty"`
-	StorageMode string            `json:"storage_mode,omitempty"`
-	TempDir     string            `json:"temp_dir,omitempty"`
-	StartSample int64             `json:"start_sample"`
-	EndSample   int64             `json:"end_sample"`
-	UseDml      bool              `json:"use_dml"`
-	Generation  uint64            `json:"generation"`
+	RequestID      string            `json:"request_id"`
+	FlacPath       string            `json:"flac_path"`
+	ShmTags        map[string]string `json:"shm_tags,omitempty"`
+	StorageMode    string            `json:"storage_mode,omitempty"`
+	TempDir        string            `json:"temp_dir,omitempty"`
+	StartSample    int64             `json:"start_sample"`
+	EndSample      int64             `json:"end_sample"`
+	UseDml         bool              `json:"use_dml"`
+	Generation     uint64            `json:"generation"`
+	RequestedStems []string          `json:"requested_stems,omitempty"`
 }
 
 type DemucsStemReadyEvent struct {
@@ -212,6 +213,55 @@ func (c *DemucsDaemonClient) CheckHash(ctx context.Context, payload DemucsCheckH
 
 func (c *DemucsDaemonClient) Separate(ctx context.Context, payload DemucsSeparatePayload) (*DemucsSeparateResponse, error) {
 	return c.SeparateWithEvents(ctx, payload, nil)
+}
+
+func (c *DemucsDaemonClient) DecodeMix(ctx context.Context, payload DemucsSeparatePayload) (*DemucsSeparateResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.isAlive {
+		return nil, fmt.Errorf("Demucs daemon-%d is not alive", c.id)
+	}
+	reqBytes, err := json.Marshal(map[string]any{"command": "decode_mix", "payload": payload})
+	if err != nil {
+		return nil, fmt.Errorf("marshal decode_mix request: %w", err)
+	}
+	if _, err := c.stdin.Write(append(reqBytes, '\n')); err != nil {
+		_ = c.closeLocked()
+		return nil, fmt.Errorf("send decode_mix request to Demucs daemon-%d: %w", c.id, err)
+	}
+	type result struct {
+		response *DemucsSeparateResponse
+		err      error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		line, readErr := c.stdout.ReadString('\n')
+		if readErr != nil {
+			resultCh <- result{err: readErr}
+			return
+		}
+		var response DemucsSeparateResponse
+		if err := json.Unmarshal([]byte(line), &response); err != nil {
+			resultCh <- result{err: err}
+			return
+		}
+		resultCh <- result{response: &response}
+	}()
+	select {
+	case <-ctx.Done():
+		_ = c.closeLocked()
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if result.err != nil {
+			_ = c.closeLocked()
+			return nil, fmt.Errorf("read decode_mix response: %w", result.err)
+		}
+		if result.response.Status != "success" {
+			return nil, fmt.Errorf("decode_mix failed: %s", result.response.Message)
+		}
+		c.taskCount++
+		return result.response, nil
+	}
 }
 
 func (c *DemucsDaemonClient) SeparateWithEvents(ctx context.Context, payload DemucsSeparatePayload, onReady func(DemucsStemReadyEvent) error) (*DemucsSeparateResponse, error) {

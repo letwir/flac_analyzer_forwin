@@ -54,6 +54,7 @@ type Dispatcher struct {
 	admission              *AdmissionController
 	taskLeases             map[string]AdmissionLease
 	reserveTaskFn          func(TaskPayload) (AdmissionLease, error)
+	prepareAnalysisFn      func(context.Context, []TaskPayload) ([]TaskPayload, error)
 	executeTaskFn          func(int, TaskPayload)
 	pressureMu             sync.Mutex
 	memoryPressure         MemoryPressureState

@@ -72,6 +72,37 @@ def handle_check_hash(payload: dict[str, Any]) -> dict[str, Any]:
         }
     }
 
+def handle_decode_mix(payload: dict[str, Any]) -> dict[str, Any]:
+    """Decode and publish only the original mix without running Demucs."""
+    flac_path = payload["flac_path"]
+    start_sample = payload.get("start_sample", 0)
+    end_sample = payload.get("end_sample", -1)
+    handle = build_flac_handle(flac_path)
+    end_sample = handle.total_samples if end_sample == -1 else end_sample
+    started = time.perf_counter()
+    y, md5_hash = process_slice_with_seq_safety(
+        flac_path, start_sample, end_sample, handle.sample_rate, handle.channels
+    )
+    data = np.ascontiguousarray(y.T, dtype=np.float32)
+    file_size = os.path.getsize(flac_path) if os.path.exists(flac_path) else 0
+    storage_mode = payload.get("storage_mode", "shm")
+    if storage_mode == "disk":
+        temp_dir = payload["temp_dir"]
+        os.makedirs(temp_dir, exist_ok=True)
+        file_path = os.path.join(temp_dir, "mix.npy")
+        np.save(file_path, data)
+        info = {"storage_type": "file", "file_path": file_path}
+    else:
+        tag = payload["shm_tags"]["mix"]
+        shm = shm_interop.write_to_shm(tag, data, file_size=file_size)
+        shm.close()
+        info = {"storage_type": "shm", "shm_tag": tag}
+    info.update({"shape": list(data.shape), "dtype": str(data.dtype), "file_size": file_size})
+    return {
+        "status": "success", "audio_hash": md5_hash, "sr": handle.sample_rate,
+        "stems": {"mix": info}, "profile": {"decode": time.perf_counter() - started},
+    }
+
 def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any, emit_stem_ready=None) -> dict[str, Any]:
     """
     常駐 Demucs モデルを用いて波形分離を実行し、共有メモリへ書き込む高負荷射ですわ！
@@ -119,6 +150,9 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any, emit_stem_r
 
     file_size = os.path.getsize(flac_path) if os.path.exists(flac_path) else 0
     stem_items = stem_context.stems.items() if hasattr(stem_context, "stems") else stem_context.items()
+    requested_stems = set(payload.get("requested_stems") or ())
+    if requested_stems:
+        stem_items = ((name, value) for name, value in stem_items if name in requested_stems)
 
     def publish(stem_name: str, info: dict[str, Any]) -> None:
         if emit_stem_ready is not None:
@@ -227,6 +261,8 @@ def runDemucsDaemonLoopComplex():
                 break
             elif cmd == "check_hash":
                 resp = handle_check_hash(payload)
+            elif cmd == "decode_mix":
+                resp = handle_decode_mix(payload)
             elif cmd == "separate":
                 resp = handleSeparateTaskHeavy(
                     payload,

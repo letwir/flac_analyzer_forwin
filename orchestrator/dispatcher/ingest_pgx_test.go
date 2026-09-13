@@ -157,6 +157,19 @@ func TestPrepareIngestRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestValidateAnalysisWrite(t *testing.T) {
+	if err := validateAnalysisWrite(TaskPayload{}, "hash"); err == nil {
+		t.Fatal("missing preflight decision must be rejected")
+	}
+	task := TaskPayload{AnalysisDecision: StemsOnly, AnalysisRowID: 7, AnalysisAudioHash: "old"}
+	if err := validateAnalysisWrite(task, "new"); err == nil {
+		t.Fatal("changed source hash must be rejected")
+	}
+	if err := validateAnalysisWrite(task, "old"); err != nil {
+		t.Fatalf("matching snapshot rejected: %v", err)
+	}
+}
+
 func TestDLQFallbackDirectly(t *testing.T) {
 	d := &Dispatcher{}
 	tmpDir := t.TempDir()
@@ -167,10 +180,11 @@ func TestDLQFallbackDirectly(t *testing.T) {
 	payload := IngestPayload{
 		TrackHash: "0123456789abcdef0123456789abcdef",
 		Task: TaskPayload{
-			FlacPath:    filepath.Join(tmpDir, "test.flac"),
-			TrackNumber: 1,
-			Title:       "Fallback Song",
-			Artist:      "Fallback Artist",
+			FlacPath:         filepath.Join(tmpDir, "test.flac"),
+			TrackNumber:      1,
+			AnalysisDecision: FullAnalysis,
+			Title:            "Fallback Song",
+			Artist:           "Fallback Artist",
 		},
 		LibrosaJSON:  json.RawMessage(`{"mix": {"bpm": 120.0}}`),
 		EssentiaJSON: json.RawMessage(`{"mood_happy": 0.8}`),
@@ -247,10 +261,11 @@ func TestIngestWorker_DecoupledPipeline(t *testing.T) {
 	payload := IngestPayload{
 		TrackHash: "aabbccddeeff00112233445566778899",
 		Task: TaskPayload{
-			FlacPath:    testFlac,
-			TrackNumber: 1,
-			Title:       "Async Song",
-			Artist:      "Async Artist",
+			FlacPath:         testFlac,
+			TrackNumber:      1,
+			AnalysisDecision: FullAnalysis,
+			Title:            "Async Song",
+			Artist:           "Async Artist",
 		},
 		LibrosaJSON:  json.RawMessage(`{"features": {"mix": {"bpm": 130.0}}}`),
 		EssentiaJSON: json.RawMessage(`{"predictions": {"mood_happy": 0.9}}`),

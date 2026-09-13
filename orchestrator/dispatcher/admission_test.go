@@ -257,6 +257,12 @@ func TestDurableFeederParksBlockedTasksWithoutOccupyingWorkers(t *testing.T) {
 		db:             db,
 		taskQueue:      make(chan TaskPayload, 8),
 		parkLogReasons: make(map[string]time.Time),
+		prepareAnalysisFn: func(_ context.Context, tasks []TaskPayload) ([]TaskPayload, error) {
+			for i := range tasks {
+				tasks[i].AnalysisDecision = FullAnalysis
+			}
+			return tasks, nil
+		},
 		reserveTaskFn: func(task TaskPayload) (AdmissionLease, error) {
 			if task.FileSize >= 1000 {
 				return AdmissionLease{}, ErrAdmissionUnavailable

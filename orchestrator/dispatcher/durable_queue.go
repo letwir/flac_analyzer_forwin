@@ -71,10 +71,27 @@ func (d *Dispatcher) fillTaskQueue() {
 		d.LogError("[TaskFeeder] Failed to claim durable tasks: %v", err)
 		return
 	}
+	decoded := make([]TaskPayload, 0, len(tasks))
 	for _, queued := range tasks {
 		task, err := decodeQueuedTask(queued)
 		if err != nil {
 			d.db.UpdateStatus(queued.FilePath, queued.TrackNumber, state.StatusFailedMaybeRetry, err.Error())
+			continue
+		}
+		decoded = append(decoded, task)
+	}
+	planned, err := d.prepareAnalysisTasks(d.taskFeederCtx, decoded)
+	if err != nil {
+		for _, task := range decoded {
+			_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailedMaybeRetry, err.Error())
+		}
+		d.LogError("[TaskFeeder] Analysis preflight failed closed: %v", err)
+		return
+	}
+	for _, task := range planned {
+		if task.AnalysisDecision == Skip {
+			_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "analysis preflight: complete")
+			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 			continue
 		}
 		if _, err := d.tryReserveTaskAdmission(task); err != nil {

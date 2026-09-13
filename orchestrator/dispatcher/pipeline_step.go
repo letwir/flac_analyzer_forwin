@@ -47,6 +47,11 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	defer metrics.AnalyzerActiveWorkers.Dec()
 
 	currentCfg := d.GetConfig()
+	executionPlan, err := BuildAnalysisExecutionPlan(task.AnalysisDecision)
+	if err != nil || executionPlan.Decision == Skip {
+		d.failTask(task, fmt.Sprintf("invalid analysis execution plan: %v", err))
+		return
+	}
 	d.inFlightMutex.Lock()
 	admission, admitted := d.ramAdmissions[admissionKey(task)]
 	d.inFlightMutex.Unlock()
@@ -68,14 +73,16 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusRunning, "")
 
 	var trackHash string
-	stems := []string{"mix", "bass", "drums", "vocals", "other", "guitar", "piano"}
+	stems := stemsForAnalysisPlan(executionPlan)
 
 	defer func() {
 		cleanupCache(trackHash)
 	}()
 
 	// 1. Hash Calculation & Duplicate Detection
-	if currentCfg.SkipDupByHash && !task.Force {
+	// Existing incomplete rows must follow their MixOnly/StemsOnly plan. The
+	// hash check remains the second safety net only for rows absent at preflight.
+	if currentCfg.SkipDupByHash && !task.Force && task.AnalysisRowID == 0 {
 		isDup, computedHash, hashErr := d.checkDuplicateHash(id, task)
 		if hashErr != nil {
 			d.failTask(task, hashErr.Error())
@@ -106,7 +113,11 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	var computedHash string
 	var wavefrontFeatures *FeatureOutputs
 	var demucsErr error
-	computedHash, demucsSR, demucsStems, arenaSet, wavefrontFeatures, demucsErr = d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
+	if executionPlan.Decision == MixOnly {
+		computedHash, wavefrontFeatures, arenaSet, demucsErr = d.executeMixOnlyStage(id, task, storageMode, cacheDir, currentCfg)
+	} else {
+		computedHash, demucsSR, demucsStems, arenaSet, wavefrontFeatures, demucsErr = d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
+	}
 	if demucsErr != nil {
 		d.failTask(task, demucsErr.Error())
 		return

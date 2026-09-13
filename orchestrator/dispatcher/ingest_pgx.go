@@ -30,8 +30,19 @@ type IngestPayload struct {
 type IngestResult struct {
 	Success      bool          `json:"success"`
 	SavedToDLQ   bool          `json:"saved_to_dlq"`
+	Conflict     bool          `json:"conflict"`
 	DBDuration   time.Duration `json:"db_duration"`
 	ErrorMessage string        `json:"error_message,omitempty"`
+}
+
+func validateAnalysisWrite(task TaskPayload, trackHash string) error {
+	if task.AnalysisDecision == "" {
+		return fmt.Errorf("missing analysis preflight decision")
+	}
+	if task.AnalysisRowID > 0 && trackHash != task.AnalysisAudioHash {
+		return fmt.Errorf("analysis source hash changed after preflight")
+	}
+	return nil
 }
 
 // MergeFeaturesAndPredictions は Librosa, Tensor, Essentia の各生JSONを PostgreSQL の features / predictions 構造へ統合する純粋射ですわ！
@@ -284,6 +295,12 @@ func (d *Dispatcher) processIngestPayloadComplex(payload IngestPayload) {
 
 	task := payload.Task
 	if !ingestRes.Success {
+		if ingestRes.Conflict {
+			d.LogWarn("[IngestWorker] PostgreSQL row changed after preflight; retrying %s (Track %d)", task.FlacPath, task.TrackNumber)
+			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailedMaybeRetry, ingestRes.ErrorMessage)
+			metrics.AnalyzerTasksTotal.WithLabelValues("retry_pending").Inc()
+			return
+		}
 		d.LogError("[IngestWorker] DB and DLQ both failed for %s (Track %d): %s", task.FlacPath, task.TrackNumber, ingestRes.ErrorMessage)
 		d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailed, fmt.Sprintf("Ingestion failed: %s", ingestRes.ErrorMessage))
 		metrics.AnalyzerTasksTotal.WithLabelValues("error").Inc()
@@ -318,6 +335,9 @@ func (d *Dispatcher) UpsertTrackDirectly(ctx context.Context, payload IngestPayl
 	if task.RepairRecordID > 0 {
 		return d.updateEmptyJSONRecord(ctx, payload, metaJSON, featuresJSON, predictionsJSON)
 	}
+	if err := validateAnalysisWrite(task, payload.TrackHash); err != nil {
+		return IngestResult{Conflict: task.AnalysisRowID > 0, ErrorMessage: fmt.Sprintf("ingest refused: %v", err)}
+	}
 
 	// 1. PostgreSQL への直接 UPSERT を試行 (タイムアウト付き context で厳格保護)
 	if d.pgDB != nil {
@@ -328,45 +348,74 @@ func (d *Dispatcher) UpsertTrackDirectly(ctx context.Context, payload IngestPayl
 			) VALUES (
 				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP
 			)
-			ON CONFLICT (audio_hash) DO UPDATE SET
-				filepath = EXCLUDED.filepath,
-				filename = EXCLUDED.filename,
-				track_number = EXCLUDED.track_number,
-				album_artist = EXCLUDED.album_artist,
-				album = EXCLUDED.album,
-				artist = EXCLUDED.artist,
-				title = EXCLUDED.title,
-				meta = EXCLUDED.meta,
-				features = EXCLUDED.features,
-				predictions = EXCLUDED.predictions,
-				analyzed_at = EXCLUDED.analyzed_at;
+			ON CONFLICT (audio_hash) DO NOTHING;
 		`
-		_, execErr := d.pgDB.ExecContext(
-			ctx,
-			query,
-			payload.TrackHash,
-			task.FlacPath,
-			filename,
-			task.TrackNumber,
-			task.AlbumArtist,
-			task.Album,
-			task.Artist,
-			task.Title,
-			string(metaJSON),
-			string(featuresJSON),
-			string(predictionsJSON),
-		)
-
-		if execErr == nil {
-			dur := time.Since(tQueryStart)
-			d.LogInfo("[DirectIngest] PostgreSQL direct UPSERT succeeded (Hash: %s, Time: %v)", payload.TrackHash, dur)
-			return IngestResult{
-				Success:    true,
-				DBDuration: dur,
+		if task.AnalysisRowID > 0 {
+			query = `
+				UPDATE raw.library_flac SET
+					filepath=$1, filename=$2, track_number=$3, album_artist=$4, album=$5, artist=$6, title=$7,
+					meta=meta || $8::jsonb,
+					features=CASE $11
+						WHEN 'mix_only' THEN features || $9::jsonb
+						WHEN 'stems_only' THEN jsonb_set(features, '{demucs}', COALESCE($9::jsonb->'demucs', '{}'::jsonb), true)
+						ELSE $9::jsonb END,
+					predictions=CASE WHEN $11='stems_only' THEN predictions ELSE $10::jsonb END,
+					analyzed_at=CURRENT_TIMESTAMP
+				WHERE id=$12 AND xmin::text::bigint=$13 AND audio_hash=$14`
+			result, execErr := d.pgDB.ExecContext(ctx, query,
+				task.FlacPath, filename, task.TrackNumber, task.AlbumArtist, task.Album, task.Artist, task.Title,
+				string(metaJSON), string(featuresJSON), string(predictionsJSON), string(task.AnalysisDecision),
+				task.AnalysisRowID, task.AnalysisRowVersion, task.AnalysisAudioHash,
+			)
+			if execErr == nil {
+				rows, rowsErr := result.RowsAffected()
+				if rowsErr != nil {
+					execErr = rowsErr
+				} else if rows != 1 {
+					return IngestResult{Conflict: true, ErrorMessage: "analysis row changed after preflight"}
+				}
 			}
-		}
+			if execErr == nil {
+				dur := time.Since(tQueryStart)
+				return IngestResult{Success: true, DBDuration: dur}
+			}
+			d.LogWarn("[DirectIngest] PostgreSQL guarded UPDATE error/timeout (%v): %v", ctx.Err(), execErr)
+		} else {
+			result, execErr := d.pgDB.ExecContext(
+				ctx,
+				query,
+				payload.TrackHash,
+				task.FlacPath,
+				filename,
+				task.TrackNumber,
+				task.AlbumArtist,
+				task.Album,
+				task.Artist,
+				task.Title,
+				string(metaJSON),
+				string(featuresJSON),
+				string(predictionsJSON),
+			)
 
-		d.LogWarn("[DirectIngest] PostgreSQL UPSERT error/timeout (%v): %v. Falling back to local DLQ (send_failed.db)...", ctx.Err(), execErr)
+			if execErr == nil {
+				rows, rowsErr := result.RowsAffected()
+				if rowsErr != nil {
+					execErr = rowsErr
+				} else if rows != 1 {
+					return IngestResult{Conflict: true, ErrorMessage: "analysis row appeared after preflight"}
+				}
+			}
+			if execErr == nil {
+				dur := time.Since(tQueryStart)
+				d.LogInfo("[DirectIngest] PostgreSQL direct UPSERT succeeded (Hash: %s, Time: %v)", payload.TrackHash, dur)
+				return IngestResult{
+					Success:    true,
+					DBDuration: dur,
+				}
+			}
+
+			d.LogWarn("[DirectIngest] PostgreSQL UPSERT error/timeout (%v): %v. Falling back to local DLQ (send_failed.db)...", ctx.Err(), execErr)
+		}
 	}
 
 	// 2. PostgreSQL 未接続または書き込み失敗時のローカル SQLite DLQ フォールバック (Safety Guard)

@@ -64,6 +64,17 @@ func (d *Dispatcher) RunSingleTask(ctx context.Context, task TaskPayload) (bool,
 	if err != nil || !claimed {
 		return claimed, err
 	}
+	planned, err := d.prepareAnalysisTasks(ctx, []TaskPayload{task})
+	if err != nil {
+		_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailedMaybeRetry, err.Error())
+		return true, err
+	}
+	task = planned[0]
+	if task.AnalysisDecision == Skip {
+		_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "analysis preflight: complete")
+		_ = d.db.Flush()
+		return true, nil
+	}
 
 	for {
 		if _, reserveErr := d.reserveTaskAdmission(task); reserveErr == nil {

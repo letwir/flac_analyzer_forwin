@@ -402,15 +402,16 @@ func (d *Dispatcher) executeDemucsStage(
 	}
 
 	sepResp, sepErr := demucsClient.SeparateWithEvents(ctxDemucs, DemucsSeparatePayload{
-		RequestID:   requestID,
-		FlacPath:    task.FlacPath,
-		ShmTags:     tagsMap,
-		StorageMode: string(storageMode),
-		TempDir:     cacheDir,
-		StartSample: task.StartSample,
-		EndSample:   endSampleParam,
-		UseDml:      false,
-		Generation:  generation,
+		RequestID:      requestID,
+		FlacPath:       task.FlacPath,
+		ShmTags:        tagsMap,
+		StorageMode:    string(storageMode),
+		TempDir:        cacheDir,
+		StartSample:    task.StartSample,
+		EndSample:      endSampleParam,
+		UseDml:         false,
+		Generation:     generation,
+		RequestedStems: stems,
 	}, func(event DemucsStemReadyEvent) error {
 		if err := freezeStemForWavefront(storageMode, arenaSet, event.Stem); err != nil {
 			return err
@@ -470,4 +471,63 @@ func (d *Dispatcher) executeDemucsStage(
 	}
 
 	return sepResp.AudioHash, demucsSR, sepResp.Stems, arenaSet, features, nil
+}
+
+// executeMixOnlyStage decodes the original mix into one bounded backing area
+// and runs the feature lanes without invoking Demucs inference.
+func (d *Dispatcher) executeMixOnlyStage(id int, task TaskPayload, storageMode StorageMode, cacheDir string, cfg Config) (string, *FeatureOutputs, *WorkerArenaSet, error) {
+	timeout := ComputeAdaptiveTimeoutPure(task, cfg.FeatureExtractTimeoutSec, cfg.AdaptiveTimeoutRatio, cfg.MaxAdaptiveTimeoutSec)
+	ctx, cancel := context.WithTimeout(d.currentExecutionContext(), timeout)
+	defer cancel()
+
+	var arenaSet *WorkerArenaSet
+	tags := map[string]string{}
+	if storageMode == StorageModeSHM {
+		ratio := cfg.ShmExpansionRatio
+		if ratio <= 0 {
+			ratio = 3.5
+		}
+		arenaSet = d.arenaPool.GetWorkerArenaSet(id)
+		if _, err := arenaSet.GetOrCreateArena("mix", uint32(EstimateShmSizeForTaskWithRatio(task, ratio))); err != nil {
+			arenaSet.Close()
+			return "", nil, nil, fmt.Errorf("allocate mix SHM: %w", err)
+		}
+		tags = arenaSet.GetTagsMap()
+	}
+	closeOnError := func() {
+		if arenaSet != nil {
+			arenaSet.Close()
+			arenaSet = nil
+		}
+	}
+	client, err := d.demucsPool.Acquire(ctx)
+	if err != nil {
+		closeOnError()
+		return "", nil, nil, fmt.Errorf("acquire decoder daemon: %w", err)
+	}
+	endSample := task.EndSample
+	if endSample == 0 {
+		endSample = -1
+	}
+	response, err := client.DecodeMix(ctx, DemucsSeparatePayload{
+		FlacPath: task.FlacPath, ShmTags: tags, StorageMode: string(storageMode), TempDir: cacheDir,
+		StartSample: task.StartSample, EndSample: endSample,
+	})
+	d.demucsPool.Release(client)
+	if err != nil {
+		closeOnError()
+		return "", nil, nil, fmt.Errorf("decode raw mix: %w", err)
+	}
+	if storageMode == StorageModeSHM {
+		if err := freezeStemForWavefront(storageMode, arenaSet, "mix"); err != nil {
+			closeOnError()
+			return "", nil, nil, err
+		}
+	}
+	features, err := d.executeFeaturesStage(response.SR, response.AudioHash, response.Stems, arenaSet, storageMode, task, cfg)
+	if err != nil {
+		closeOnError()
+		return "", nil, nil, err
+	}
+	return response.AudioHash, features, arenaSet, nil
 }

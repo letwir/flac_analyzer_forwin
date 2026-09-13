@@ -84,17 +84,17 @@
   - 第1段は `(filepath, track_number)` と保存済みmix/stem成果だけで判断し、この段階で `Skip` できる対象はデコードしない。
   - 第2段が必要な対象だけraw mixを一度デコードする。mixは分離結果ではなく元の混合波形であり、軽量mix解析結果からDemucs要否を判定する場合は特徴量・閾値・偽陰性時の扱いを明文化する。
   - Acceptance: DB行の不存在、mix欠落、stem欠落、完全、旧schema、不正JSONの期待判断を表形式テストにする。
-- [ ] **P4-I2 【DB】正規化 `(filepath, track_number)` のバッチ照合を汎用化する**
+- [x] **P4-I2 【DB】正規化 `(filepath, track_number)` のバッチ照合を汎用化する**
   - 既存 `-Unreg` の正規化規則を再利用し、ドライブ文字、大小文字、区切り、UNC、Track 1 / NULL方針を一箇所に集約する。
   - CUE展開後の入力キーをバッチ照会し、N+1 queryを避ける。
   - Acceptance: SQLiteのみ、PostgreSQLのみ、双方、双方なしの4象限と、CUE一部登録ケースを通す。
-- [ ] **P4-I3 【Routing】DB判断を実行計画へ接続し、mix/stem解析を選択実行する**
+- [x] **P4-I3 【Routing】DB判断を実行計画へ接続し、mix/stem解析を選択実行する**
   - DB preflightは重いdecode/Demucs/SHM確保より前に行う。
   - 新規mix判定が必要な場合は `DB preflight -> raw mix decode -> bounded mix analysis -> Demucs decision` の順序を固定する。
   - `Skip` は資源Leaseを取得せず、`MixOnly` / `StemsOnly` は不要なモデル・波形領域を確保しない。
   - 既存の `audio_hash` 重複判定は移動・改名・別名コピー向け第二段安全網として保持する。
   - Acceptance: 各decisionで起動したstageと確保資源をspy/fakeで検証し、不要stageが0回であることを確認する。
-- [ ] **P4-I4 【Failure】DB障害・競合更新・再実行をfail-closedかつ冪等にする**
+- [x] **P4-I4 【Failure】DB障害・競合更新・再実行をfail-closedかつ冪等にする**
   - DB接続失敗を未登録扱いにせず、解析開始前に明示失敗またはretryへ送る。
   - preflight後の同時更新に備え、ingest時の再検証またはversion条件を定義する。
   - Acceptance: timeout、接続断、同時UPSERT、キャンセル後再実行で重複解析・成果欠落・誤Skipが発生しない。

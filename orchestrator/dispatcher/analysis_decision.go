@@ -24,6 +24,8 @@ const (
 // the row's xmin token and must be revalidated before replacing stored output.
 type AnalysisSnapshot struct {
 	Exists      bool
+	RowID       int64
+	AudioHash   string
 	Meta        json.RawMessage
 	Features    json.RawMessage
 	Predictions json.RawMessage

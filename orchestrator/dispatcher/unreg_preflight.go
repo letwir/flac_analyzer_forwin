@@ -10,17 +10,24 @@ import (
 	"time"
 
 	"flac_analyzer/orchestrator/state"
+	"github.com/lib/pq"
 )
 
 const unregRegistrationQuery = `
-SELECT filepath, track_number
-FROM raw.library_flac
-WHERE analyzed_at IS NOT NULL`
+WITH requested(filepath_key, track_number) AS (
+	SELECT * FROM unnest($1::text[], $2::integer[])
+)
+SELECT library.filepath, COALESCE(library.track_number, 1)
+FROM raw.library_flac AS library
+JOIN requested
+	ON lower(replace(library.filepath, '/', E'\\')) = requested.filepath_key
+	AND COALESCE(library.track_number, 1) = requested.track_number
+WHERE library.analyzed_at IS NOT NULL`
 
 type unregLookup interface {
 	Ping(context.Context) error
 	SQLiteTaskState(string, int) (state.TaskState, error)
-	PostgreSQLRegistrations(context.Context) (map[unregTrackKey]struct{}, error)
+	PostgreSQLRegistrations(context.Context, []unregTrackKey) (map[unregTrackKey]struct{}, error)
 }
 
 type databaseUnregLookup struct {
@@ -66,11 +73,27 @@ func registrationComparisonKey(path string) (string, error) {
 }
 
 func newUnregTrackKey(path string, trackNumber int) (unregTrackKey, error) {
+	trackNumber, err := normalizedTrackNumber(trackNumber)
+	if err != nil {
+		return unregTrackKey{}, err
+	}
 	key, err := registrationComparisonKey(path)
 	if err != nil {
 		return unregTrackKey{}, err
 	}
 	return unregTrackKey{path: key, trackNumber: trackNumber}, nil
+}
+
+// normalizedTrackNumber makes the legacy NULL/zero convention explicit:
+// an unnumbered single-file row is Track 1, while negative values are invalid.
+func normalizedTrackNumber(trackNumber int) (int, error) {
+	if trackNumber < 0 {
+		return 0, fmt.Errorf("track number must not be negative: %d", trackNumber)
+	}
+	if trackNumber == 0 {
+		return 1, nil
+	}
+	return trackNumber, nil
 }
 
 func classifySQLiteUnregStatus(status state.TaskStatus) (sqliteUnregDecision, error) {
@@ -85,22 +108,9 @@ func classifySQLiteUnregStatus(status state.TaskStatus) (sqliteUnregDecision, er
 }
 
 func filterUnregisteredSingleTasks(ctx context.Context, tasks []TaskPayload, lookup unregLookup) (UnregPreflightResult, error) {
-	if err := lookup.Ping(ctx); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return UnregPreflightResult{}, fmt.Errorf("PostgreSQL registration preflight cancelled: %w", err)
-		}
-		return UnregPreflightResult{}, errors.New("PostgreSQL registration preflight unavailable")
-	}
-	postgresRegistrations, err := lookup.PostgreSQLRegistrations(ctx)
-	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return UnregPreflightResult{}, fmt.Errorf("PostgreSQL registration catalog lookup cancelled: %w", err)
-		}
-		return UnregPreflightResult{}, errors.New("PostgreSQL registration catalog lookup failed")
-	}
-
-	result := UnregPreflightResult{Eligible: make([]TaskPayload, 0, len(tasks))}
-	for _, task := range tasks {
+	normalizedTasks := make([]TaskPayload, len(tasks))
+	requestedKeys := make([]unregTrackKey, len(tasks))
+	for i, task := range tasks {
 		if err := ctx.Err(); err != nil {
 			return UnregPreflightResult{}, fmt.Errorf("unregistered preflight cancelled before track %d: %w", task.TrackNumber, err)
 		}
@@ -109,7 +119,37 @@ func filterUnregisteredSingleTasks(ctx context.Context, tasks []TaskPayload, loo
 			return UnregPreflightResult{}, fmt.Errorf("canonicalize track %d path: %w", task.TrackNumber, err)
 		}
 		task.FlacPath = canonical
+		task.TrackNumber, err = normalizedTrackNumber(task.TrackNumber)
+		if err != nil {
+			return UnregPreflightResult{}, fmt.Errorf("normalize track number: %w", err)
+		}
+		key, err := newUnregTrackKey(task.FlacPath, task.TrackNumber)
+		if err != nil {
+			return UnregPreflightResult{}, fmt.Errorf("normalize PostgreSQL registration key for track %d: %w", task.TrackNumber, err)
+		}
+		normalizedTasks[i] = task
+		requestedKeys[i] = key
+	}
 
+	if err := lookup.Ping(ctx); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return UnregPreflightResult{}, fmt.Errorf("PostgreSQL registration preflight cancelled: %w", err)
+		}
+		return UnregPreflightResult{}, errors.New("PostgreSQL registration preflight unavailable")
+	}
+	postgresRegistrations, err := lookup.PostgreSQLRegistrations(ctx, requestedKeys)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return UnregPreflightResult{}, fmt.Errorf("PostgreSQL registration catalog lookup cancelled: %w", err)
+		}
+		return UnregPreflightResult{}, errors.New("PostgreSQL registration catalog lookup failed")
+	}
+
+	result := UnregPreflightResult{Eligible: make([]TaskPayload, 0, len(normalizedTasks))}
+	for _, task := range normalizedTasks {
+		if err := ctx.Err(); err != nil {
+			return UnregPreflightResult{}, fmt.Errorf("unregistered preflight cancelled before track %d: %w", task.TrackNumber, err)
+		}
 		taskState, stateErr := lookup.SQLiteTaskState(task.FlacPath, task.TrackNumber)
 		switch {
 		case stateErr == nil:
@@ -153,16 +193,25 @@ func (l databaseUnregLookup) SQLiteTaskState(path string, trackNumber int) (stat
 	return l.sqlite.GetTaskState(path, trackNumber)
 }
 
-func (l databaseUnregLookup) PostgreSQLRegistrations(ctx context.Context) (map[unregTrackKey]struct{}, error) {
+func (l databaseUnregLookup) PostgreSQLRegistrations(ctx context.Context, requested []unregTrackKey) (map[unregTrackKey]struct{}, error) {
+	registrations := make(map[unregTrackKey]struct{})
+	if len(requested) == 0 {
+		return registrations, nil
+	}
+	paths := make([]string, len(requested))
+	trackNumbers := make([]int, len(requested))
+	for i, key := range requested {
+		paths[i] = key.path
+		trackNumbers[i] = key.trackNumber
+	}
 	queryCtx, cancel := context.WithTimeout(ctx, l.timeout)
 	defer cancel()
-	rows, err := l.pg.QueryContext(queryCtx, unregRegistrationQuery)
+	rows, err := l.pg.QueryContext(queryCtx, unregRegistrationQuery, pq.Array(paths), pq.Array(trackNumbers))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	registrations := make(map[unregTrackKey]struct{})
 	for rows.Next() {
 		var path string
 		var trackNumber int

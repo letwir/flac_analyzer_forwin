@@ -17,6 +17,8 @@ type fakeUnregLookup struct {
 	stateErr      map[int]error
 	registrations map[unregTrackKey]struct{}
 	catalogErr    error
+	requested     []unregTrackKey
+	catalogCalls  int
 }
 
 func (f *fakeUnregLookup) Ping(context.Context) error {
@@ -33,7 +35,9 @@ func (f *fakeUnregLookup) SQLiteTaskState(_ string, trackNumber int) (state.Task
 	return state.TaskState{}, sql.ErrNoRows
 }
 
-func (f *fakeUnregLookup) PostgreSQLRegistrations(context.Context) (map[unregTrackKey]struct{}, error) {
+func (f *fakeUnregLookup) PostgreSQLRegistrations(_ context.Context, requested []unregTrackKey) (map[unregTrackKey]struct{}, error) {
+	f.catalogCalls++
+	f.requested = append([]unregTrackKey(nil), requested...)
 	return f.registrations, f.catalogErr
 }
 
@@ -92,6 +96,9 @@ func TestFilterUnregisteredSingleTasksFourQuadrants(t *testing.T) {
 	}
 	if len(result.Eligible) != 1 || result.Eligible[0].TrackNumber != 4 {
 		t.Fatalf("eligible=%+v, want only track 4", result.Eligible)
+	}
+	if lookup.catalogCalls != 1 || len(lookup.requested) != len(tasks) {
+		t.Fatalf("PostgreSQL batch calls=%d keys=%d, want 1 call with %d keys", lookup.catalogCalls, len(lookup.requested), len(tasks))
 	}
 }
 
@@ -205,10 +212,50 @@ func TestPostgreSQLStoredPathUsesSameCanonicalization(t *testing.T) {
 	}
 }
 
+func TestNormalizedTrackNumberPolicy(t *testing.T) {
+	for _, tt := range []struct {
+		input   int
+		want    int
+		wantErr bool
+	}{
+		{input: 0, want: 1},
+		{input: 1, want: 1},
+		{input: 7, want: 7},
+		{input: -1, wantErr: true},
+	} {
+		got, err := normalizedTrackNumber(tt.input)
+		if (err != nil) != tt.wantErr || (!tt.wantErr && got != tt.want) {
+			t.Fatalf("normalizedTrackNumber(%d)=(%d, %v), want (%d, error=%v)", tt.input, got, err, tt.want, tt.wantErr)
+		}
+	}
+}
+
+func TestZeroTrackNumberUsesTrackOneRegistration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "single.flac")
+	lookup := &fakeUnregLookup{
+		states:   map[int]state.TaskState{},
+		stateErr: map[int]error{},
+		registrations: map[unregTrackKey]struct{}{
+			mustUnregTrackKey(t, path, 1): {},
+		},
+	}
+	result, err := filterUnregisteredSingleTasks(t.Context(), []TaskPayload{{FlacPath: path, TrackNumber: 0}}, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PostgreSQLSkipped != 1 || len(result.Eligible) != 0 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if len(lookup.requested) != 1 || lookup.requested[0].trackNumber != 1 {
+		t.Fatalf("requested keys=%+v, want Track 1", lookup.requested)
+	}
+}
+
 func TestUnregRegistrationQueryContract(t *testing.T) {
 	for _, required := range []string{
-		"SELECT filepath, track_number",
+		"unnest($1::text[], $2::integer[])",
 		"FROM raw.library_flac",
+		"COALESCE(library.track_number, 1)",
 		"analyzed_at IS NOT NULL",
 	} {
 		if !strings.Contains(unregRegistrationQuery, required) {
