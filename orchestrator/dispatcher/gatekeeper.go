@@ -30,6 +30,7 @@ type GatekeeperInput struct {
 	EstimatedTaskVram   uint64
 	GPURequired         bool
 	DedicatedVramKnown  bool
+	DedicatedVramStatus string
 	MaxGpuUtilization   float64
 	EnableGpuThrottle   bool
 	AllowHighMemoryDisk bool
@@ -181,8 +182,12 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 	// GPU-required work is never admitted on an unknown dedicated-VRAM sample.
 	// This is intentionally independent of the utilization throttle switch.
 	if in.GPURequired && !in.DedicatedVramKnown {
+		reason := "Dedicated VRAM availability is unknown"
+		if in.DedicatedVramStatus != "" {
+			reason += ": " + in.DedicatedVramStatus
+		}
 		return GatekeeperDecision{
-			IsGo: false, WaitDuration: retryDelay, Reason: "Dedicated VRAM availability is unknown", StorageMode: in.StorageMode,
+			IsGo: false, WaitDuration: retryDelay, Reason: reason, StorageMode: in.StorageMode,
 			EstimatedRamBytes: in.EstimatedTaskRam, EffectiveAvailBytes: effectiveAvailBytes, RequiredBytes: requiredBytes,
 			MemoryLoad: in.MemoryLoad, AvailDiskBytes: in.AvailDisk, MinAvailDiskBytes: in.MinAvailDisk,
 			GpuUtilization: in.GpuUtilization, AvailVramBytes: in.AvailVram, IsGpuBlock: true,
@@ -306,31 +311,34 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 	var gpuUtil float64 = 0.0
 	var availVram uint64
 	dedicatedVramKnown := false
+	dedicatedVramStatus := "metrics unavailable"
 	if gpuMetrics != nil {
 		gpuUtil = gpuMetrics.UtilizationPercent
 		availVram = gpuMetrics.AvailableVramBytes
 		dedicatedVramKnown = gpuMetrics.IsDedicatedAvailable()
+		dedicatedVramStatus = gpuMetrics.StatusDetail
 	}
 
 	input := GatekeeperInput{
-		StorageMode:        storageMode,
-		EstimatedTaskDisk:  estimatedDiskBytes,
-		AvailPhys:          memInfo.AvailPhys,
-		InFlightRam:        0,
-		EstimatedTaskRam:   effectiveTaskRam,
-		MinAvailRam:        minAvailBytes,
-		MemoryLoad:         memInfo.MemoryLoad,
-		AvailDisk:          availDisk,
-		MinAvailDisk:       minAvailDiskBytes,
-		GpuUtilization:     gpuUtil,
-		AvailVram:          availVram,
-		MinAvailVram:       minAvailVramBytes,
-		EstimatedTaskVram:  estimatedVramBytes,
-		GPURequired:        estimatedVramBytes > 0,
-		DedicatedVramKnown: dedicatedVramKnown,
-		MaxGpuUtilization:  currentCfg.MaxGpuUtilizationRatio,
-		EnableGpuThrottle:  currentCfg.EnableGpuThrottle,
-		RetryDelay:         retryDelay,
+		StorageMode:         storageMode,
+		EstimatedTaskDisk:   estimatedDiskBytes,
+		AvailPhys:           memInfo.AvailPhys,
+		InFlightRam:         0,
+		EstimatedTaskRam:    effectiveTaskRam,
+		MinAvailRam:         minAvailBytes,
+		MemoryLoad:          memInfo.MemoryLoad,
+		AvailDisk:           availDisk,
+		MinAvailDisk:        minAvailDiskBytes,
+		GpuUtilization:      gpuUtil,
+		AvailVram:           availVram,
+		MinAvailVram:        minAvailVramBytes,
+		EstimatedTaskVram:   estimatedVramBytes,
+		GPURequired:         estimatedVramBytes > 0,
+		DedicatedVramKnown:  dedicatedVramKnown,
+		DedicatedVramStatus: dedicatedVramStatus,
+		MaxGpuUtilization:   currentCfg.MaxGpuUtilizationRatio,
+		EnableGpuThrottle:   currentCfg.EnableGpuThrottle,
+		RetryDelay:          retryDelay,
 	}
 
 	d.inFlightMutex.Lock()

@@ -395,6 +395,14 @@
 - **Source**: `orchestrator/sysinfo/gpu_windows.go`, `orchestrator/sysinfo/sysinfo.go`, `orchestrator/sysinfo/gpu_test.go`
 </api>
 
+<api id="GATEKEEPER_VRAM_UNKNOWN_DIAGNOSTICS">
+<title>Gatekeeper のVRAM unknown判定にはGPUキャッシュのStatusDetailを保持する</title>
+- **Verified date / scope**: 2026-09-14、`orchestrator/dispatcher`。
+- **Finding**: `DedicatedVramKnown=false` だけをログ化すると、採取失敗・stale・不整合・複数アダプター判定を実機ログから区別できない。
+- **Contract**: 純粋なGatekeeper入力へ `DedicatedVramStatus` を渡し、NOGO理由に付加する。判定そのものはfail-closedのまま変更しない。
+- **Source**: `orchestrator/dispatcher/gatekeeper.go`, `orchestrator/dispatcher/admission.go`, `orchestrator/dispatcher/gatekeeper_test.go`
+</api>
+
 <api id="PPROF_AND_ETL_OBSERVABILITY">
 <title>Go 製長大 ETL パイプラインにおける Prometheus メトリクス強化と pprof ライブプロファイリング技法</title>
 - **Context**: Go Orchestrator ＋ Python Workers による大規模並列バッチ処理において、処理速度低下やリソース飽和（詰まり）が発生した際のボトルネック観測・診断技法。

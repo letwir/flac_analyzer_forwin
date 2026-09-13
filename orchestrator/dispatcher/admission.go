@@ -343,10 +343,12 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 	}
 	availVRAM := uint64(0)
 	dedicatedKnown := false
+	dedicatedStatus := "metrics unavailable"
 	utilization := 0.0
 	if gpu != nil {
 		availVRAM = gpu.AvailableVramBytes
 		dedicatedKnown = gpu.IsDedicatedAvailable()
+		dedicatedStatus = gpu.StatusDetail
 		utilization = gpu.UtilizationPercent
 	}
 
@@ -366,6 +368,7 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 		EstimatedTaskVram:   estimatedVRAM,
 		GPURequired:         true,
 		DedicatedVramKnown:  dedicatedKnown,
+		DedicatedVramStatus: dedicatedStatus,
 		MaxGpuUtilization:   cfg.MaxGpuUtilizationRatio,
 		EnableGpuThrottle:   cfg.EnableGpuThrottle,
 		AllowHighMemoryDisk: pressure.ForceDisk,

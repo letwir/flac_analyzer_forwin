@@ -1,6 +1,7 @@
 package dispatcher
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -370,10 +371,14 @@ func TestEvaluateGoNoGoPure_GpuRequiredUnknownDedicatedVramBlocks(t *testing.T) 
 		AvailDisk: 16 * 1024 * 1024 * 1024, GpuUtilization: 0,
 		EstimatedTaskVram: 1024 * 1024 * 1024, MinAvailVram: 512 * 1024 * 1024,
 		GPURequired: true, DedicatedVramKnown: false, EnableGpuThrottle: false,
+		DedicatedVramStatus: "periodic collection failed: timeout",
 	}
 	decision := EvaluateGoNoGoPure(in)
 	if decision.IsGo || !decision.IsGpuBlock {
 		t.Fatalf("GPU-required work with unknown dedicated VRAM must be blocked: %+v", decision)
+	}
+	if !strings.Contains(decision.Reason, "periodic collection failed: timeout") {
+		t.Fatalf("GPU block reason must preserve collection diagnostics: %q", decision.Reason)
 	}
 }
 
