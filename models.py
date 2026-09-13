@@ -146,7 +146,9 @@ def build_essentia_models(models_dir: str) -> dict[str, dict[str, Any]]:
     return models
 
 
-def init_global_onnx_sessions(models_dir: str, essentia_models: dict):
+def init_global_onnx_sessions(
+    models_dir: str, essentia_models: dict, providers_override: list[str] | None = None
+):
     """グローバルにONNXセッションを1セット構築し、直列に使い回しますの。"""
     global GLOBAL_ONNX_SESSIONS
     if not os.path.exists(models_dir):
@@ -156,7 +158,13 @@ def init_global_onnx_sessions(models_dir: str, essentia_models: dict):
         return
 
     available = ort.get_available_providers()
-    if "CUDAExecutionProvider" in available:
+    if providers_override is not None:
+        providers = list(providers_override)
+        if not providers or any(provider not in available for provider in providers):
+            raise RuntimeError(
+                f"requested ONNX providers are unavailable: {providers}; available: {available}"
+            )
+    elif "CUDAExecutionProvider" in available:
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     elif "DmlExecutionProvider" in available:
         providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
@@ -386,12 +394,12 @@ def init_global_demucs(use_dml: bool = False):
         raise RuntimeError(f"Failed to load global demucs model: {e}")
 
 
-def init_worker_onnx(models_dir: str) -> dict:
+def init_worker_onnx(models_dir: str, providers_override: list[str] | None = None) -> dict:
     """子プロセス (Consumer) 内で ONNX セッションを初期化しますわ。
     親プロセスで開いたセッションは fork 非対応なので、spawn した子で改めて開き直す必要がありますの。
     Returns: essentia_models dict (分類器定義)"""
     import logging
     essentia_models = build_essentia_models(models_dir)
-    init_global_onnx_sessions(models_dir, essentia_models)
+    init_global_onnx_sessions(models_dir, essentia_models, providers_override)
     logging.info(f"[WorkerONNX] Consumer 内 ONNX 直列セッション初期化完了！（分類器数: {len(essentia_models)})")
     return essentia_models

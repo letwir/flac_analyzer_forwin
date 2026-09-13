@@ -18,6 +18,7 @@ import (
 	"flac_analyzer/orchestrator/logger"
 	"flac_analyzer/orchestrator/metrics"
 	"flac_analyzer/orchestrator/state"
+	"flac_analyzer/orchestrator/sysinfo"
 
 	_ "github.com/lib/pq"
 )
@@ -41,17 +42,27 @@ type Dispatcher struct {
 	ingestCtx              context.Context
 	cancelIngest           context.CancelFunc
 	allocMutex             sync.Mutex
-	demucsSemaphore        *DynamicSemaphore
-	tensorSemaphore        chan struct{}
 	wg                     sync.WaitGroup
 	logLevel               LogLevel
 	eventLog               EventLogger
 	skipDupByHash          bool
 	activeInFlightRamBytes uint64
 	inFlightMutex          sync.Mutex
+	ramAdmissions          map[string]ramAdmission
+	ramAdmissionSequence   uint64
+	admissionMu            sync.Mutex
+	admission              *AdmissionController
+	taskLeases             map[string]AdmissionLease
+	reserveTaskFn          func(TaskPayload) (AdmissionLease, error)
+	executeTaskFn          func(int, TaskPayload)
+	pressureMu             sync.Mutex
+	memoryPressure         MemoryPressureState
+	parkLogMu              sync.Mutex
+	parkLogReasons         map[string]time.Time
 	arenaPool              *ShmArenaPool
 	statsTracker           *StatsTracker
-	daemonPool             *WorkerDaemonPool
+	cpuDaemonPool          *WorkerDaemonPool
+	gpuDaemonPool          *WorkerDaemonPool
 	demucsPool             *DemucsDaemonPool
 	demucsScheduler        *AdaptiveDemucsScheduler
 }
@@ -68,6 +79,7 @@ func (d *Dispatcher) currentExecutionContext() context.Context {
 // NewDispatcher initializes all child worker pools, semaphores, and database connections.
 // SideEffectFn: NewDispatcher
 func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
+	sysinfo.SetDedicatedVramTotalGB(cfg.DedicatedVramTotalGB)
 	var pgConn *sql.DB
 	if cfg.DatabaseURL != "" {
 		if conn, err := sql.Open("postgres", cfg.DatabaseURL); err == nil {
@@ -95,24 +107,20 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 	for k, v := range cfg.PythonEnv {
 		envVars = append(envVars, fmt.Sprintf("%s=%s", strings.ToUpper(k), v))
 	}
-	daemonCap := cfg.NumWorkers
-	if daemonCap <= 0 {
-		daemonCap = 2
-	}
-	if daemonCap > 8 {
-		daemonCap = 8
-	}
-	daemonPool := NewWorkerDaemonPool(daemonCap, pythonPath, parentDir, envVars, func(format string, v ...interface{}) {
+	cpuDaemonPool := NewWorkerDaemonPool(cfg.NumWorkers, pythonPath, parentDir, envVars, func(format string, v ...interface{}) {
 		log.Printf(format, v...)
-	})
+	}, WorkerDaemonRoleCPU)
+	gpuDaemonPool := NewWorkerDaemonPool(1, pythonPath, parentDir, envVars, func(format string, v ...interface{}) {
+		log.Printf(format, v...)
+	}, WorkerDaemonRoleFeatureGPU)
 
 	statsTracker := NewStatsTracker()
 
-	// 常駐 Demucs デーモンプール (最大容量 2) & アダプティブ GPU スケジューラ
-	demucsPool := NewDemucsDaemonPool(2, pythonPath, parentDir, envVars, func(format string, v ...interface{}) {
+	// Demucs owns a single dedicated GPU slot; feature extraction uses its own pool.
+	demucsPool := NewDemucsDaemonPool(1, pythonPath, parentDir, envVars, func(format string, v ...interface{}) {
 		log.Printf(format, v...)
 	})
-	demucsScheduler := NewAdaptiveDemucsScheduler(1, 2, 0.50, 4*1024*1024*1024, statsTracker)
+	demucsScheduler := NewAdaptiveDemucsScheduler(1, 1, 0.50, 4*1024*1024*1024, statsTracker)
 
 	dbTimeout := cfg.DBTimeoutSec
 	if dbTimeout <= 0 {
@@ -141,15 +149,18 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		ingestQueue:            make(chan IngestPayload, 1000),
 		ingestCtx:              ingestCtx,
 		cancelIngest:           cancelIngest,
-		demucsSemaphore:        NewDynamicSemaphore(cfg.DemucsConcurrentLimit),
-		tensorSemaphore:        make(chan struct{}, 1),
 		logLevel:               cfg.LogLevel,
 		eventLog:               cfg.EventLog,
 		skipDupByHash:          cfg.SkipDupByHash,
 		activeInFlightRamBytes: 0,
+		ramAdmissions:          make(map[string]ramAdmission),
+		taskLeases:             make(map[string]AdmissionLease),
+		memoryPressure:         MemoryPressureState{EnterPercent: 90, ResumePercent: 82},
+		parkLogReasons:         make(map[string]time.Time),
 		arenaPool:              NewShmArenaPool(cfg.EnableVirtualLock),
 		statsTracker:           statsTracker,
-		daemonPool:             daemonPool,
+		cpuDaemonPool:          cpuDaemonPool,
+		gpuDaemonPool:          gpuDaemonPool,
 		demucsPool:             demucsPool,
 		demucsScheduler:        demucsScheduler,
 	}
@@ -203,11 +214,18 @@ func (d *Dispatcher) Start() {
 	if d.demucsScheduler != nil {
 		d.demucsScheduler.StartAdaptiveLoop(context.Background(), 2*time.Second)
 	}
-	if d.daemonPool != nil {
+	if d.cpuDaemonPool != nil {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			_ = d.daemonPool.Prewarm(ctx, 2)
+			_ = d.cpuDaemonPool.Prewarm(ctx, d.config.NumWorkers)
+		}()
+	}
+	if d.gpuDaemonPool != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			_ = d.gpuDaemonPool.Prewarm(ctx, 1)
 		}()
 	}
 	if d.demucsPool != nil {
@@ -288,8 +306,11 @@ func (d *Dispatcher) Stop() {
 	d.cancelIngest()
 
 	// Phase 3: 全ての後続処理完了後にプールおよび DB コネクションを破棄
-	if d.daemonPool != nil {
-		_ = d.daemonPool.Close()
+	if d.cpuDaemonPool != nil {
+		_ = d.cpuDaemonPool.Close()
+	}
+	if d.gpuDaemonPool != nil {
+		_ = d.gpuDaemonPool.Close()
 	}
 	if d.demucsPool != nil {
 		_ = d.demucsPool.Close()
@@ -316,32 +337,13 @@ func (d *Dispatcher) worker(id int) {
 		func() {
 			defer atomic.AddInt32(&d.activeTaskCount, -1)
 
-			admitted := false
-			maxRetries := d.GetConfig().GatekeeperMaxRetries
-			if maxRetries <= 0 {
-				maxRetries = 5
+			// The feeder has already planned and atomically reserved every
+			// resource. Workers never sleep while holding a claimed task.
+			if d.executeTaskFn != nil {
+				d.executeTaskFn(id, task)
+			} else {
+				d.executeTaskPipeline(id, task)
 			}
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				isGo, waitDur := d.EvaluateGoNoGo(id, task)
-				if isGo {
-					admitted = true
-					break
-				}
-				if attempt == maxRetries {
-					d.markTaskMaybeRetry(id, task, attempt)
-					break
-				}
-				if !d.waitForGatekeeperRetry(waitDur) {
-					return
-				}
-			}
-			if !admitted {
-				return
-			}
-
-			// Gatekeeper Pre-flight Decision (CUE/FLAC Demucs RAM Estimation)
-			// Execute full sequential DSP pipeline step
-			d.executeTaskPipeline(id, task)
 		}()
 	}
 }

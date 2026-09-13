@@ -14,7 +14,6 @@ import (
 	"flac_analyzer/orchestrator/logger"
 	"flac_analyzer/orchestrator/metrics"
 	"flac_analyzer/orchestrator/state"
-	"flac_analyzer/orchestrator/sysinfo"
 )
 
 // executeTaskPipeline executes the full sequential DSP pipeline for a single track:
@@ -47,40 +46,22 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	metrics.AnalyzerActiveWorkers.Inc()
 	defer metrics.AnalyzerActiveWorkers.Dec()
 
-	memInfo, _ := sysinfo.GetMemoryInfo()
-	var availPhys uint64 = 0
-	if memInfo != nil {
-		availPhys = memInfo.AvailPhys
-	}
 	currentCfg := d.GetConfig()
-	minAvailBytes := uint64(currentCfg.MinAvailRamGB * 1024 * 1024 * 1024)
-
 	d.inFlightMutex.Lock()
-	inFlight := d.activeInFlightRamBytes
+	admission, admitted := d.ramAdmissions[admissionKey(task)]
 	d.inFlightMutex.Unlock()
-
-	storageMode, effectiveTaskRam, _ := DetermineStorageModePure(
-		task,
-		availPhys,
-		inFlight,
-		minAvailBytes,
-		currentCfg.DiskModeRamThresholdRatio,
-		currentCfg.EnableDiskModeFallback,
-	)
-
-	// Synchronize activeInFlightRamBytes with clamped effective RAM
-	d.inFlightMutex.Lock()
-	d.activeInFlightRamBytes += effectiveTaskRam
-	d.inFlightMutex.Unlock()
+	if !admitted {
+		d.failTask(task, "missing Gatekeeper RAM admission")
+		return
+	}
+	storageMode := admission.storageMode
+	centralLease, centrallyAdmitted := d.takeTaskAdmission(task)
 
 	defer func() {
-		d.inFlightMutex.Lock()
-		if d.activeInFlightRamBytes >= effectiveTaskRam {
-			d.activeInFlightRamBytes -= effectiveTaskRam
-		} else {
-			d.activeInFlightRamBytes = 0
+		d.releaseRamAdmission(task, admission)
+		if centrallyAdmitted {
+			d.releaseTaskAdmission(task, centralLease)
 		}
-		d.inFlightMutex.Unlock()
 	}()
 
 	d.LogInfo("[W-%d] [IO Monad] Starting processing (%s mode): %s (Track %d)", id, storageMode, task.FlacPath, task.TrackNumber)
@@ -123,8 +104,9 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	var demucsStems map[string]StemInfo
 	var demucsSR int
 	var computedHash string
+	var wavefrontFeatures *FeatureOutputs
 	var demucsErr error
-	computedHash, demucsSR, demucsStems, arenaSet, demucsErr = d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
+	computedHash, demucsSR, demucsStems, arenaSet, wavefrontFeatures, demucsErr = d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
 	if demucsErr != nil {
 		d.failTask(task, demucsErr.Error())
 		return
@@ -138,10 +120,14 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	}
 
 	// 3. Feature Extraction Stage (Daemon)
-	feats, featErr := d.executeFeaturesStage(demucsSR, trackHash, demucsStems, arenaSet, storageMode, task, currentCfg)
-	if featErr != nil {
-		d.failTask(task, featErr.Error())
-		return
+	feats := wavefrontFeatures
+	if feats == nil {
+		var featErr error
+		feats, featErr = d.executeFeaturesStage(demucsSR, trackHash, demucsStems, arenaSet, storageMode, task, currentCfg)
+		if featErr != nil {
+			d.failTask(task, featErr.Error())
+			return
+		}
 	}
 	// Feature extraction has closed its read handles, so release the producer
 	// mappings before tagging and ingestion continue.

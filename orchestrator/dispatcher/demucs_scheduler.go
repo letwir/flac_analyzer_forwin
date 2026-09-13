@@ -20,6 +20,24 @@ func DetermineDemucsSlotLimitPure(gpuUtil float64, availVramBytes uint64, dualUt
 		return 1
 	}
 	if dualUtilThreshold <= 0 {
+		dualUtilThreshold = 0.50
+	}
+	if dualMinVramBytes == 0 {
+		dualMinVramBytes = 4 * 1024 * 1024 * 1024
+	}
+	if gpuUtil >= dualUtilThreshold*100 || (availVramBytes != math.MaxUint64 && availVramBytes < dualMinVramBytes) {
+		return 1
+	}
+	return 2
+}
+
+// DetermineDemucsSlotLimitWithAvailabilityPure permits a second GPU slot only
+// when the dedicated-VRAM observation is explicitly known and sufficient.
+func DetermineDemucsSlotLimitWithAvailabilityPure(gpuUtil float64, availVramBytes uint64, dedicatedVramKnown bool, dualUtilThreshold float64, dualMinVramBytes uint64, maxCapacity int) int {
+	if maxCapacity <= 1 {
+		return 1
+	}
+	if dualUtilThreshold <= 0 {
 		dualUtilThreshold = 0.50 // デフォルト 50%
 	}
 	if dualMinVramBytes == 0 {
@@ -31,8 +49,8 @@ func DetermineDemucsSlotLimitPure(gpuUtil float64, availVramBytes uint64, dualUt
 		return 1
 	}
 
-	// VRAM 空き容量判定: 最低必要容量未満ならシングルタスクへ縮退 (math.MaxUint64 は無制限環境)
-	if availVramBytes != math.MaxUint64 && availVramBytes < dualMinVramBytes {
+	// Unknown or insufficient dedicated capacity immediately demotes to one slot.
+	if !dedicatedVramKnown || availVramBytes < dualMinVramBytes {
 		return 1
 	}
 
@@ -59,7 +77,10 @@ func NewAdaptiveDemucsScheduler(initialLimit, maxCapacity int, dualUtilThreshold
 		initialLimit = 1
 	}
 	if maxCapacity <= 0 {
-		maxCapacity = 2
+		maxCapacity = 1
+	}
+	if maxCapacity > 1 {
+		maxCapacity = 1
 	}
 	if dualUtilThreshold <= 0 {
 		dualUtilThreshold = 0.50
@@ -105,16 +126,18 @@ func (s *AdaptiveDemucsScheduler) StartAdaptiveLoop(ctx context.Context, interva
 func (s *AdaptiveDemucsScheduler) evaluateAndResizeSlotComplex() {
 	gpuM := sysinfo.GetLatestGpuMetrics()
 	var gpuUtil float64 = 0.0
-	var availVram uint64 = math.MaxUint64
+	var availVram uint64
+	dedicatedVramKnown := false
 	if gpuM != nil {
 		gpuUtil = gpuM.UtilizationPercent
 		availVram = gpuM.AvailableVramBytes
+		dedicatedVramKnown = gpuM.IsDedicatedAvailable()
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	targetLimit := DetermineDemucsSlotLimitPure(gpuUtil, availVram, s.dualUtilThreshold, s.dualMinVramBytes, s.maxCapacity)
+	targetLimit := DetermineDemucsSlotLimitWithAvailabilityPure(gpuUtil, availVram, dedicatedVramKnown, s.dualUtilThreshold, s.dualMinVramBytes, s.maxCapacity)
 
 	if targetLimit < s.currentLimit {
 		// スケールダウン（2 → 1）: GPU 負荷検知時に即座に縮退
@@ -176,4 +199,11 @@ func (s *AdaptiveDemucsScheduler) GetLimit() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.currentLimit
+}
+
+func (s *AdaptiveDemucsScheduler) GetInUse() int {
+	if s == nil || s.semaphore == nil {
+		return 0
+	}
+	return s.semaphore.GetInUse()
 }

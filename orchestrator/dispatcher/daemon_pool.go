@@ -18,6 +18,7 @@ type WorkerDaemonPool struct {
 	parentDir     string
 	env           []string
 	logger        func(format string, v ...interface{})
+	role          WorkerDaemonRole
 	daemons       chan *WorkerDaemonClient
 	allDaemons    []*WorkerDaemonClient
 	mu            sync.Mutex
@@ -32,6 +33,7 @@ func NewWorkerDaemonPool(
 	parentDir string,
 	env []string,
 	logger func(format string, v ...interface{}),
+	role WorkerDaemonRole,
 ) *WorkerDaemonPool {
 	if maxDaemons <= 0 {
 		maxDaemons = 2
@@ -43,6 +45,7 @@ func NewWorkerDaemonPool(
 		parentDir:     parentDir,
 		env:           env,
 		logger:        logger,
+		role:          role,
 		daemons:       make(chan *WorkerDaemonClient, maxDaemons),
 		allDaemons:    make([]*WorkerDaemonClient, 0, maxDaemons),
 		nextID:        1,
@@ -171,7 +174,7 @@ func (p *WorkerDaemonPool) doSpawnComplex(ctx context.Context, id int) (*WorkerD
 
 	resCh := make(chan spawnResult, 1)
 	go func() {
-		c, err := NewWorkerDaemonClient(id, p.pythonPath, p.parentDir, p.env, p.logger)
+		c, err := NewWorkerDaemonClient(id, p.pythonPath, p.parentDir, p.env, p.logger, p.role)
 		resCh <- spawnResult{client: c, err: err}
 	}()
 

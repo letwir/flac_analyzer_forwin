@@ -106,4 +106,3 @@ func TestStatsTracker_StagesAndWaits(t *testing.T) {
 		t.Errorf("expected AnalyzerPythonLastStageDurationSeconds(demucs, inference)=8.5, got %f", pyDemucsInfVal)
 	}
 }
-

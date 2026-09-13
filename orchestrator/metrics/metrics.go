@@ -306,6 +306,27 @@ var (
 		},
 	)
 
+	AnalyzerGpuDedicatedAvailableBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_dedicated_available_bytes",
+			Help: "Verified dedicated VRAM available in bytes; zero when unknown or exhausted",
+		},
+	)
+
+	AnalyzerGpuDedicatedAvailableValid = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_dedicated_available_valid",
+			Help: "Whether dedicated VRAM availability is verified (1) or unknown (0)",
+		},
+	)
+
+	AnalyzerGpuDedicatedCapacitySource = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_dedicated_capacity_source",
+			Help: "Dedicated VRAM capacity source: 0 unknown, 1 manual override",
+		},
+	)
+
 	AnalyzerGpuSharedUsedBytes = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "analyzer_gpu_shared_used_bytes",
@@ -356,4 +377,3 @@ func InitMetricsServer(addr string) error {
 	}
 	return srv.ListenAndServe()
 }
-

@@ -18,6 +18,18 @@ tagger_disk_margin_ratio = 1.5   # FLAC タグ書き込み時の一時ファイ�
 
 # Demucs ONNX 推論の同時実行数制限 (GPU/VRAM 保護のため通常 1)
 demucs_concurrent_limit = 1
+# Demucs is deliberately isolated to one GPU daemon; feature-GPU has its own pool.
+demucs_daemon_capacity = 1
+# GPU & Dedicated VRAM 防御・スロット制御パラメータ
+# dedicated_vram_total_gb: 専用ビデオメモリ (Dedicated VRAM) 総容量の明示的指定 (GB, オプション)
+# WMI AdapterRAM の 32-bit 上限やマルチアダプタ誤報を回避し、GPU VRAM 判定を健全化します
+# 有効な有限・正・上限有界値 (例: 16.0) を指定した場合のみ専用容量として採用されます。
+# 未設定 (0) または無効値/使用量未満の過小値の場合は unknown として安全側 (NOGO/シングルスロット維持) に扱われます
+dedicated_vram_total_gb = 16.0
+max_gpu_utilization_ratio = 0.85     # GPU 負荷率上限 (例: 0.85 = 85%)
+min_avail_vram_gb = 0.5              # 最低保証専用 VRAM 空き容量 (GB)
+estimated_demucs_vram_gb = 1.0       # Demucs 推論あたりの想定 VRAM 使用量 (GB)
+enable_gpu_throttle = true           # GPU 負荷・VRAM 不足時のディスパッチ待機 (Gatekeeper) 有効化
 # 共有メモリ (SHM) 割り当てインターバル (秒: ゼロで即時ディスパッチ)
 shm_allocation_delay_sec = 0
 # 共有メモリ (SHM) の FLAC ファイルに対する PCM 展開マージン比率 (デフォルト: 3.5)

@@ -18,6 +18,7 @@ import (
 // Semantics: 常駐型 Demucs GPU ワーカーデーモンクライアントおよび接続プール
 
 type DemucsSeparatePayload struct {
+	RequestID   string            `json:"request_id"`
 	FlacPath    string            `json:"flac_path"`
 	ShmTags     map[string]string `json:"shm_tags,omitempty"`
 	StorageMode string            `json:"storage_mode,omitempty"`
@@ -25,16 +26,27 @@ type DemucsSeparatePayload struct {
 	StartSample int64             `json:"start_sample"`
 	EndSample   int64             `json:"end_sample"`
 	UseDml      bool              `json:"use_dml"`
+	Generation  uint64            `json:"generation"`
+}
+
+type DemucsStemReadyEvent struct {
+	Status     string   `json:"status"`
+	RequestID  string   `json:"request_id"`
+	Generation uint64   `json:"generation"`
+	Stem       string   `json:"stem"`
+	Info       StemInfo `json:"info"`
+	AudioHash  string   `json:"audio_hash"`
+	SR         int      `json:"sr"`
 }
 
 type DemucsSeparateResponse struct {
-	Status    string               `json:"status"`
-	AudioHash string               `json:"audio_hash"`
-	SR        int                  `json:"sr"`
-	Stems     map[string]StemInfo  `json:"stems"`
-	Profile   map[string]float64   `json:"profile"`
-	Message   string               `json:"message,omitempty"`
-	Traceback string               `json:"traceback,omitempty"`
+	Status    string              `json:"status"`
+	AudioHash string              `json:"audio_hash"`
+	SR        int                 `json:"sr"`
+	Stems     map[string]StemInfo `json:"stems"`
+	Profile   map[string]float64  `json:"profile"`
+	Message   string              `json:"message,omitempty"`
+	Traceback string              `json:"traceback,omitempty"`
 }
 
 type DemucsCheckHashPayload struct {
@@ -199,6 +211,13 @@ func (c *DemucsDaemonClient) CheckHash(ctx context.Context, payload DemucsCheckH
 }
 
 func (c *DemucsDaemonClient) Separate(ctx context.Context, payload DemucsSeparatePayload) (*DemucsSeparateResponse, error) {
+	return c.SeparateWithEvents(ctx, payload, nil)
+}
+
+func (c *DemucsDaemonClient) SeparateWithEvents(ctx context.Context, payload DemucsSeparatePayload, onReady func(DemucsStemReadyEvent) error) (*DemucsSeparateResponse, error) {
+	if payload.RequestID == "" || payload.Generation == 0 {
+		return nil, fmt.Errorf("Demucs stem event protocol requires request id and non-zero generation")
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -224,17 +243,45 @@ func (c *DemucsDaemonClient) Separate(ctx context.Context, payload DemucsSeparat
 	errChan := make(chan error, 1)
 
 	go func() {
-		line, err := c.stdout.ReadString('\n')
-		if err != nil {
-			errChan <- fmt.Errorf("read error from Demucs daemon-%d: %w", c.id, err)
+		for {
+			line, err := c.stdout.ReadString('\n')
+			if err != nil {
+				errChan <- fmt.Errorf("read error from Demucs daemon-%d: %w", c.id, err)
+				return
+			}
+			var envelope struct {
+				Status string `json:"status"`
+			}
+			if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+				errChan <- fmt.Errorf("unmarshal error from Demucs daemon-%d (%s): %w", c.id, line, err)
+				return
+			}
+			if envelope.Status == "stem_ready" {
+				var event DemucsStemReadyEvent
+				if err := json.Unmarshal([]byte(line), &event); err != nil {
+					errChan <- err
+					return
+				}
+				if err := validateDemucsStemReadyEvent(payload, event); err != nil {
+					errChan <- err
+					return
+				}
+				if onReady != nil {
+					if err := onReady(event); err != nil {
+						errChan <- fmt.Errorf("consume stem-ready event: %w", err)
+						return
+					}
+				}
+				continue
+			}
+			var resp DemucsSeparateResponse
+			if err := json.Unmarshal([]byte(line), &resp); err != nil {
+				errChan <- fmt.Errorf("unmarshal error from Demucs daemon-%d (%s): %w", c.id, line, err)
+				return
+			}
+			respChan <- &resp
 			return
 		}
-		var resp DemucsSeparateResponse
-		if err := json.Unmarshal([]byte(line), &resp); err != nil {
-			errChan <- fmt.Errorf("unmarshal error from Demucs daemon-%d (%s): %w", c.id, line, err)
-			return
-		}
-		respChan <- &resp
 	}()
 
 	select {
@@ -251,6 +298,22 @@ func (c *DemucsDaemonClient) Separate(ctx context.Context, payload DemucsSeparat
 		c.taskCount++
 		return resp, nil
 	}
+}
+
+func validateDemucsStemReadyEvent(payload DemucsSeparatePayload, event DemucsStemReadyEvent) error {
+	if event.Status != "stem_ready" || event.RequestID == "" || event.RequestID != payload.RequestID {
+		return fmt.Errorf("Demucs stem event request id mismatch")
+	}
+	if event.Generation == 0 || event.Generation != payload.Generation {
+		return fmt.Errorf("Demucs stem event generation mismatch")
+	}
+	if event.Stem == "" || event.AudioHash == "" || event.SR <= 0 {
+		return fmt.Errorf("Demucs stem event is missing transfer metadata")
+	}
+	if len(event.Info.Shape) == 0 || event.Info.Dtype == "" {
+		return fmt.Errorf("Demucs stem event %q is missing storage shape or dtype", event.Stem)
+	}
+	return nil
 }
 
 // closeLocked terminates stdin and kills daemon process while caller already holds c.mu.
@@ -288,12 +351,24 @@ type DemucsDaemonPool struct {
 	nextID     int
 }
 
+// replaceClientLocked keeps the registry bounded when a recycled client is
+// replaced. Caller holds p.mu and the old client is not present in idle.
+func (p *DemucsDaemonPool) replaceClientLocked(oldClient, newClient *DemucsDaemonClient) bool {
+	for i, client := range p.clients {
+		if client == oldClient {
+			p.clients[i] = newClient
+			return true
+		}
+	}
+	return false
+}
+
 func NewDemucsDaemonPool(capacity int, pythonPath, workingDir string, envVars []string, loggerFunc func(format string, v ...interface{})) *DemucsDaemonPool {
 	if capacity <= 0 {
 		capacity = 1
 	}
-	if capacity > 2 {
-		capacity = 2 // 最大デュアルタスクまでに厳格制限
+	if capacity > 1 {
+		capacity = 1 // Demucs has exactly one dedicated GPU slot.
 	}
 	return &DemucsDaemonPool{
 		capacity:   capacity,
@@ -366,6 +441,18 @@ func (p *DemucsDaemonPool) Acquire(ctx context.Context) (*DemucsDaemonClient, er
 			if err != nil {
 				return nil, err
 			}
+			p.mu.Lock()
+			if p.isClosed {
+				p.mu.Unlock()
+				_ = newClient.Close()
+				return nil, fmt.Errorf("DemucsDaemonPool is closed")
+			}
+			if !p.replaceClientLocked(client, newClient) {
+				p.mu.Unlock()
+				_ = newClient.Close()
+				return nil, fmt.Errorf("DemucsDaemonPool lost client registry entry during replacement")
+			}
+			p.mu.Unlock()
 			return newClient, nil
 		}
 		return client, nil
@@ -390,12 +477,27 @@ func (p *DemucsDaemonPool) Release(client *DemucsDaemonClient) {
 		_ = client.Close()
 		newClient, err := startDemucsDaemonProcessComplex(client.id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
 		if err == nil {
+			if !p.replaceClientLocked(client, newClient) {
+				_ = newClient.Close()
+				return
+			}
 			p.idle <- newClient
 			return
 		}
+		p.clients = removeDemucsClient(p.clients, client)
+		return
 	}
 
 	p.idle <- client
+}
+
+func removeDemucsClient(clients []*DemucsDaemonClient, target *DemucsDaemonClient) []*DemucsDaemonClient {
+	for i, client := range clients {
+		if client == target {
+			return append(clients[:i], clients[i+1:]...)
+		}
+	}
+	return clients
 }
 
 func (p *DemucsDaemonPool) Close() error {

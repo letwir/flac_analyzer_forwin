@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"testing"
 )
 
@@ -82,3 +83,43 @@ func TestNormalizeConfig_Timeouts(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfig_DedicatedVramTotalGB(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    float64
+		expected float64
+	}{
+		{"valid_16gb", 16.0, 16.0},
+		{"valid_lower_bound", 0.5, 0.5},
+		{"valid_upper_bound", 512.0, 512.0},
+		{"zero_default", 0.0, 0.0},
+		{"negative", -4.0, 0.0},
+		{"nan", math.NaN(), 0.0},
+		{"pos_inf", math.Inf(1), 0.0},
+		{"neg_inf", math.Inf(-1), 0.0},
+		{"exceeds_bound", 512.1, 0.0},
+		{"huge_exceeds_bound", 1024.0, 0.0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := &RawConfig{
+				Orchestrator: OrchestratorConfig{
+					DedicatedVramTotalGB: tc.input,
+				},
+			}
+			cfg := NormalizeConfig(raw, 32.0, 8, "", nil)
+			if cfg.DedicatedVramTotalGB != tc.expected {
+				t.Errorf("For input %v, expected %v, got %v", tc.input, tc.expected, cfg.DedicatedVramTotalGB)
+			}
+		})
+	}
+}
+
+func TestNormalizeConfigPinsDemucsToOneDedicatedSlot(t *testing.T) {
+	raw := &RawConfig{Orchestrator: OrchestratorConfig{DemucsConcurrentLimit: 4, DemucsDaemonCapacity: 4}}
+	cfg := NormalizeConfig(raw, 32.0, 8, "", nil)
+	if cfg.DemucsConcurrentLimit != 1 || cfg.DemucsDaemonCapacity != 1 {
+		t.Fatalf("Demucs config = concurrent:%d daemon:%d, want 1:1", cfg.DemucsConcurrentLimit, cfg.DemucsDaemonCapacity)
+	}
+}

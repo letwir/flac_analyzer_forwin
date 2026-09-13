@@ -31,118 +31,148 @@ def setup_logger():
         handlers=[logging.StreamHandler(sys.stderr)] # stdout は Go との JSON 通信用に厳格保護
     )
 
-def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: Any) -> dict[str, Any]:
-    """
-    1 つの楽曲に対する Librosa, Tensor, Essentia の全特徴量を
-    共有メモリから Zero-copy で一括抽出し、結果を統合して返却する純粋射ですわ！
-    """
+def _open_stem_samples(info: dict[str, Any]) -> tuple[Any, np.ndarray]:
+    """Attach one frozen stem and leave cleanup to the owning feature lane."""
+    storage_type = info.get("storage_type", "shm")
+    file_path = info.get("file_path")
+    if storage_type == "file" and file_path and os.path.exists(file_path):
+        return None, np.load(file_path, mmap_mode="r")
+    return shm_interop.attach_shm_read_only(
+        info.get("shm_tag", ""),
+        tuple(info["shape"]),
+        info["dtype"],
+        file_size=info.get("file_size", 0),
+    )
+
+
+def _close_stem_samples(shm: Any, y_np: np.ndarray) -> None:
+    """Release either SHM or mmap handles even when a lane fails mid-stem."""
+    try:
+        if shm is not None:
+            shm.close()
+    finally:
+        mmap_handle = getattr(y_np, "_mmap", None)
+        if mmap_handle is not None:
+            mmap_handle.close()
+
+
+def _nest_stem_features(extracted: dict[str, Any]) -> dict[str, Any]:
+    nested: dict[str, Any] = {"demucs": {}}
+    for stem_name, features in extracted.items():
+        if stem_name == "mix":
+            nested["mix"] = features
+        else:
+            nested["demucs"][stem_name] = features
+    return nested
+
+
+def _serialize_librosa_features(raw_features: Any, track_hash: str) -> Any:
+    if hasattr(raw_features, "to_postgres_dict"):
+        return raw_features.to_postgres_dict(track_id=track_hash)
+    import dataclasses
+    if dataclasses.is_dataclass(raw_features):
+        return dataclasses.asdict(raw_features)
+    return str(raw_features)
+
+
+def handle_extract_cpu(payload: dict[str, Any], essentia_models: dict) -> dict[str, Any]:
+    """Run the single bounded CPU lane: Librosa for every stem and Essentia for mix."""
     sr = payload["sr"]
     stems_info = payload["stems"]
     track_hash = payload.get("track_hash", "dummy_hash")
 
     t_start = time.perf_counter()
     extracted_librosa: dict[str, Any] = {}
-    extracted_tensor: dict[str, Any] = {}
     extracted_essentia: dict[str, Any] = {}
 
-    import torch
-
     librosa_total_sec = 0.0
-    tensor_total_sec = 0.0
     essentia_total_sec = 0.0
 
-    # 1. 各ステムの処理 (Advisory 2 / ADV-02: try...finally で shm.close() と np.memmap._mmap.close() を徹底)
     for stem_name, info in stems_info.items():
-        storage_type = info.get("storage_type", "shm")
-        file_path = info.get("file_path")
-        tag_name = info.get("shm_tag", "")
-        shape = tuple(info["shape"])
-        dtype_name = info["dtype"]
-        file_size = info.get("file_size", 0)
         spectro_path = info.get("spectro_path")
-
-        shm = None
-        if storage_type == "file" and file_path and os.path.exists(file_path):
-            # SSD からのオンデマンド Zero-copy mmap 読み込み (Disk Mode)
-            y_np = np.load(file_path, mmap_mode="r")
-        else:
-            # 共有メモリ (SHM) からの読み込み
-            shm, y_np = shm_interop.attach_shm_read_only(tag_name, shape, dtype_name, file_size=file_size)
-
+        shm, y_np = _open_stem_samples(info)
         try:
             ctx = AudioContext(y=y_np, sr=sr, source=stem_name, spectro_path=spectro_path)
             try:
-                # A. Librosa 特徴量抽出 (オンデマンド評価により 49s の無駄な CPU Warmup を完全排除)
                 t_lib_start = time.perf_counter()
                 raw_features = librosa_extractor.run(ctx)
-                if hasattr(raw_features, "to_postgres_dict"):
-                    extracted_librosa[stem_name] = raw_features.to_postgres_dict(track_id=track_hash)
-                else:
-                    import dataclasses
-                    if dataclasses.is_dataclass(raw_features):
-                        extracted_librosa[stem_name] = dataclasses.asdict(raw_features)
-                    else:
-                        extracted_librosa[stem_name] = str(raw_features)
+                extracted_librosa[stem_name] = _serialize_librosa_features(raw_features, track_hash)
                 librosa_total_sec += time.perf_counter() - t_lib_start
 
-                # B. PyTorch Tensor 特徴量抽出 (GPU cuFFT Wiener-Khinchin HNR/NAP & Bulk STFT)
-                t_ten_start = time.perf_counter()
-                with torch.no_grad():
-                    # 共有メモリ / mmap 配列の read-only 警告を防止しつつ GPU 転送
-                    y_tensor = torch.from_numpy(np.require(y_np, requirements=['C', 'W']))
-                    stem_feats = extract_tensor_features(y_tensor, sr, device, spectro_path=spectro_path)
-                    extracted_tensor[stem_name] = stem_feats
-                tensor_total_sec += time.perf_counter() - t_ten_start
-
-                # C. Essentia 特徴量抽出 (mix ステムのみ)
                 if stem_name == "mix" and essentia_models:
                     t_ess_start = time.perf_counter()
                     patches = extract_mel_patches(y_np, sr, n_patches=64)
                     extracted_essentia = run_essentia_serialized(patches, essentia_models)
                     essentia_total_sec += time.perf_counter() - t_ess_start
             finally:
-                # ADV-03: Tensor / Essentia 処理完了後に AudioContext を安全にクリア (use-after-free 防止)
                 ctx.clear()
-
         finally:
-            if shm is not None:
-                shm.close()
-            # ADV-02: Windows での os.RemoveAll (Access is denied WinError 5/32) 防止のため mmap ハンドルを明示的にクローズ
-            if hasattr(y_np, "_mmap") and y_np._mmap is not None:
-                try:
-                    y_np._mmap.close()
-                except Exception:
-                    pass
+            _close_stem_samples(shm, y_np)
             del y_np
-
-    total_sec = time.perf_counter() - t_start
-
-    # 構造の整合化
-    final_librosa = {"demucs": {}}
-    for k, v in extracted_librosa.items():
-        if k == "mix":
-            final_librosa["mix"] = v
-        else:
-            final_librosa["demucs"][k] = v
-
-    final_tensor = {"demucs": {}}
-    for k, v in extracted_tensor.items():
-        if k == "mix":
-            final_tensor["mix"] = v
-        else:
-            final_tensor["demucs"][k] = v
 
     return {
         "status": "success",
-        "librosa": final_librosa,
-        "tensor": final_tensor,
+        "librosa": _nest_stem_features(extracted_librosa),
         "essentia": extracted_essentia,
         "profile": {
-            "extract_total_sec": total_sec,
+            "cpu_total_sec": time.perf_counter() - t_start,
             "librosa_sec": librosa_total_sec,
-            "tensor_sec": tensor_total_sec,
             "essentia_sec": essentia_total_sec,
-        }
+        },
+    }
+
+
+def handle_extract_gpu(payload: dict[str, Any], device: Any) -> dict[str, Any]:
+    """Run the single bounded GPU lane: Tensor features for every stem."""
+    sr = payload["sr"]
+    stems_info = payload["stems"]
+    t_start = time.perf_counter()
+    extracted_tensor: dict[str, Any] = {}
+    tensor_total_sec = 0.0
+
+    for stem_name, info in stems_info.items():
+        shm, y_np = _open_stem_samples(info)
+        y_tensor = None
+        try:
+            t_ten_start = time.perf_counter()
+            with torch.no_grad():
+                y_tensor = torch.from_numpy(np.require(y_np, requirements=["C", "W"]))
+                extracted_tensor[stem_name] = extract_tensor_features(
+                    y_tensor, sr, device, spectro_path=info.get("spectro_path")
+                )
+            tensor_total_sec += time.perf_counter() - t_ten_start
+        finally:
+            del y_tensor
+            _close_stem_samples(shm, y_np)
+            del y_np
+
+    return {
+        "status": "success",
+        "tensor": _nest_stem_features(extracted_tensor),
+        "profile": {
+            "gpu_total_sec": time.perf_counter() - t_start,
+            "tensor_sec": tensor_total_sec,
+        },
+    }
+
+
+def handle_extract_all(payload: dict[str, Any], essentia_models: dict, device: Any) -> dict[str, Any]:
+    """Keep the legacy extract_all protocol while delegating to both lane handlers."""
+    t_start = time.perf_counter()
+    cpu_response = handle_extract_cpu(payload, essentia_models)
+    gpu_response = handle_extract_gpu(payload, device)
+
+    return {
+        "status": "success",
+        "librosa": cpu_response["librosa"],
+        "tensor": gpu_response["tensor"],
+        "essentia": cpu_response["essentia"],
+        "profile": {
+            "extract_total_sec": time.perf_counter() - t_start,
+            "librosa_sec": cpu_response["profile"]["librosa_sec"],
+            "tensor_sec": gpu_response["profile"]["tensor_sec"],
+            "essentia_sec": cpu_response["profile"]["essentia_sec"],
+        },
     }
 
 def main():
@@ -193,6 +223,14 @@ def main():
                 resp = {"id": req_id, "status": "pong"}
             elif action == "extract_all":
                 resp = handle_extract_all(req["payload"], essentia_models, device)
+                resp["id"] = req_id
+                task_count += 1
+            elif action == "extract_cpu":
+                resp = handle_extract_cpu(req["payload"], essentia_models)
+                resp["id"] = req_id
+                task_count += 1
+            elif action == "extract_gpu":
+                resp = handle_extract_gpu(req["payload"], device)
                 resp["id"] = req_id
                 task_count += 1
             else:

@@ -171,6 +171,85 @@ func TestClaimPendingTasksPrefersShorterEstimatedDuration(t *testing.T) {
 	}
 }
 
+func TestClaimPendingTasksAgesLargeTaskAheadOfFreshSmallTask(t *testing.T) {
+	db, err := InitDB(filepath.Join(t.TempDir(), "orchestrator.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	longPayload := `{"flacPath":"C:/music/aged-long.flac","trackNumber":1,"startSample":0,"endSample":52920000,"sampleRate":44100}`
+	shortPayload := `{"flacPath":"C:/music/fresh-short.flac","trackNumber":1,"startSample":0,"endSample":441000,"sampleRate":44100}`
+	if _, err := db.CheckOrInsertWithPayload("C:/music/aged-long.flac", 1, longPayload, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.conn.Exec(`UPDATE task_state SET age_anchor_at = datetime('now', '-1801 seconds') WHERE file_path = ?`, "C:/music/aged-long.flac"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CheckOrInsertWithPayload("C:/music/fresh-short.flac", 1, shortPayload, false); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := db.ClaimPendingTasks(1)
+	if err != nil || len(claimed) != 1 || claimed[0].FilePath != "C:/music/aged-long.flac" {
+		t.Fatalf("aged large task was starved: claimed=%#v err=%v", claimed, err)
+	}
+}
+
+func TestParkDoesNotResetAgingAnchor(t *testing.T) {
+	db, err := InitDB(filepath.Join(t.TempDir(), "orchestrator.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	payload := `{"flacPath":"C:/music/aged-park.flac","trackNumber":1,"fileSize":999999999}`
+	if _, err := db.CheckOrInsertWithPayload("C:/music/aged-park.flac", 1, payload, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.conn.Exec(`UPDATE task_state SET age_anchor_at = datetime('now', '-1801 seconds') WHERE file_path = ?`, "C:/music/aged-park.flac"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ClaimPendingTasks(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ParkTaskForRetry("C:/music/aged-park.flac", 1, "pressure", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RequeueRetryableTasks(1, 0); err != nil {
+		t.Fatal(err)
+	}
+	var aged int
+	if err := db.conn.QueryRow(`SELECT age_anchor_at <= datetime('now', '-1800 seconds') FROM task_state WHERE file_path = ?`, "C:/music/aged-park.flac").Scan(&aged); err != nil || aged != 1 {
+		t.Fatalf("aging anchor reset: aged=%d err=%v", aged, err)
+	}
+}
+
+func TestParkGenerationPreventsDuplicateClaimUntilDue(t *testing.T) {
+	db, err := InitDB(filepath.Join(t.TempDir(), "orchestrator.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	payload := `{"flacPath":"C:/music/parked.flac","trackNumber":1}`
+	if _, err := db.CheckOrInsertWithPayload("C:/music/parked.flac", 1, payload, false); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := db.ClaimPendingTasks(1); err != nil || len(claimed) != 1 {
+		t.Fatalf("initial claim: %#v %v", claimed, err)
+	}
+	if err := db.ParkTaskForRetry("C:/music/parked.flac", 1, "memory pressure", 60); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := db.RequeueRetryableTasks(1, 0); err != nil || count != 0 {
+		t.Fatalf("premature requeue count=%d err=%v", count, err)
+	}
+	var generation int
+	if err := db.conn.QueryRow(`SELECT park_generation FROM task_state WHERE file_path = ?`, "C:/music/parked.flac").Scan(&generation); err != nil || generation != 1 {
+		t.Fatalf("generation=%d err=%v", generation, err)
+	}
+	if err := db.ParkTaskForRetry("C:/music/parked.flac", 1, "duplicate", 0); err == nil {
+		t.Fatal("duplicate park unexpectedly succeeded")
+	}
+}
+
 func TestResetStaleTasksPreservesPendingAndRecoversQueued(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "orchestrator.db")
 	db, err := InitDB(dbPath)

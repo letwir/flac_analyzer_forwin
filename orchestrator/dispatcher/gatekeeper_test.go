@@ -1,6 +1,7 @@
 package dispatcher
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
@@ -360,4 +361,83 @@ func TestEvaluateGoNoGoPure_DiskMode(t *testing.T) {
 	if decisionDiskLow.IsGo {
 		t.Fatalf("Expected IsGo=false when SSD space is insufficient for Disk Mode, got true")
 	}
+}
+
+func TestEvaluateGoNoGoPure_GpuRequiredUnknownDedicatedVramBlocks(t *testing.T) {
+	in := GatekeeperInput{
+		StorageMode: StorageModeSHM, AvailPhys: 16 * 1024 * 1024 * 1024,
+		EstimatedTaskRam: 1024 * 1024 * 1024, MinAvailRam: 1024 * 1024 * 1024,
+		AvailDisk: 16 * 1024 * 1024 * 1024, GpuUtilization: 0,
+		EstimatedTaskVram: 1024 * 1024 * 1024, MinAvailVram: 512 * 1024 * 1024,
+		GPURequired: true, DedicatedVramKnown: false, EnableGpuThrottle: false,
+	}
+	decision := EvaluateGoNoGoPure(in)
+	if decision.IsGo || !decision.IsGpuBlock {
+		t.Fatalf("GPU-required work with unknown dedicated VRAM must be blocked: %+v", decision)
+	}
+}
+
+func TestCanReserveRamPure_BudgetAndOverflowBoundaries(t *testing.T) {
+	total := uint64(16 * 1024 * 1024 * 1024)
+	if !canReserveRamPure(6*1024*1024*1024, 2*1024*1024*1024, total, 0.5) {
+		t.Fatal("reservation exactly at budget must be admitted")
+	}
+	if canReserveRamPure(7*1024*1024*1024, 2*1024*1024*1024, total, 0.5) {
+		t.Fatal("reservation above budget must be rejected")
+	}
+	if canReserveRamPure(0, 1, 0, 0.5) {
+		t.Fatal("unknown total RAM must fail closed")
+	}
+}
+
+func TestRamAdmission_ConcurrentBudgetAndRelease(t *testing.T) {
+	d := &Dispatcher{ramAdmissions: make(map[string]ramAdmission)}
+	total := uint64(16 * 1024 * 1024 * 1024)
+	request := uint64(2 * 1024 * 1024 * 1024)
+	var wg sync.WaitGroup
+	results := make(chan int, 8)
+	for i := range 8 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, ok := d.reserveRamAdmission(TaskPayload{FlacPath: "track", TrackNumber: i + 1}, ramAdmission{ramBytes: request}, total, 0.5)
+			if ok {
+				results <- i + 1
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	admitted := 0
+	for trackNumber := range results {
+		admitted++
+		task := TaskPayload{FlacPath: "track", TrackNumber: trackNumber}
+		lease := d.ramAdmissions[admissionKey(task)]
+		d.releaseRamAdmission(task, lease)
+		d.releaseRamAdmission(task, lease)
+	}
+	if admitted != 4 {
+		t.Fatalf("expected exactly four 2GiB reservations under 8GiB budget, got %d", admitted)
+	}
+	if d.activeInFlightRamBytes != 0 || len(d.ramAdmissions) != 0 {
+		t.Fatalf("all leases must be released, bytes=%d leases=%d", d.activeInFlightRamBytes, len(d.ramAdmissions))
+	}
+}
+
+func TestRamAdmission_DoubleReleaseKeepsOtherLease(t *testing.T) {
+	d := &Dispatcher{ramAdmissions: make(map[string]ramAdmission)}
+	total, request := uint64(8*1024*1024*1024), uint64(2*1024*1024*1024)
+	a := TaskPayload{FlacPath: "a", TrackNumber: 1}
+	b := TaskPayload{FlacPath: "b", TrackNumber: 1}
+	leaseA, okA := d.reserveRamAdmission(a, ramAdmission{ramBytes: request}, total, 1)
+	leaseB, okB := d.reserveRamAdmission(b, ramAdmission{ramBytes: request}, total, 1)
+	if !okA || !okB {
+		t.Fatal("expected two reservations")
+	}
+	d.releaseRamAdmission(a, leaseA)
+	d.releaseRamAdmission(a, leaseA)
+	if d.activeInFlightRamBytes != request || len(d.ramAdmissions) != 1 {
+		t.Fatal("double release must not affect remaining lease")
+	}
+	d.releaseRamAdmission(b, leaseB)
 }

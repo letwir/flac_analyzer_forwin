@@ -101,8 +101,8 @@ omp_num_threads = "2"
 		t.Fatalf("reloadConfiguration failed: %v", err)
 	}
 
-	if diff["demucs_concurrent_limit"] != "1 -> 3" {
-		t.Errorf("expected diff demucs_concurrent_limit '1 -> 3', got %q", diff["demucs_concurrent_limit"])
+	if _, changed := diff["demucs_concurrent_limit"]; changed {
+		t.Errorf("single-resident Demucs limit must stay clamped at 1, got diff %q", diff["demucs_concurrent_limit"])
 	}
 	if diff["demucs_dual_gpu_util_threshold"] != "0.50 -> 0.40" {
 		t.Errorf("expected diff demucs_dual_gpu_util_threshold '0.50 -> 0.40', got %q", diff["demucs_dual_gpu_util_threshold"])
@@ -131,8 +131,8 @@ omp_num_threads = "2"
 
 	// Verify dispatcher state after reload
 	reloadedCfg := disp.GetConfig()
-	if reloadedCfg.DemucsConcurrentLimit != 3 {
-		t.Errorf("expected reloaded demucs limit 3, got %d", reloadedCfg.DemucsConcurrentLimit)
+	if reloadedCfg.DemucsConcurrentLimit != 1 {
+		t.Errorf("expected reloaded Demucs limit clamped to 1, got %d", reloadedCfg.DemucsConcurrentLimit)
 	}
 	if reloadedCfg.LogLevel != dispatcher.LevelDebug {
 		t.Errorf("expected reloaded log level debug, got %v", reloadedCfg.LogLevel)
@@ -207,7 +207,7 @@ log_level = "warn"
 	var matched bool
 	for time.Now().Before(deadline) {
 		cfg := disp.GetConfig()
-		if cfg.DemucsConcurrentLimit == 2 && cfg.LogLevel == dispatcher.LevelWarn {
+		if cfg.DemucsConcurrentLimit == 1 && cfg.LogLevel == dispatcher.LevelWarn {
 			matched = true
 			break
 		}

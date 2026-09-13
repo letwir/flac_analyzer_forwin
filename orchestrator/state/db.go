@@ -69,6 +69,7 @@ type dbWriteOp struct {
 	errMsg      string
 	force       bool
 	limit       int
+	delaySec    int
 	resChan     chan dbWriteResult
 }
 
@@ -164,6 +165,11 @@ func (db *DB) writerLoop() {
 			if op.resChan != nil {
 				op.resChan <- dbWriteResult{count: count, err: err}
 			}
+		case "park_retryable":
+			err := db.execParkRetryable(op.filePath, op.trackNumber, op.errMsg, op.delaySec)
+			if op.resChan != nil {
+				op.resChan <- dbWriteResult{err: err}
+			}
 		case "flush":
 			if op.resChan != nil {
 				op.resChan <- dbWriteResult{}
@@ -181,6 +187,9 @@ func (db *DB) createTables() error {
 		error_message TEXT,
 		payload_json TEXT,
 		priority_score REAL NOT NULL DEFAULT 0,
+		park_generation INTEGER NOT NULL DEFAULT 0,
+		next_evaluation_at DATETIME,
+		age_anchor_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (file_path, track_number)
 	);
@@ -201,6 +210,9 @@ func (db *DB) migrateTables() error {
 	hasTrackNumber := false
 	hasPayloadJSON := false
 	hasPriorityScore := false
+	hasParkGeneration := false
+	hasNextEvaluationAt := false
+	hasAgeAnchorAt := false
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -217,6 +229,15 @@ func (db *DB) migrateTables() error {
 			if name == "priority_score" {
 				hasPriorityScore = true
 			}
+			if name == "park_generation" {
+				hasParkGeneration = true
+			}
+			if name == "next_evaluation_at" {
+				hasNextEvaluationAt = true
+			}
+			if name == "age_anchor_at" {
+				hasAgeAnchorAt = true
+			}
 		}
 	}
 	rows.Close()
@@ -230,6 +251,9 @@ func (db *DB) migrateTables() error {
 			error_message TEXT,
 			payload_json TEXT,
 			priority_score REAL NOT NULL DEFAULT 0,
+			park_generation INTEGER NOT NULL DEFAULT 0,
+			next_evaluation_at DATETIME,
+			age_anchor_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (file_path, track_number)
 		);
@@ -253,6 +277,24 @@ func (db *DB) migrateTables() error {
 	if hasTrackNumber && !hasPriorityScore {
 		if _, err := db.conn.Exec(`ALTER TABLE task_state ADD COLUMN priority_score REAL NOT NULL DEFAULT 0`); err != nil {
 			return fmt.Errorf("failed to add task_state.priority_score: %w", err)
+		}
+	}
+	if hasTrackNumber && !hasParkGeneration {
+		if _, err := db.conn.Exec(`ALTER TABLE task_state ADD COLUMN park_generation INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("failed to add task_state.park_generation: %w", err)
+		}
+	}
+	if hasTrackNumber && !hasNextEvaluationAt {
+		if _, err := db.conn.Exec(`ALTER TABLE task_state ADD COLUMN next_evaluation_at DATETIME`); err != nil {
+			return fmt.Errorf("failed to add task_state.next_evaluation_at: %w", err)
+		}
+	}
+	if hasTrackNumber && !hasAgeAnchorAt {
+		if _, err := db.conn.Exec(`ALTER TABLE task_state ADD COLUMN age_anchor_at DATETIME`); err != nil {
+			return fmt.Errorf("failed to add task_state.age_anchor_at: %w", err)
+		}
+		if _, err := db.conn.Exec(`UPDATE task_state SET age_anchor_at = updated_at WHERE age_anchor_at IS NULL`); err != nil {
+			return fmt.Errorf("failed to backfill task_state.age_anchor_at: %w", err)
 		}
 	}
 	if err := db.backfillPriorityScores(); err != nil {
@@ -441,9 +483,14 @@ func (db *DB) execClaimPending(limit int) ([]QueuedTask, error) {
 		FROM task_state
 		WHERE status = ?
 		ORDER BY
-			CASE WHEN priority_score > 0 THEN priority_score ELSE 1.0e18 END /
-				(1.0 + MAX(0.0, (julianday('now') - julianday(updated_at)) * 86400.0 / 1800.0)) ASC,
-			updated_at ASC, file_path ASC, track_number ASC
+			CASE
+				WHEN COALESCE(age_anchor_at, updated_at) <= datetime('now', '-1800 seconds') THEN 0
+				WHEN priority_score > 0 AND priority_score <= 300 THEN 1
+				ELSE 2
+			END ASC,
+			CASE WHEN COALESCE(age_anchor_at, updated_at) <= datetime('now', '-1800 seconds') THEN COALESCE(age_anchor_at, updated_at) END ASC,
+			CASE WHEN priority_score > 0 THEN priority_score ELSE 1.0e18 END ASC,
+			file_path ASC, track_number ASC
 		LIMIT ?
 	`, StatusPending, limit)
 	if err != nil {
@@ -503,6 +550,31 @@ func (db *DB) RequeueRetryableTasks(limit, minAgeSec int) (int64, error) {
 	return res.count, nil
 }
 
+// ParkTaskForRetry atomically relinquishes a claimed task, advances its park
+// generation, and records the earliest time at which it may be claimed again.
+func (db *DB) ParkTaskForRetry(filePath string, trackNumber int, reason string, delaySec int) error {
+	resChan := make(chan dbWriteResult, 1)
+	db.opQueue <- dbWriteOp{opType: "park_retryable", filePath: filePath, trackNumber: trackNumber, errMsg: reason, delaySec: maxInt(delaySec, 0), resChan: resChan}
+	return (<-resChan).err
+}
+
+func (db *DB) execParkRetryable(filePath string, trackNumber int, reason string, delaySec int) error {
+	modifier := fmt.Sprintf("+%d seconds", maxInt(delaySec, 0))
+	res, err := db.conn.Exec(`
+		UPDATE task_state
+		SET status = ?, error_message = ?, park_generation = park_generation + 1,
+			next_evaluation_at = datetime('now', ?), updated_at = CURRENT_TIMESTAMP
+		WHERE file_path = ? AND track_number = ? AND status = ?
+	`, StatusFailedMaybeRetry, reason, modifier, filePath, trackNumber, StatusQueued)
+	if err != nil {
+		return fmt.Errorf("failed to park retryable task: %w", err)
+	}
+	if count, _ := res.RowsAffected(); count != 1 {
+		return fmt.Errorf("failed to park retryable task: task is not exclusively queued")
+	}
+	return nil
+}
+
 func (db *DB) execRequeueRetryable(limit int, ageModifier string) (int64, error) {
 	res, err := db.conn.Exec(`
 		UPDATE task_state
@@ -511,6 +583,7 @@ func (db *DB) execRequeueRetryable(limit int, ageModifier string) (int64, error)
 			SELECT rowid FROM task_state
 			WHERE status = ?
 			  AND updated_at <= datetime('now', ?)
+			  AND (next_evaluation_at IS NULL OR next_evaluation_at <= CURRENT_TIMESTAMP)
 			ORDER BY updated_at ASC, file_path ASC, track_number ASC
 			LIMIT ?
 		)

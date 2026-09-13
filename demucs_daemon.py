@@ -72,12 +72,20 @@ def handle_check_hash(payload: dict[str, Any]) -> dict[str, Any]:
         }
     }
 
-def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any) -> dict[str, Any]:
+def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any, emit_stem_ready=None) -> dict[str, Any]:
     """
     常駐 Demucs モデルを用いて波形分離を実行し、共有メモリへ書き込む高負荷射ですわ！
     Advisory 1 遵守: 書き込み後、レスポンス送信前に shm.close() を徹底し Error 1450 を防ぎますの。
     """
     flac_path = payload["flac_path"]
+    # Every transfer event is bound to one in-flight request. Demucs inference
+    # itself remains unchanged; this only hardens the post-inference hand-off.
+    request_id = payload.get("request_id")
+    generation = payload.get("generation")
+    if not isinstance(request_id, str) or not request_id:
+        raise ValueError("separate request requires a non-empty request_id")
+    if not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0:
+        raise ValueError("separate request requires a non-zero generation")
     shm_tags = payload.get("shm_tags", {})
     start_sample = payload.get("start_sample", 0)
     end_sample = payload.get("end_sample", -1)
@@ -112,6 +120,18 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any) -> dict[str
     file_size = os.path.getsize(flac_path) if os.path.exists(flac_path) else 0
     stem_items = stem_context.stems.items() if hasattr(stem_context, "stems") else stem_context.items()
 
+    def publish(stem_name: str, info: dict[str, Any]) -> None:
+        if emit_stem_ready is not None:
+            emit_stem_ready({
+                "status": "stem_ready",
+                "request_id": request_id,
+                "generation": generation,
+                "stem": stem_name,
+                "info": info,
+                "audio_hash": md5_hash,
+                "sr": sr,
+            })
+
     if storage_mode == "disk" and temp_dir:
         os.makedirs(temp_dir, exist_ok=True)
         for stem_name, audio_ctx in stem_items:
@@ -130,6 +150,7 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any) -> dict[str
                 "dtype": str(data.dtype),
                 "file_size": file_size
             }
+            publish(stem_name, stems_meta[stem_name])
     else:
         # ステム波形の共有メモリ書き込み (SHM Mode)
         for stem_name, audio_ctx in stem_items:
@@ -154,6 +175,7 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any) -> dict[str
                 "dtype": str(data.dtype),
                 "file_size": file_size
             }
+            publish(stem_name, stems_meta[stem_name])
 
     storage_duration = time.perf_counter() - t_storage_start
 
@@ -206,7 +228,11 @@ def runDemucsDaemonLoopComplex():
             elif cmd == "check_hash":
                 resp = handle_check_hash(payload)
             elif cmd == "separate":
-                resp = handleSeparateTaskHeavy(payload, separator)
+                resp = handleSeparateTaskHeavy(
+                    payload,
+                    separator,
+                    emit_stem_ready=lambda event: print(json.dumps(event), flush=True),
+                )
             else:
                 resp = {"status": "error", "message": f"Unknown command: {cmd}"}
 

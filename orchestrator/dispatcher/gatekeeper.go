@@ -15,22 +15,25 @@ import (
 
 // GatekeeperInput encapsulates all parameters required for pure pre-flight dispatch decisions.
 type GatekeeperInput struct {
-	StorageMode       StorageMode
-	EstimatedTaskDisk uint64
-	AvailPhys         uint64
-	InFlightRam       uint64
-	EstimatedTaskRam  uint64
-	MinAvailRam       uint64
-	MemoryLoad        uint32
-	AvailDisk         uint64
-	MinAvailDisk      uint64
-	GpuUtilization    float64
-	AvailVram         uint64
-	MinAvailVram      uint64
-	EstimatedTaskVram uint64
-	MaxGpuUtilization float64
-	EnableGpuThrottle bool
-	RetryDelay        time.Duration
+	StorageMode         StorageMode
+	EstimatedTaskDisk   uint64
+	AvailPhys           uint64
+	InFlightRam         uint64
+	EstimatedTaskRam    uint64
+	MinAvailRam         uint64
+	MemoryLoad          uint32
+	AvailDisk           uint64
+	MinAvailDisk        uint64
+	GpuUtilization      float64
+	AvailVram           uint64
+	MinAvailVram        uint64
+	EstimatedTaskVram   uint64
+	GPURequired         bool
+	DedicatedVramKnown  bool
+	MaxGpuUtilization   float64
+	EnableGpuThrottle   bool
+	AllowHighMemoryDisk bool
+	RetryDelay          time.Duration
 }
 
 // GatekeeperDecision encapsulates the decision result of EvaluateGoNoGoPure.
@@ -49,6 +52,59 @@ type GatekeeperDecision struct {
 	AvailVramBytes      uint64
 	RequiredVramBytes   uint64
 	IsGpuBlock          bool
+}
+
+// ramAdmission is the single-use RAM reservation produced by Gatekeeper and
+// consumed by the pipeline. It deliberately keeps observed available RAM and
+// the independent reservation budget separate.
+type ramAdmission struct {
+	storageMode StorageMode
+	ramBytes    uint64
+	token       uint64
+}
+
+func admissionKey(task TaskPayload) string {
+	return fmt.Sprintf("%s\x00%d", task.FlacPath, task.TrackNumber)
+}
+
+func canReserveRamPure(reserved, request, totalPhys uint64, maxRamRatio float64) bool {
+	if totalPhys == 0 || maxRamRatio <= 0 || maxRamRatio > 1 {
+		return false
+	}
+	budget := uint64(float64(totalPhys) * maxRamRatio)
+	return request <= budget && reserved <= budget-request
+}
+
+func (d *Dispatcher) reserveRamAdmission(task TaskPayload, admission ramAdmission, totalPhys uint64, maxRamRatio float64) (ramAdmission, bool) {
+	d.inFlightMutex.Lock()
+	defer d.inFlightMutex.Unlock()
+	if !canReserveRamPure(d.activeInFlightRamBytes, admission.ramBytes, totalPhys, maxRamRatio) {
+		return ramAdmission{}, false
+	}
+	key := admissionKey(task)
+	if _, exists := d.ramAdmissions[key]; exists {
+		return ramAdmission{}, false
+	}
+	d.ramAdmissionSequence++
+	admission.token = d.ramAdmissionSequence
+	d.activeInFlightRamBytes += admission.ramBytes
+	d.ramAdmissions[key] = admission
+	return admission, true
+}
+
+func (d *Dispatcher) releaseRamAdmission(task TaskPayload, admission ramAdmission) {
+	d.inFlightMutex.Lock()
+	defer d.inFlightMutex.Unlock()
+	stored, exists := d.ramAdmissions[admissionKey(task)]
+	if !exists || stored.token != admission.token {
+		return
+	}
+	if d.activeInFlightRamBytes >= stored.ramBytes {
+		d.activeInFlightRamBytes -= stored.ramBytes
+	} else {
+		d.activeInFlightRamBytes = 0
+	}
+	delete(d.ramAdmissions, admissionKey(task))
 }
 
 // EvaluateGoNoGoPure evaluates whether a task can be dispatched without side-effects (Pure Domain Morphism).
@@ -107,7 +163,7 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 		}
 	}
 
-	if in.MemoryLoad >= 90 {
+	if in.MemoryLoad >= 90 && !(in.AllowHighMemoryDisk && in.StorageMode == StorageModeDisk) {
 		return GatekeeperDecision{
 			IsGo:                false,
 			WaitDuration:        retryDelay,
@@ -119,6 +175,17 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 			MemoryLoad:          in.MemoryLoad,
 			AvailDiskBytes:      in.AvailDisk,
 			MinAvailDiskBytes:   in.MinAvailDisk,
+		}
+	}
+
+	// GPU-required work is never admitted on an unknown dedicated-VRAM sample.
+	// This is intentionally independent of the utilization throttle switch.
+	if in.GPURequired && !in.DedicatedVramKnown {
+		return GatekeeperDecision{
+			IsGo: false, WaitDuration: retryDelay, Reason: "Dedicated VRAM availability is unknown", StorageMode: in.StorageMode,
+			EstimatedRamBytes: in.EstimatedTaskRam, EffectiveAvailBytes: effectiveAvailBytes, RequiredBytes: requiredBytes,
+			MemoryLoad: in.MemoryLoad, AvailDiskBytes: in.AvailDisk, MinAvailDiskBytes: in.MinAvailDisk,
+			GpuUtilization: in.GpuUtilization, AvailVramBytes: in.AvailVram, IsGpuBlock: true,
 		}
 	}
 
@@ -144,7 +211,7 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 		}
 
 		// VRAM 空き容量判定
-		if in.MinAvailVram > 0 && in.AvailVram != math.MaxUint64 {
+		if in.MinAvailVram > 0 && (!in.GPURequired || in.DedicatedVramKnown) {
 			requiredVram := in.EstimatedTaskVram + in.MinAvailVram
 			if in.AvailVram < requiredVram {
 				return GatekeeperDecision{
@@ -188,12 +255,9 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.Duration) {
 	memInfo, err := sysinfo.GetMemoryInfo()
 	if err != nil || memInfo == nil {
-		return true, 0
+		d.LogWarn("[W-%d] [Gatekeeper: NOGO] memory observation unavailable", workerID)
+		return false, 20 * time.Second
 	}
-
-	d.inFlightMutex.Lock()
-	inFlight := d.activeInFlightRamBytes
-	d.inFlightMutex.Unlock()
 
 	currentCfg := d.GetConfig()
 	minAvailBytes := uint64(currentCfg.MinAvailRamGB * 1024 * 1024 * 1024)
@@ -207,7 +271,7 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 	storageMode, effectiveTaskRam, estimatedDiskBytes := DetermineStorageModePure(
 		task,
 		memInfo.AvailPhys,
-		inFlight,
+		0,
 		minAvailBytes,
 		currentCfg.DiskModeRamThresholdRatio,
 		currentCfg.EnableDiskModeFallback,
@@ -240,33 +304,39 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 	// GPU metrics lookup
 	gpuMetrics := sysinfo.GetLatestGpuMetrics()
 	var gpuUtil float64 = 0.0
-	var availVram uint64 = math.MaxUint64
+	var availVram uint64
+	dedicatedVramKnown := false
 	if gpuMetrics != nil {
 		gpuUtil = gpuMetrics.UtilizationPercent
 		availVram = gpuMetrics.AvailableVramBytes
+		dedicatedVramKnown = gpuMetrics.IsDedicatedAvailable()
 	}
 
 	input := GatekeeperInput{
-		StorageMode:       storageMode,
-		EstimatedTaskDisk: estimatedDiskBytes,
-		AvailPhys:         memInfo.AvailPhys,
-		InFlightRam:       inFlight,
-		EstimatedTaskRam:  effectiveTaskRam,
-		MinAvailRam:       minAvailBytes,
-		MemoryLoad:        memInfo.MemoryLoad,
-		AvailDisk:         availDisk,
-		MinAvailDisk:      minAvailDiskBytes,
-		GpuUtilization:    gpuUtil,
-		AvailVram:         availVram,
-		MinAvailVram:      minAvailVramBytes,
-		EstimatedTaskVram: estimatedVramBytes,
-		MaxGpuUtilization: currentCfg.MaxGpuUtilizationRatio,
-		EnableGpuThrottle: currentCfg.EnableGpuThrottle,
-		RetryDelay:        retryDelay,
+		StorageMode:        storageMode,
+		EstimatedTaskDisk:  estimatedDiskBytes,
+		AvailPhys:          memInfo.AvailPhys,
+		InFlightRam:        0,
+		EstimatedTaskRam:   effectiveTaskRam,
+		MinAvailRam:        minAvailBytes,
+		MemoryLoad:         memInfo.MemoryLoad,
+		AvailDisk:          availDisk,
+		MinAvailDisk:       minAvailDiskBytes,
+		GpuUtilization:     gpuUtil,
+		AvailVram:          availVram,
+		MinAvailVram:       minAvailVramBytes,
+		EstimatedTaskVram:  estimatedVramBytes,
+		GPURequired:        estimatedVramBytes > 0,
+		DedicatedVramKnown: dedicatedVramKnown,
+		MaxGpuUtilization:  currentCfg.MaxGpuUtilizationRatio,
+		EnableGpuThrottle:  currentCfg.EnableGpuThrottle,
+		RetryDelay:         retryDelay,
 	}
 
+	d.inFlightMutex.Lock()
 	decision := EvaluateGoNoGoPure(input)
 	if !decision.IsGo {
+		d.inFlightMutex.Unlock()
 		if decision.IsGpuBlock && d.statsTracker != nil {
 			d.statsTracker.RecordGpuWait(decision.WaitDuration)
 		}
@@ -274,15 +344,36 @@ func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.
 		return false, decision.WaitDuration
 	}
 
+	// Admission and reservation are one critical section. Available physical
+	// memory is already an observed value, so only the independent total-RAM
+	// budget includes existing reservations.
+	admission := ramAdmission{storageMode: storageMode, ramBytes: effectiveTaskRam}
+	if !canReserveRamPure(d.activeInFlightRamBytes, admission.ramBytes, memInfo.TotalPhys, currentCfg.MaxRamRatio) {
+		d.inFlightMutex.Unlock()
+		d.LogWarn("[W-%d] [Gatekeeper: NOGO] RAM reservation budget exhausted", workerID)
+		return false, retryDelay
+	}
+	key := admissionKey(task)
+	if _, exists := d.ramAdmissions[key]; exists {
+		d.inFlightMutex.Unlock()
+		return false, retryDelay
+	}
+	d.ramAdmissionSequence++
+	admission.token = d.ramAdmissionSequence
+	d.activeInFlightRamBytes += admission.ramBytes
+	d.ramAdmissions[key] = admission
+	reservedAfter := d.activeInFlightRamBytes
+	d.inFlightMutex.Unlock()
+
 	if storageMode == StorageModeDisk {
 		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved [Disk Mode Fallback] (Task RAM Clamped: %d MB, Disk Needed: %.2f GB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], GPU Util: %.1f%%, Avail Disk: %.2f GB)",
-			workerID, decision.EstimatedRamBytes/1024/1024, float64(estimatedDiskBytes)/(1024*1024*1024), decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024, gpuUtil, float64(availDisk)/(1024*1024*1024))
+			workerID, decision.EstimatedRamBytes/1024/1024, float64(estimatedDiskBytes)/(1024*1024*1024), decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, reservedAfter/1024/1024, gpuUtil, float64(availDisk)/(1024*1024*1024))
 	} else if minAvailDiskBytes > 0 {
 		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved [SHM Mode] (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], GPU Util: %.1f%%, Min Avail Disk: %.2f GB)",
-			workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024, gpuUtil, float64(availDisk)/(1024*1024*1024))
+			workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, reservedAfter/1024/1024, gpuUtil, float64(availDisk)/(1024*1024*1024))
 	} else {
 		d.LogInfo("[W-%d] [Gatekeeper: GO] Dispatch Approved [SHM Mode] (Task RAM: %d MB, Effective Avail RAM: %d MB [Avail: %d MB, InFlight: %d MB], GPU Util: %.1f%%)",
-			workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, inFlight/1024/1024, gpuUtil)
+			workerID, decision.EstimatedRamBytes/1024/1024, decision.EffectiveAvailBytes/1024/1024, memInfo.AvailPhys/1024/1024, reservedAfter/1024/1024, gpuUtil)
 	}
 	return true, 0
 }

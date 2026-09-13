@@ -26,7 +26,7 @@ func TestDaemonPingPong(t *testing.T) {
 
 	client, err := NewWorkerDaemonClient(999, pythonPath, parentDir, nil, func(format string, v ...interface{}) {
 		t.Logf(format, v...)
-	})
+	}, WorkerDaemonRoleCPU)
 	if err != nil {
 		t.Fatalf("Failed to create worker daemon client: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestDaemonPoolAcquireRelease(t *testing.T) {
 
 	pool := NewWorkerDaemonPool(2, pythonPath, parentDir, nil, func(format string, v ...interface{}) {
 		t.Logf(format, v...)
-	})
+	}, WorkerDaemonRoleCPU)
 	defer pool.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -90,7 +90,7 @@ func TestDaemonPoolThunderingHerd(t *testing.T) {
 	// Max 2 daemons in pool
 	pool := NewWorkerDaemonPool(2, pythonPath, parentDir, nil, func(format string, v ...interface{}) {
 		t.Logf(format, v...)
-	})
+	}, WorkerDaemonRoleCPU)
 	defer pool.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -143,7 +143,7 @@ func TestDaemonCloseLocked_DeadlockFree(t *testing.T) {
 		pythonPath = venvPython
 	}
 
-	client, err := NewWorkerDaemonClient(998, pythonPath, parentDir, nil, func(format string, v ...interface{}) {})
+	client, err := NewWorkerDaemonClient(998, pythonPath, parentDir, nil, func(format string, v ...interface{}) {}, WorkerDaemonRoleCPU)
 	if err != nil {
 		t.Fatalf("Failed to create worker daemon client: %v", err)
 	}
@@ -174,3 +174,38 @@ func TestDaemonCloseLocked_DeadlockFree(t *testing.T) {
 	}
 }
 
+func TestWorkerDaemonRoleRoutingAndHandshakeContract(t *testing.T) {
+	cases := []struct {
+		role   WorkerDaemonRole
+		script string
+		device string
+	}{
+		{WorkerDaemonRoleCPU, "worker_cpu_daemon.py", "cpu"},
+		{WorkerDaemonRoleFeatureGPU, "worker_gpu_daemon.py", "cuda"},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.role), func(t *testing.T) {
+			script, err := tc.role.scriptName()
+			if err != nil || script != tc.script {
+				t.Fatalf("role %q script = %q, %v", tc.role, script, err)
+			}
+			if !tc.role.validReadyDevice(tc.device) || tc.role.validReadyDevice("cpu") == (tc.role == WorkerDaemonRoleFeatureGPU) {
+				t.Fatalf("role %q device validation is not strict", tc.role)
+			}
+		})
+	}
+}
+
+func TestDispatcherCreatesSeparateBoundedFeatureAndDemucsPools(t *testing.T) {
+	d := NewDispatcher(Config{NumWorkers: 3}, nil)
+	defer d.Stop()
+	if d.cpuDaemonPool == nil || d.cpuDaemonPool.maxDaemons != 3 || d.cpuDaemonPool.role != WorkerDaemonRoleCPU {
+		t.Fatalf("CPU pool = %#v, want capacity 3 and cpu role", d.cpuDaemonPool)
+	}
+	if d.gpuDaemonPool == nil || d.gpuDaemonPool.maxDaemons != 1 || d.gpuDaemonPool.role != WorkerDaemonRoleFeatureGPU {
+		t.Fatalf("GPU pool = %#v, want capacity 1 and feature-gpu role", d.gpuDaemonPool)
+	}
+	if d.demucsPool.capacity != 1 || d.demucsScheduler.maxCapacity != 1 || d.demucsScheduler.GetLimit() != 1 {
+		t.Fatalf("Demucs capacities = pool:%d scheduler:%d limit:%d, want 1:1:1", d.demucsPool.capacity, d.demucsScheduler.maxCapacity, d.demucsScheduler.GetLimit())
+	}
+}

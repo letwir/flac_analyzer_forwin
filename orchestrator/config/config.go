@@ -49,6 +49,7 @@ type OrchestratorConfig struct {
 	MaxGpuUtilizationRatio     float64 `toml:"max_gpu_utilization_ratio"`
 	MinAvailVramGB             float64 `toml:"min_avail_vram_gb"`
 	EstimatedDemucsVramGB      float64 `toml:"estimated_demucs_vram_gb"`
+	DedicatedVramTotalGB       float64 `toml:"dedicated_vram_total_gb"`
 	EnableGpuThrottle          *bool   `toml:"enable_gpu_throttle"`
 	DbTimeoutSec               int     `toml:"db_timeout_sec"`
 	EnableDiskModeFallback     *bool   `toml:"enable_disk_mode_fallback"`
@@ -91,6 +92,7 @@ type Config struct {
 	MaxGpuUtilizationRatio     float64
 	MinAvailVramGB             float64
 	EstimatedDemucsVramGB      float64
+	DedicatedVramTotalGB       float64
 	EnableGpuThrottle          bool
 	DBTimeoutSec               int
 	EnableDiskModeFallback     bool

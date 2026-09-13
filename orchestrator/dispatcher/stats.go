@@ -321,6 +321,17 @@ func (st *StatsTracker) collectSystemResources(queueDir string) {
 		metrics.AnalyzerGpuUtilizationPercent.Set(gpuM.UtilizationPercent)
 		metrics.AnalyzerGpuDedicatedUsedBytes.Set(float64(gpuM.DedicatedUsedBytes))
 		metrics.AnalyzerGpuDedicatedTotalBytes.Set(float64(gpuM.DedicatedTotalBytes))
+		metrics.AnalyzerGpuDedicatedAvailableBytes.Set(float64(gpuM.AvailableVramBytes))
+		if gpuM.DedicatedAvailableValid {
+			metrics.AnalyzerGpuDedicatedAvailableValid.Set(1)
+		} else {
+			metrics.AnalyzerGpuDedicatedAvailableValid.Set(0)
+		}
+		capacitySource := 0.0
+		if gpuM.DedicatedCapacityProvenance == sysinfo.ProvenanceManualOverride {
+			capacitySource = 1
+		}
+		metrics.AnalyzerGpuDedicatedCapacitySource.Set(capacitySource)
 		metrics.AnalyzerGpuSharedUsedBytes.Set(float64(gpuM.SharedUsedBytes))
 		metrics.AnalyzerGpuTotalCommittedBytes.Set(float64(gpuM.TotalCommittedBytes))
 	}

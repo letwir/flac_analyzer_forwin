@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"flac_analyzer/orchestrator/metrics"
@@ -55,6 +54,17 @@ func (d *Dispatcher) fillTaskQueue() {
 	if availableSlots <= 0 {
 		return
 	}
+	cfg := d.GetConfig()
+	retryDelay := cfg.GatekeeperRetryDelaySec
+	if retryDelay <= 0 {
+		retryDelay = 20
+	}
+	// Eligible parked tasks re-enter the same atomic claim path even while
+	// smaller work is active; next_evaluation_at prevents retry spinning.
+	if _, err := d.db.RequeueRetryableTasks(availableSlots, retryDelay); err != nil {
+		d.LogError("[TaskFeeder] Failed to release retryable tasks: %v", err)
+		return
+	}
 
 	tasks, err := d.db.ClaimPendingTasks(availableSlots)
 	if err != nil {
@@ -67,6 +77,10 @@ func (d *Dispatcher) fillTaskQueue() {
 			d.db.UpdateStatus(queued.FilePath, queued.TrackNumber, state.StatusFailedMaybeRetry, err.Error())
 			continue
 		}
+		if _, err := d.tryReserveTaskAdmission(task); err != nil {
+			d.parkTaskForAdmission(task, err)
+			continue
+		}
 		d.taskQueue <- task
 		metrics.AnalyzerQueueLength.Inc()
 	}
@@ -75,24 +89,35 @@ func (d *Dispatcher) fillTaskQueue() {
 		return
 	}
 
-	// Retryable failures are deliberately parked until the ordinary queue has
-	// drained and a cooldown has elapsed. This prevents low-RAM retry storms.
-	if len(d.taskQueue) == 0 && atomic.LoadInt32(&d.activeTaskCount) == 0 {
-		cfg := d.GetConfig()
-		maxRetries := cfg.GatekeeperMaxRetries
-		if maxRetries <= 0 {
-			maxRetries = 5
-		}
-		minAgeSec := cfg.GatekeeperRetryDelaySec * maxRetries
-		if minAgeSec < 60 {
-			minAgeSec = 60
-		}
-		if _, err := d.db.RequeueRetryableTasks(cap(d.taskQueue), minAgeSec); err != nil {
-			d.LogError("[TaskFeeder] Failed to release retryable tasks: %v", err)
-			return
-		}
-		// The next ticker/wakeup claims the newly released PENDING rows.
+}
+
+func (d *Dispatcher) parkTaskForAdmission(task TaskPayload, cause error) {
+	reason := fmt.Sprintf("admission deferred: %v", cause)
+	delay := d.GetConfig().GatekeeperRetryDelaySec
+	if delay <= 0 {
+		delay = 20
 	}
+	if err := d.db.ParkTaskForRetry(task.FlacPath, task.TrackNumber, reason, delay); err != nil {
+		d.LogError("[TaskFeeder] Failed to park task %s track %d: %v", task.FlacPath, task.TrackNumber, err)
+		return
+	}
+	metrics.AnalyzerTasksTotal.WithLabelValues("retry_pending").Inc()
+	if d.shouldLogParkReason(reason, time.Now()) {
+		d.LogWarn("[TaskFeeder] task parked without occupying a worker: %s (repeated reasons suppressed for 1m)", reason)
+	}
+}
+
+func (d *Dispatcher) shouldLogParkReason(reason string, now time.Time) bool {
+	d.parkLogMu.Lock()
+	defer d.parkLogMu.Unlock()
+	if d.parkLogReasons == nil {
+		d.parkLogReasons = make(map[string]time.Time)
+	}
+	if last, ok := d.parkLogReasons[reason]; ok && now.Sub(last) < time.Minute {
+		return false
+	}
+	d.parkLogReasons[reason] = now
+	return true
 }
 
 func decodeQueuedTask(queued state.QueuedTask) (TaskPayload, error) {

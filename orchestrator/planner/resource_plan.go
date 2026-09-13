@@ -59,6 +59,144 @@ type ResourceEstimate struct {
 	WorkingVramBytes   uint64
 }
 
+// WaveformOwner identifies where the CPU-visible master waveform resides. It
+// deliberately excludes dedicated VRAM: CPU stages must retain an explicit
+// HostRAM or DiskMmap owner.
+type WaveformOwner uint8
+
+const (
+	WaveformOwnerHostRAM WaveformOwner = iota + 1
+	WaveformOwnerDiskMmap
+)
+
+// GPUWorkPlacement identifies whether a bounded GPU transfer is safe. NoGPUWork
+// means no CUDA allocation or launch; it is not a WDDM shared-memory fallback.
+type GPUWorkPlacement uint8
+
+const (
+	GPUWorkNoGPUWork GPUWorkPlacement = iota
+	GPUWorkDedicatedVRAM
+)
+
+// PlacementSnapshot is an immutable value-only observation for pure placement
+// planning. Dedicated availability is valid only when it exactly agrees with
+// total-used; shared GPU memory intentionally is not an input.
+type PlacementSnapshot struct {
+	AvailableHostRAMBytes   uint64
+	AvailableDiskBytes      uint64
+	ActiveTaskCount         uint32
+	DedicatedTotalBytes     uint64
+	DedicatedUsedBytes      uint64
+	DedicatedAvailableBytes uint64
+	DedicatedVRAMValid      bool
+}
+
+// PlacementPolicy is supplied by the caller. Enter thresholds are inclusive,
+// exit thresholds are inclusive, and values strictly between retain the prior
+// plan. No runtime configuration is read here.
+type PlacementPolicy struct {
+	HostRAMEnterBytes              uint64
+	HostRAMExitBytes               uint64
+	DedicatedVRAMEnterBytes        uint64
+	DedicatedVRAMExitBytes         uint64
+	HostRAMSafetyMarginBytes       uint64
+	DedicatedVRAMSafetyMarginBytes uint64
+	SingleTaskGPUChunkBytes        uint64
+	ConcurrentTaskGPUChunkBytes    uint64
+}
+
+// PlacementPlan is immutable and comparable. Admissible=false is fail-closed;
+// it always disables GPU work and exposes a zero transfer chunk.
+type PlacementPlan struct {
+	Admissible            bool
+	CPUOwner              WaveformOwner
+	GPUWork               GPUWorkPlacement
+	GPUTransferChunkBytes uint64
+}
+
+// PlanWaveformPlacement creates a deterministic placement plan without
+// reserving resources. ActiveTaskCount only selects the bounded GPU chunk.
+func PlanWaveformPlacement(snapshot PlacementSnapshot, policy PlacementPolicy, prior PlacementPlan) PlacementPlan {
+	if !validPlacementPolicy(policy) {
+		return failClosedPlacement()
+	}
+
+	hostAvailable, hostOK := subtractSafetyMargin(snapshot.AvailableHostRAMBytes, policy.HostRAMSafetyMarginBytes)
+	if !hostOK {
+		return failClosedPlacement()
+	}
+	cpuOwner := selectWaveformOwner(hostAvailable, policy.HostRAMEnterBytes, policy.HostRAMExitBytes, prior.CPUOwner)
+	if cpuOwner == WaveformOwnerDiskMmap && snapshot.AvailableDiskBytes == 0 {
+		return failClosedPlacement()
+	}
+
+	plan := PlacementPlan{Admissible: true, CPUOwner: cpuOwner, GPUWork: GPUWorkNoGPUWork}
+	if !snapshot.DedicatedVRAMValid || snapshot.DedicatedTotalBytes == ^uint64(0) || snapshot.DedicatedUsedBytes > snapshot.DedicatedTotalBytes ||
+		snapshot.DedicatedAvailableBytes != snapshot.DedicatedTotalBytes-snapshot.DedicatedUsedBytes {
+		return plan
+	}
+	dedicatedAvailable, dedicatedOK := subtractSafetyMargin(snapshot.DedicatedAvailableBytes, policy.DedicatedVRAMSafetyMarginBytes)
+	if !dedicatedOK {
+		return plan
+	}
+
+	chunk := policy.SingleTaskGPUChunkBytes
+	if snapshot.ActiveTaskCount > 0 {
+		chunk = policy.ConcurrentTaskGPUChunkBytes
+	}
+	if selectGPUWork(dedicatedAvailable, policy.DedicatedVRAMEnterBytes, policy.DedicatedVRAMExitBytes, prior.GPUWork) == GPUWorkDedicatedVRAM && dedicatedAvailable >= chunk {
+		plan.GPUWork = GPUWorkDedicatedVRAM
+		plan.GPUTransferChunkBytes = chunk
+	}
+	return plan
+}
+
+func validPlacementPolicy(policy PlacementPolicy) bool {
+	return policy.HostRAMEnterBytes > policy.HostRAMExitBytes &&
+		policy.DedicatedVRAMEnterBytes > policy.DedicatedVRAMExitBytes &&
+		policy.SingleTaskGPUChunkBytes > 0 &&
+		policy.ConcurrentTaskGPUChunkBytes > 0 &&
+		policy.ConcurrentTaskGPUChunkBytes <= policy.SingleTaskGPUChunkBytes &&
+		policy.SingleTaskGPUChunkBytes <= policy.DedicatedVRAMExitBytes
+}
+
+func subtractSafetyMargin(available, margin uint64) (uint64, bool) {
+	if available < margin {
+		return 0, false
+	}
+	return available - margin, true
+}
+
+func selectWaveformOwner(available, enter, exit uint64, prior WaveformOwner) WaveformOwner {
+	if available >= enter {
+		return WaveformOwnerHostRAM
+	}
+	if available <= exit {
+		return WaveformOwnerDiskMmap
+	}
+	if prior == WaveformOwnerHostRAM || prior == WaveformOwnerDiskMmap {
+		return prior
+	}
+	return WaveformOwnerDiskMmap
+}
+
+func selectGPUWork(available, enter, exit uint64, prior GPUWorkPlacement) GPUWorkPlacement {
+	if available >= enter {
+		return GPUWorkDedicatedVRAM
+	}
+	if available <= exit {
+		return GPUWorkNoGPUWork
+	}
+	if prior == GPUWorkDedicatedVRAM {
+		return GPUWorkDedicatedVRAM
+	}
+	return GPUWorkNoGPUWork
+}
+
+func failClosedPlacement() PlacementPlan {
+	return PlacementPlan{CPUOwner: WaveformOwnerDiskMmap, GPUWork: GPUWorkNoGPUWork}
+}
+
 func DefaultResourceProfile() ResourceProfile {
 	return ResourceProfile{
 		StemCount:          defaultStemCount,

@@ -24,6 +24,42 @@ type DaemonRequest struct {
 	Payload ExtractAllPayload `json:"payload,omitempty"`
 }
 
+type FeatureLane string
+
+const (
+	FeatureLaneCPU FeatureLane = "cpu"
+	FeatureLaneGPU FeatureLane = "gpu"
+)
+
+type WorkerDaemonRole string
+
+const (
+	WorkerDaemonRoleCPU        WorkerDaemonRole = "cpu"
+	WorkerDaemonRoleFeatureGPU WorkerDaemonRole = "feature-gpu"
+)
+
+func (r WorkerDaemonRole) scriptName() (string, error) {
+	switch r {
+	case WorkerDaemonRoleCPU:
+		return "worker_cpu_daemon.py", nil
+	case WorkerDaemonRoleFeatureGPU:
+		return "worker_gpu_daemon.py", nil
+	default:
+		return "", fmt.Errorf("unknown worker daemon role %q", r)
+	}
+}
+
+func (r WorkerDaemonRole) validReadyDevice(device string) bool {
+	switch r {
+	case WorkerDaemonRoleCPU:
+		return device == "cpu"
+	case WorkerDaemonRoleFeatureGPU:
+		return device == "cuda"
+	default:
+		return false
+	}
+}
+
 // StemInfo represents shared memory or disk file location & dimensions for a single stem
 type StemInfo struct {
 	ShmTag      string  `json:"shm_tag,omitempty"`
@@ -70,6 +106,7 @@ type WorkerDaemonClient struct {
 	taskCount   int
 	maxRecycle  int
 	readyDevice string
+	role        WorkerDaemonRole
 }
 
 // NewWorkerDaemonClient starts a new persistent worker_daemon.py process and waits for ready signal.
@@ -79,6 +116,7 @@ func NewWorkerDaemonClient(
 	parentDir string,
 	env []string,
 	logger func(format string, v ...interface{}),
+	role WorkerDaemonRole,
 ) (*WorkerDaemonClient, error) {
 	client := &WorkerDaemonClient{
 		id:         id,
@@ -87,6 +125,7 @@ func NewWorkerDaemonClient(
 		env:        env,
 		logger:     logger,
 		maxRecycle: 100,
+		role:       role,
 	}
 
 	if err := client.startProcessComplex(); err != nil {
@@ -97,9 +136,13 @@ func NewWorkerDaemonClient(
 }
 
 func (c *WorkerDaemonClient) startProcessComplex() error {
-	scriptPath := filepath.Join(c.parentDir, "worker_daemon.py")
+	scriptName, err := c.role.scriptName()
+	if err != nil {
+		return err
+	}
+	scriptPath := filepath.Join(c.parentDir, scriptName)
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		return fmt.Errorf("worker_daemon.py not found at %s", scriptPath)
+		return fmt.Errorf("%s not found at %s", scriptName, scriptPath)
 	}
 
 	cmd := exec.Command(c.pythonPath, scriptPath)
@@ -150,6 +193,7 @@ func (c *WorkerDaemonClient) startProcessComplex() error {
 	// Handshake: Wait for ready signal (with 30s timeout)
 	type readySignal struct {
 		Status string `json:"status"`
+		Role   string `json:"role"`
 		Device string `json:"device"`
 	}
 
@@ -169,6 +213,10 @@ func (c *WorkerDaemonClient) startProcessComplex() error {
 			readyCh <- fmt.Errorf("unexpected handshake status: %s", sig.Status)
 			return
 		}
+		if sig.Role != string(c.role) || !c.role.validReadyDevice(sig.Device) {
+			readyCh <- fmt.Errorf("worker daemon role/device mismatch: want %s/%s, got %s/%s", c.role, expectedDeviceForRole(c.role), sig.Role, sig.Device)
+			return
+		}
 		c.readyDevice = sig.Device
 		readyCh <- nil
 	}()
@@ -181,13 +229,20 @@ func (c *WorkerDaemonClient) startProcessComplex() error {
 		}
 	case <-time.After(30 * time.Second):
 		_ = c.Close()
-		return fmt.Errorf("handshake timeout waiting for worker_daemon.py ready signal")
+		return fmt.Errorf("handshake timeout waiting for %s ready signal", scriptName)
 	}
 
 	if c.logger != nil {
 		c.logger("[WorkerDaemon-%d] Ready and attached (Device: %s)", c.id, c.readyDevice)
 	}
 	return nil
+}
+
+func expectedDeviceForRole(role WorkerDaemonRole) string {
+	if role == WorkerDaemonRoleCPU {
+		return "cpu"
+	}
+	return "cuda"
 }
 
 func (c *WorkerDaemonClient) streamStderr(pipe io.ReadCloser) {
@@ -200,11 +255,28 @@ func (c *WorkerDaemonClient) streamStderr(pipe io.ReadCloser) {
 	}
 }
 
-// ExtractAll sends an extract_all request to worker_daemon.py and reads the structured response.
+// ExtractAll sends the legacy extract_all request to worker_daemon.py and reads the structured response.
 func (c *WorkerDaemonClient) ExtractAll(ctx context.Context, payload ExtractAllPayload) (*DaemonResponse, error) {
+	return c.extract(ctx, "extract_all", payload)
+}
+
+// ExtractCPU sends the bounded Librosa and Essentia lane to a worker daemon.
+func (c *WorkerDaemonClient) ExtractCPU(ctx context.Context, payload ExtractAllPayload) (*DaemonResponse, error) {
+	return c.extract(ctx, "extract_cpu", payload)
+}
+
+// ExtractGPU sends the bounded Tensor lane to a worker daemon.
+func (c *WorkerDaemonClient) ExtractGPU(ctx context.Context, payload ExtractAllPayload) (*DaemonResponse, error) {
+	return c.extract(ctx, "extract_gpu", payload)
+}
+
+func (c *WorkerDaemonClient) extract(ctx context.Context, action string, payload ExtractAllPayload) (*DaemonResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("daemon %s request cancelled before write: %w", action, err)
+	}
 	if c.closed || c.cmd == nil || c.cmd.Process == nil {
 		return nil, fmt.Errorf("worker daemon %d is closed or dead", c.id)
 	}
@@ -212,7 +284,7 @@ func (c *WorkerDaemonClient) ExtractAll(ctx context.Context, payload ExtractAllP
 	reqID := fmt.Sprintf("req-%d-%d", c.id, time.Now().UnixNano())
 	req := DaemonRequest{
 		ID:      reqID,
-		Action:  "extract_all",
+		Action:  action,
 		Payload: payload,
 	}
 

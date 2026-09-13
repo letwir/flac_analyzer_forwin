@@ -5,6 +5,8 @@ package dispatcher
 
 import (
 	"fmt"
+
+	"flac_analyzer/orchestrator/sysinfo"
 )
 
 // GetConfig returns a thread-safe copy of the current configuration.
@@ -32,7 +34,6 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 
 	if oldCfg.DemucsConcurrentLimit != newCfg.DemucsConcurrentLimit {
 		diff["demucs_concurrent_limit"] = fmt.Sprintf("%d -> %d", oldCfg.DemucsConcurrentLimit, newCfg.DemucsConcurrentLimit)
-		d.demucsSemaphore.SetLimit(newCfg.DemucsConcurrentLimit)
 	}
 	if oldCfg.LogLevel != newCfg.LogLevel {
 		diff["log_level"] = fmt.Sprintf("%s -> %s", oldCfg.LogLevel, newCfg.LogLevel)
@@ -98,6 +99,10 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	}
 	if oldCfg.EstimatedDemucsVramGB != newCfg.EstimatedDemucsVramGB {
 		diff["estimated_demucs_vram_gb"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.EstimatedDemucsVramGB, newCfg.EstimatedDemucsVramGB)
+	}
+	if oldCfg.DedicatedVramTotalGB != newCfg.DedicatedVramTotalGB {
+		diff["dedicated_vram_total_gb"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.DedicatedVramTotalGB, newCfg.DedicatedVramTotalGB)
+		sysinfo.SetDedicatedVramTotalGB(newCfg.DedicatedVramTotalGB)
 	}
 	if oldCfg.EnableGpuThrottle != newCfg.EnableGpuThrottle {
 		diff["enable_gpu_throttle"] = fmt.Sprintf("%v -> %v", oldCfg.EnableGpuThrottle, newCfg.EnableGpuThrottle)

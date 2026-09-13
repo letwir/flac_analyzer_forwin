@@ -43,10 +43,37 @@ func TestDetermineDemucsSlotLimitPure_DualBoost(t *testing.T) {
 	}
 }
 
+func TestDetermineDemucsSlotLimitWithAvailabilityPure_UnknownDemotes(t *testing.T) {
+	limit := DetermineDemucsSlotLimitWithAvailabilityPure(20, 8*1024*1024*1024, false, 0.5, 4*1024*1024*1024, 2)
+	if limit != 1 {
+		t.Fatalf("unknown dedicated VRAM must immediately limit Demucs to one slot, got %d", limit)
+	}
+}
+
 func TestAdaptiveDemucsScheduler_Basic(t *testing.T) {
 	st := NewStatsTracker()
 	sched := NewAdaptiveDemucsScheduler(1, 2, 0.50, 4*1024*1024*1024, st)
 	if sched.GetLimit() != 1 {
 		t.Fatalf("Expected initial limit 1, got %d", sched.GetLimit())
+	}
+}
+
+func TestDemucsClientRegistryStaysBoundedAcrossOneHundredRecycles(t *testing.T) {
+	pool := NewDemucsDaemonPool(1, "unused", "unused", nil, func(string, ...interface{}) {})
+	oldClient := &DemucsDaemonClient{id: 1, isAlive: true}
+	pool.clients = []*DemucsDaemonClient{oldClient}
+	for i := 0; i < 100; i++ {
+		newClient := &DemucsDaemonClient{id: 1, isAlive: true}
+		pool.mu.Lock()
+		if !pool.replaceClientLocked(oldClient, newClient) {
+			pool.mu.Unlock()
+			t.Fatalf("cycle %d lost registry entry", i)
+		}
+		if got := len(pool.clients); got != 1 || pool.clients[0] != newClient {
+			pool.mu.Unlock()
+			t.Fatalf("cycle %d registry = %#v, want exactly replacement", i, pool.clients)
+		}
+		pool.mu.Unlock()
+		oldClient = newClient
 	}
 }

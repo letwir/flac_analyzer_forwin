@@ -59,9 +59,9 @@ func NormalizeConfig(
 	if raw.Orchestrator.MinAvailDiskGB <= 0 {
 		raw.Orchestrator.MinAvailDiskGB = 5.0
 	}
-	if raw.Orchestrator.DemucsConcurrentLimit <= 0 {
-		raw.Orchestrator.DemucsConcurrentLimit = 1
-	}
+	// Demucs and feature GPU work have distinct pools. Demucs is intentionally
+	// serialized so it can never contend with a second Demucs model instance.
+	raw.Orchestrator.DemucsConcurrentLimit = 1
 	if raw.Orchestrator.ShmExpansionRatio <= 0 {
 		raw.Orchestrator.ShmExpansionRatio = 3.5
 	}
@@ -134,15 +134,17 @@ func NormalizeConfig(
 		estimatedDemucsVramGB = 1.0
 	}
 
+	dedicatedVramTotalGB := raw.Orchestrator.DedicatedVramTotalGB
+	if math.IsNaN(dedicatedVramTotalGB) || math.IsInf(dedicatedVramTotalGB, 0) || dedicatedVramTotalGB <= 0 || dedicatedVramTotalGB > 512.0 {
+		dedicatedVramTotalGB = 0
+	}
+
 	enableGpuThrottle := true
 	if raw.Orchestrator.EnableGpuThrottle != nil {
 		enableGpuThrottle = *raw.Orchestrator.EnableGpuThrottle
 	}
 
-	demucsDaemonCap := raw.Orchestrator.DemucsDaemonCapacity
-	if demucsDaemonCap <= 0 {
-		demucsDaemonCap = 2
-	}
+	demucsDaemonCap := 1
 
 	demucsDualUtilThreshold := raw.Orchestrator.DemucsDualGpuUtilThreshold
 	if demucsDualUtilThreshold <= 0 {
@@ -225,6 +227,7 @@ func NormalizeConfig(
 		MaxGpuUtilizationRatio:     maxGpuUtilRatio,
 		MinAvailVramGB:             minAvailVramGB,
 		EstimatedDemucsVramGB:      estimatedDemucsVramGB,
+		DedicatedVramTotalGB:       dedicatedVramTotalGB,
 		EnableGpuThrottle:          enableGpuThrottle,
 		DBTimeoutSec:               dbTimeoutSec,
 		EnableDiskModeFallback:     enableDiskFallback,

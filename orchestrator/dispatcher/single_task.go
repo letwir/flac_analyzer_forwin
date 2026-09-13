@@ -66,13 +66,10 @@ func (d *Dispatcher) RunSingleTask(ctx context.Context, task TaskPayload) (bool,
 	}
 
 	for {
-		goAhead, wait := d.EvaluateGoNoGo(1, task)
-		if goAhead {
+		if _, reserveErr := d.reserveTaskAdmission(task); reserveErr == nil {
 			break
 		}
-		if wait <= 0 {
-			wait = 20 * time.Second
-		}
+		wait := secondsToDuration(d.GetConfig().GatekeeperRetryDelaySec)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
