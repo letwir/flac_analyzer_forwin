@@ -104,16 +104,18 @@ func DetectHardwareSpecs() (*SystemSpecs, error) {
 		ramGB = math.Round(float64(mem.TotalPhys) / (1024 * 1024 * 1024))
 	}
 
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", `
+	query := fmt.Sprintf(`
 		$cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name;
-		$gpus = @(Get-CimInstance Win32_VideoController | Where-Object { $_.PNPDeviceID -like 'PCI*' });
-		if ($gpus.Count -eq 0) { $gpus = @(Get-CimInstance Win32_VideoController) };
+		$allGpus = @(Get-CimInstance Win32_VideoController);
+		$gpus = @($allGpus | Where-Object { %s });
+		if ($gpus.Count -eq 0) { $gpus = @($allGpus | Where-Object { $_.Name -ne 'Microsoft Basic Display Adapter' }) };
 		$gpu = ($gpus | Select-Object -ExpandProperty Name) -join ', ';
 		$os = (Get-CimInstance Win32_OperatingSystem).Caption;
 		$pagefiles = Get-CimInstance Win32_PageFileUsage | ForEach-Object { "$($_.Name) ($([math]::Round($_.AllocatedBaseSize / 1024, 1)) GB)" };
 		$pagefileStr = $pagefiles -join ', ';
 		@{ cpu=$cpu; gpu=$gpu; os=$os; pagefile=$pagefileStr } | ConvertTo-Json
-	`)
+	`, physicalGpuAdapterWhereClause)
+	cmd := exec.Command("powershell", "-NoProfile", "-Command", query)
 	out, err := cmd.Output()
 	specs := &SystemSpecs{RAMGB: ramGB}
 	if err == nil {

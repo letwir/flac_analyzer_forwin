@@ -26,6 +26,8 @@ import (
 type VramProvenance string
 
 const (
+	physicalGpuAdapterWhereClause = "$_.PNPDeviceID -like 'PCI*' -and $_.Name -ne 'Microsoft Basic Display Adapter'"
+
 	ProvenanceNone           VramProvenance = "none"
 	ProvenanceUnknown        VramProvenance = "unknown"
 	ProvenanceManualOverride VramProvenance = "manual_override"
@@ -531,13 +533,14 @@ func FetchGpuMetricsComplex() (*GpuMetrics, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", `
+	query := fmt.Sprintf(`
 		$ErrorActionPreference = 'Stop';
 		$gpuEngine = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine | Measure-Object -Property UtilizationPercentage -Maximum | Select-Object -ExpandProperty Maximum;
 		$mem = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory | Measure-Object -Property DedicatedUsage, SharedUsage, TotalCommitted -Sum;
 		if ($null -eq $gpuEngine -or $null -eq $mem -or $mem.Count -ne 3) { throw 'incomplete GPU performance-counter sample' }
-		$adapters = @(Get-CimInstance Win32_VideoController | Where-Object { $_.PNPDeviceID -like 'PCI*' });
-		if ($adapters.Count -eq 0) { $adapters = @(Get-CimInstance Win32_VideoController) };
+		$allAdapters = @(Get-CimInstance Win32_VideoController);
+		$adapters = @($allAdapters | Where-Object { %s });
+		if ($adapters.Count -eq 0) { $adapters = @($allAdapters | Where-Object { $_.Name -ne 'Microsoft Basic Display Adapter' }) };
 		$adapterCount = $adapters.Count;
 		$adapterNames = ($adapters | ForEach-Object { $_.Name }) -join '; ';
 		$vAdapter = if ($adapterCount -eq 1) { $adapters[0].AdapterRAM } else { 0 };
@@ -550,7 +553,8 @@ func FetchGpuMetricsComplex() (*GpuMetrics, error) {
 			adapter_count = [int]$adapterCount;
 			adapter_name = [string]$adapterNames;
 		} | ConvertTo-Json
-	`)
+	`, physicalGpuAdapterWhereClause)
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", query)
 
 	out, err := cmd.Output()
 	if err != nil {

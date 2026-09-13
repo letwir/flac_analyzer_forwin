@@ -387,6 +387,14 @@
 - **Fix**: `analyzer.py` の `_calc_scipy_stats_features` 内で `warnings.catch_warnings()` を適用し、警告をログ汚染なく安全にキャッチおよびゼロ補填処理する。
 </api>
 
+<api id="WINDOWS_BASIC_DISPLAY_ADAPTER_VRAM_AMBIGUITY">
+<title>Microsoft Basic Display Adapter は PCI 接続条件だけでは専用GPU候補から除外できない</title>
+- **Verified date / scope**: 2026-09-14、letwir-main の `Win32_VideoController` と `orchestrator/sysinfo`。
+- **Finding**: `PNPDeviceID -like 'PCI*'` は NVIDIA GeForce RTX 5070 Ti だけでなく `Microsoft Basic Display Adapter` にも一致し、`AdapterCount=2` と誤判定して dedicated VRAM availability を unknown にする。
+- **Contract**: VRAM採取とハードウェア自動検出の双方で `Microsoft Basic Display Adapter` を明示除外し、PCI候補が空の場合のフォールバックでも再混入させない。
+- **Source**: `orchestrator/sysinfo/gpu_windows.go`, `orchestrator/sysinfo/sysinfo.go`, `orchestrator/sysinfo/gpu_test.go`
+</api>
+
 <api id="PPROF_AND_ETL_OBSERVABILITY">
 <title>Go 製長大 ETL パイプラインにおける Prometheus メトリクス強化と pprof ライブプロファイリング技法</title>
 - **Context**: Go Orchestrator ＋ Python Workers による大規模並列バッチ処理において、処理速度低下やリソース飽和（詰まり）が発生した際のボトルネック観測・診断技法。

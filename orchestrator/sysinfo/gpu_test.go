@@ -2,11 +2,31 @@ package sysinfo
 
 import (
 	"errors"
+	"fmt"
 	"math"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestPhysicalGpuAdapterWhereClause_ExcludesMicrosoftBasicDisplayAdapter(t *testing.T) {
+	script := fmt.Sprintf(`
+		$adapters = @(
+			[pscustomobject]@{ Name = 'NVIDIA GeForce RTX 5070 Ti'; PNPDeviceID = 'PCI\\VEN_10DE' },
+			[pscustomobject]@{ Name = 'Microsoft Basic Display Adapter'; PNPDeviceID = 'PCI\\VEN_1234' },
+			[pscustomobject]@{ Name = 'Virtual Display'; PNPDeviceID = 'ROOT\\DISPLAY' }
+		) | Where-Object { %s }
+		($adapters | Select-Object -ExpandProperty Name) -join ';'
+	`, physicalGpuAdapterWhereClause)
+	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	if err != nil {
+		t.Fatalf("PowerShell adapter filtering failed: %v: %s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "NVIDIA GeForce RTX 5070 Ti" {
+		t.Fatalf("unexpected selected adapters: %q", got)
+	}
+}
 
 // Mor: UnitTesting -> ProofOfCorrectness
 // Functor: f_test ∘ g_gpu

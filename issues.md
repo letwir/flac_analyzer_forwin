@@ -1,5 +1,7 @@
 # ISSUE
 
+- [x]DONE 【Fix/VRAM】 `Microsoft Basic Display Adapter` を物理GPU候補から除外し、単一GPU環境での誤った multi-adapter ambiguity を防ぐ（2026-09-14）
+
 ## RAM / VRAM 配置・CPU/GPU 並行解析・DB 分岐ロードマップ (2026-09-12)
 
 ### Phase 1 — 資源モデルと配置判断の確立 (`goal:resource-model`)
