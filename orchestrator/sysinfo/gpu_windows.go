@@ -26,7 +26,7 @@ import (
 type VramProvenance string
 
 const (
-	physicalGpuAdapterWhereClause = "$_.PNPDeviceID -like 'PCI*' -and $_.Name -ne 'Microsoft Basic Display Adapter'"
+	physicalGpuAdapterWhereClause = "$_.PNPDeviceID -like 'PCI*' -and $_.Name -notlike 'Microsoft*'"
 
 	ProvenanceNone           VramProvenance = "none"
 	ProvenanceUnknown        VramProvenance = "unknown"
@@ -540,7 +540,7 @@ func FetchGpuMetricsComplex() (*GpuMetrics, error) {
 		if ($null -eq $gpuEngine -or $null -eq $mem -or $mem.Count -ne 3) { throw 'incomplete GPU performance-counter sample' }
 		$allAdapters = @(Get-CimInstance Win32_VideoController);
 		$adapters = @($allAdapters | Where-Object { %s });
-		if ($adapters.Count -eq 0) { $adapters = @($allAdapters | Where-Object { $_.Name -ne 'Microsoft Basic Display Adapter' }) };
+		if ($adapters.Count -eq 0) { $adapters = @($allAdapters | Where-Object { $_.Name -notlike 'Microsoft*' }) };
 		$adapterCount = $adapters.Count;
 		$adapterNames = ($adapters | ForEach-Object { $_.Name }) -join '; ';
 		$vAdapter = if ($adapterCount -eq 1) { $adapters[0].AdapterRAM } else { 0 };

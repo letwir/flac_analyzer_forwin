@@ -1,5 +1,7 @@
 # ISSUE
 
+- [x]DONE 【Fix/VRAM】 ローカライズされた `Microsoft 基本ディスプレイ アダプター` も言語非依存で除外する（2026-09-14）
+
 - [x]DONE 【Observability/VRAM】 Gatekeeper の dedicated VRAM unknown ログへGPU採取キャッシュの具体的な `StatusDetail` を伝播する（2026-09-14）
 
 - [x]DONE 【Fix/VRAM】 `Microsoft Basic Display Adapter` を物理GPU候補から除外し、単一GPU環境での誤った multi-adapter ambiguity を防ぐ（2026-09-14）

@@ -15,6 +15,8 @@ func TestPhysicalGpuAdapterWhereClause_ExcludesMicrosoftBasicDisplayAdapter(t *t
 		$adapters = @(
 			[pscustomobject]@{ Name = 'NVIDIA GeForce RTX 5070 Ti'; PNPDeviceID = 'PCI\\VEN_10DE' },
 			[pscustomobject]@{ Name = 'Microsoft Basic Display Adapter'; PNPDeviceID = 'PCI\\VEN_1234' },
+			[pscustomobject]@{ Name = 'Microsoft 基本ディスプレイ アダプター'; PNPDeviceID = 'PCI\\VEN_1234' },
+			[pscustomobject]@{ Name = 'Microsoft Remote Display Adapter'; PNPDeviceID = 'PCI\\VEN_FAKE' },
 			[pscustomobject]@{ Name = 'Virtual Display'; PNPDeviceID = 'ROOT\\DISPLAY' }
 		) | Where-Object { %s }
 		($adapters | Select-Object -ExpandProperty Name) -join ';'

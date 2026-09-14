@@ -108,7 +108,7 @@ func DetectHardwareSpecs() (*SystemSpecs, error) {
 		$cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name;
 		$allGpus = @(Get-CimInstance Win32_VideoController);
 		$gpus = @($allGpus | Where-Object { %s });
-		if ($gpus.Count -eq 0) { $gpus = @($allGpus | Where-Object { $_.Name -ne 'Microsoft Basic Display Adapter' }) };
+		if ($gpus.Count -eq 0) { $gpus = @($allGpus | Where-Object { $_.Name -notlike 'Microsoft*' }) };
 		$gpu = ($gpus | Select-Object -ExpandProperty Name) -join ', ';
 		$os = (Get-CimInstance Win32_OperatingSystem).Caption;
 		$pagefiles = Get-CimInstance Win32_PageFileUsage | ForEach-Object { "$($_.Name) ($([math]::Round($_.AllocatedBaseSize / 1024, 1)) GB)" };
