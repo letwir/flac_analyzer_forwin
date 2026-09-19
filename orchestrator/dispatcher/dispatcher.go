@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -22,6 +23,8 @@ import (
 
 	_ "github.com/lib/pq"
 )
+
+var ErrRetryableTimeout = errors.New("retryable timeout")
 
 // Dispatcher coordinates actor message passing, process pooling, and SHM zero-copy pipeline execution.
 type Dispatcher struct {
@@ -66,6 +69,7 @@ type Dispatcher struct {
 	gpuDaemonPool          *WorkerDaemonPool
 	demucsPool             *DemucsDaemonPool
 	demucsScheduler        *AdaptiveDemucsScheduler
+	gpuArbiter             chan struct{}
 }
 
 func (d *Dispatcher) currentExecutionContext() context.Context {
@@ -164,6 +168,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		gpuDaemonPool:          gpuDaemonPool,
 		demucsPool:             demucsPool,
 		demucsScheduler:        demucsScheduler,
+		gpuArbiter:             make(chan struct{}, 1),
 	}
 }
 

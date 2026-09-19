@@ -1,0 +1,17 @@
+@lrf=1|aud=GPT-5.6|scope=post-demucs-multitask
+R|goal|task:change|MUST|LW_SCOPE|keep Demucs inference serialized while overlapping completed-track post-Demucs analysis with the next track's Demucs inference
+R|demucs.exclusive|*|MUST|LW_SCOPE|at most one Demucs inference owns the Demucs slot, Demucs daemon, inference VRAM, and inference GPU lease at a time
+R|handoff|*|MUST|LW_SCOPE|a stem becomes post-Demucs work only after transfer completion, metadata validation, and lifecycle Freeze; no reader may observe mutable or incomplete storage
+R|demucs.release|*|MUST|LW_SCOPE|release Demucs scheduler slot, Demucs daemon client, and inference-only admission resources immediately after final Demucs handoff; do not wait for post-Demucs feature Join
+R|post.cpu|*|MUST|LW_SCOPE|run post-Demucs CPU feature work through a bounded cross-track executor; preserve per-track result association and deterministic Join
+R|post.gpu|*|MUST|LW_SCOPE|route Tensor/GPU feature work through a shared GPU arbiter that prevents unsafe overlap with Demucs inference; initial implementation may serialize GPU work while CPU post-processing overlaps Demucs
+R|ownership|*|MUST|LW_SCOPE|retain task RAM, SHM/mmap backing, frozen-stem references, and post-analysis admission until all post-Demucs readers release and Join completes
+R|contexts|*|MUST|LW_SCOPE|separate Demucs inference cancellation/deadline from post-Demucs analysis cancellation/deadline; parent cancellation must terminate both and release every resource
+R|failure|*|MUST|LW_SCOPE|Demucs failure, post-lane failure, timeout, and cancellation must fail closed, cancel sibling work, release lifecycle references exactly once, and expose operation context
+R|retry|*|MUST|LW_SCOPE|slot/admission wait exhaustion is retryable without converting an unstarted or resource-deferred task into terminal FAILED
+R|compat|*|MUST|LW_SCOPE|preserve existing FeatureOutputs JSON shape, PostgreSQL ingest contract, task identity, hash validation, and single-track behavior
+R|scope|*|MUST_NOT|LW_SCOPE|do not raise Demucs concurrency above one, add production dependencies, change DB schema, alter ONNX_LOCK semantics, or deploy/publish/VCS-write
+R|acceptance.overlap|*|MUST|LW_SCOPE|test proves Track B Demucs starts while Track A post-Demucs CPU work is active
+R|acceptance.gpu|*|MUST|LW_SCOPE|test proves Demucs and Tensor GPU work never exceed the configured shared GPU budget
+R|acceptance.lifecycle|*|MUST|LW_SCOPE|test covers out-of-order stems, duplicate/partial handoff, cancellation, timeout, post-lane failure, SHM reference release, and zero residual leases
+R|acceptance.regression|*|MUST|LW_SCOPE|focused Go tests plus project-native checks pass; exact diff confirms only the requirement file and bounded implementation/test files changed

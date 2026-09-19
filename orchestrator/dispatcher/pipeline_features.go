@@ -94,6 +94,13 @@ func (d *Dispatcher) executeFeatureLane(
 	pool := d.cpuDaemonPool
 	if lane == FeatureLaneGPU {
 		pool = d.gpuDaemonPool
+
+		select {
+		case d.gpuArbiter <- struct{}{}:
+		case <-ctxAcquire.Done():
+			return nil, fmt.Errorf("acquire GPU arbiter: %w", ctxAcquire.Err())
+		}
+		defer func() { <-d.gpuArbiter }()
 	}
 	if pool == nil {
 		return nil, fmt.Errorf("%s worker daemon pool is unavailable", lane)

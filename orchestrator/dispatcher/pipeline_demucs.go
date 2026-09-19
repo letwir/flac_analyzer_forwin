@@ -39,7 +39,7 @@ type stemWavefront struct {
 	gpu       *DaemonResponse
 }
 
-func newStemWavefront(ctx context.Context, lifecycle *StemLifecycle, run func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)) (*stemWavefront, error) {
+func newStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycle, run func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)) (*stemWavefront, error) {
 	if ctx == nil || lifecycle == nil || run == nil {
 		return nil, fmt.Errorf("stem wavefront requires context, lifecycle, and lane runner")
 	}
@@ -47,8 +47,8 @@ func newStemWavefront(ctx context.Context, lifecycle *StemLifecycle, run func(co
 		ctx:       ctx,
 		lifecycle: lifecycle,
 		run:       run,
-		cpuJobs:   make(chan stemWavefrontJob, 1),
-		gpuJobs:   make(chan stemWavefrontJob, 1),
+		cpuJobs:   make(chan stemWavefrontJob, numStems),
+		gpuJobs:   make(chan stemWavefrontJob, numStems),
 		published: make(map[string]struct{}),
 		cpu:       &DaemonResponse{Librosa: make(map[string]interface{}), Essentia: make(map[string]interface{})},
 		gpu:       &DaemonResponse{Tensor: make(map[string]interface{})},
@@ -252,14 +252,24 @@ func (d *Dispatcher) executeDemucsStage(
 	currentCfg Config,
 	stems []string,
 ) (string, int, map[string]StemInfo, *WorkerArenaSet, *FeatureOutputs, error) {
-	timeoutDur := ComputeAdaptiveTimeoutPure(
+	demucsTimeoutDur := ComputeAdaptiveTimeoutPure(
 		task,
 		currentCfg.DemucsTimeoutSec,
 		currentCfg.AdaptiveTimeoutRatio,
 		currentCfg.MaxAdaptiveTimeoutSec,
 	)
-	ctxDemucs, cancelDemucs := context.WithTimeout(d.currentExecutionContext(), timeoutDur)
+	ctxParent := d.currentExecutionContext()
+	ctxDemucs, cancelDemucs := context.WithTimeout(ctxParent, demucsTimeoutDur)
 	defer cancelDemucs()
+
+	featureTimeoutDur := ComputeAdaptiveTimeoutPure(
+		task,
+		currentCfg.FeatureExtractTimeoutSec,
+		currentCfg.AdaptiveTimeoutRatio,
+		currentCfg.MaxAdaptiveTimeoutSec,
+	)
+	ctxPost, cancelPost := context.WithTimeout(ctxParent, demucsTimeoutDur+featureTimeoutDur)
+	defer cancelPost()
 
 	if delaySec := currentCfg.ShmAllocationDelaySec; delaySec > 0 {
 		if err := waitForExecutionDelay(ctxDemucs, time.Duration(delaySec)*time.Second); err != nil {
@@ -361,15 +371,26 @@ func (d *Dispatcher) executeDemucsStage(
 	d.LogInfo("[W-%d] [IO Monad] Waiting for Adaptive Demucs execution slot (limit: %d)...", id, d.demucsScheduler.GetLimit())
 	if err := d.demucsScheduler.AcquireWithContext(ctxDemucs); err != nil {
 		closeArenaOnError()
-		return "", 0, nil, nil, nil, fmt.Errorf("failed to acquire Demucs slot (timeout/cancelled): %w", err)
+		return "", 0, nil, nil, nil, fmt.Errorf("%w: failed to acquire Demucs slot (timeout/cancelled): %w", ErrRetryableTimeout, err)
 	}
-	defer d.demucsScheduler.Release()
+	demucsReleased := false
+	defer func() {
+		if !demucsReleased {
+			d.demucsScheduler.Release()
+		}
+	}()
+
 	executionLease, err := d.reserveExecutionAdmission()
 	if err != nil {
 		closeArenaOnError()
-		return "", 0, nil, nil, nil, fmt.Errorf("failed to reserve CPU/GPU/Demucs execution lease: %w", err)
+		return "", 0, nil, nil, nil, fmt.Errorf("%w: failed to reserve CPU/GPU/Demucs execution lease: %w", ErrRetryableTimeout, err)
 	}
-	defer d.releaseExecutionAdmission(executionLease)
+	leaseReleased := false
+	defer func() {
+		if !leaseReleased {
+			d.releaseExecutionAdmission(executionLease)
+		}
+	}()
 
 	endSampleParam := task.EndSample
 	if endSampleParam == 0 {
@@ -385,14 +406,14 @@ func (d *Dispatcher) executeDemucsStage(
 
 	generation := demucsWavefrontGeneration.Add(1)
 	requestID := fmt.Sprintf("demucs-%d-%d", generation, time.Now().UnixNano())
-	lifecycle, waveCtx, err := NewStemLifecycle(ctxDemucs, requestID, generation, stems, 2, 1)
+	lifecycle, waveCtx, err := NewStemLifecycle(ctxPost, requestID, generation, stems, 2, 1)
 	if err != nil {
 		d.demucsPool.Release(demucsClient)
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("create stem lifecycle: %w", err)
 	}
 	defer lifecycle.Close()
-	wavefront, err := newStemWavefront(waveCtx, lifecycle, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
+	wavefront, err := newStemWavefront(waveCtx, len(stems), lifecycle, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
 		return d.executeFeatureLane(ctx, lane, payload)
 	})
 	if err != nil {
@@ -400,6 +421,20 @@ func (d *Dispatcher) executeDemucsStage(
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, err
 	}
+
+	gpuArbiterReleased := false
+	select {
+	case d.gpuArbiter <- struct{}{}:
+	case <-ctxDemucs.Done():
+		d.demucsPool.Release(demucsClient)
+		closeArenaOnError()
+		return "", 0, nil, nil, nil, ctxDemucs.Err()
+	}
+	defer func() {
+		if !gpuArbiterReleased {
+			<-d.gpuArbiter
+		}
+	}()
 
 	sepResp, sepErr := demucsClient.SeparateWithEvents(ctxDemucs, DemucsSeparatePayload{
 		RequestID:      requestID,
@@ -418,7 +453,16 @@ func (d *Dispatcher) executeDemucsStage(
 		}
 		return wavefront.Publish(event)
 	})
+
+	if !gpuArbiterReleased {
+		<-d.gpuArbiter
+		gpuArbiterReleased = true
+	}
 	d.demucsPool.Release(demucsClient)
+	d.demucsScheduler.Release()
+	demucsReleased = true
+	d.releaseExecutionAdmission(executionLease)
+	leaseReleased = true
 
 	if d.statsTracker != nil {
 		d.statsTracker.RecordStageDuration("demucs", time.Since(demucsStageStart))

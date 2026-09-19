@@ -4,6 +4,7 @@ package dispatcher
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -118,7 +119,13 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 		computedHash, demucsSR, demucsStems, arenaSet, wavefrontFeatures, demucsErr = d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
 	}
 	if demucsErr != nil {
-		d.failTask(task, demucsErr.Error())
+		if errors.Is(demucsErr, ErrRetryableTimeout) {
+			d.LogWarn("[W-%d] Task Retryable: %s (Track %d) -> %s", id, task.FlacPath, task.TrackNumber, demucsErr.Error())
+			d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailedMaybeRetry, demucsErr.Error())
+			metrics.AnalyzerTasksTotal.WithLabelValues("retry_pending").Inc()
+		} else {
+			d.failTask(task, demucsErr.Error())
+		}
 		return
 	}
 	if trackHash == "" {

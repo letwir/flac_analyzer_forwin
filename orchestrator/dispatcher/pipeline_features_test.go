@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestRunFeatureLanesCancelsPeerAndWaitsForCleanup(t *testing.T) {
@@ -71,5 +72,30 @@ func TestRunFeatureLanesJoinsBackwardCompatibleOutputs(t *testing.T) {
 	}
 	if !strings.Contains(outputs.EssOut, "mood_happy") {
 		t.Fatalf("essentia output lost prediction: %s", outputs.EssOut)
+	}
+}
+
+func TestGPUArbiterSerialization(t *testing.T) {
+	d := &Dispatcher{
+		gpuArbiter: make(chan struct{}, 1),
+	}
+	// Hold the arbiter lock
+	d.gpuArbiter <- struct{}{}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+
+	_, err := d.executeFeatureLane(ctx, FeatureLaneGPU, ExtractAllPayload{})
+	if err == nil || (!strings.Contains(err.Error(), "acquire GPU arbiter: context deadline exceeded") && !strings.Contains(err.Error(), "context canceled")) {
+		t.Fatalf("expected context canceled error during GPU arbiter acquire, got: %v", err)
+	}
+
+	// Release it
+	<-d.gpuArbiter
+
+	// Now it should pass the arbiter but fail at pool check
+	_, err = d.executeFeatureLane(t.Context(), FeatureLaneGPU, ExtractAllPayload{})
+	if err == nil || !strings.Contains(err.Error(), "worker daemon pool is unavailable") {
+		t.Fatalf("expected pool unavailable error, got: %v", err)
 	}
 }
