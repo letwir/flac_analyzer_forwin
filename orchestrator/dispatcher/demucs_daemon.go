@@ -637,6 +637,16 @@ func (p *DemucsDaemonPool) removeClientLocked(client *DemucsDaemonClient) {
 	}
 }
 
+func (p *DemucsDaemonPool) replaceClientLocked(oldClient, newClient *DemucsDaemonClient) bool {
+	for i, client := range p.clients {
+		if client == oldClient {
+			p.clients[i] = newClient
+			return true
+		}
+	}
+	return false
+}
+
 func (p *DemucsDaemonPool) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -651,4 +661,3 @@ func (p *DemucsDaemonPool) Close() error {
 	p.cond.Broadcast() // wake all waiters so they observe isClosed
 	return nil
 }
-

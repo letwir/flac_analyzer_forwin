@@ -3,7 +3,6 @@
 package dispatcher
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"

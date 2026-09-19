@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"flac_analyzer/orchestrator/metrics"
 	"flac_analyzer/orchestrator/sysinfo"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestStatsTracker_TrackAndFileDuration(t *testing.T) {
@@ -316,4 +316,3 @@ func TestPublishGpuMetrics_Nil(t *testing.T) {
 	// Nil gpuM should not panic
 	publishGpuMetrics(nil, time.Now())
 }
-

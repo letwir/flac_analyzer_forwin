@@ -304,14 +304,14 @@ func (st *StatsTracker) StartSystemResourceCollector(ctx context.Context, queueD
 var getLatestGpuMetrics = sysinfo.GetLatestGpuMetrics
 
 // publishGpuMetrics exports GPU metrics to Prometheus gauges. Directly testable.
-// - Usage and capacity are independently valid.
-// - Stale age (> DefaultGpuStaleThreshold) invalidates usage for exported telemetry.
-//   GetLatestGpuMetrics only invalidates utilization/available; this function additionally
-//   invalidates usage, shared, and committed when stale.
-// - NaN for unknown usage/util/total/shared/committed.
-// - Preserve available=0 valid=0 contract.
-// - Zero CollectedAt yields NaN sample age.
-// - Valid zero values remain zero (not NaN).
+//   - Usage and capacity are independently valid.
+//   - Stale age (> DefaultGpuStaleThreshold) invalidates usage for exported telemetry.
+//     GetLatestGpuMetrics only invalidates utilization/available; this function additionally
+//     invalidates usage, shared, and committed when stale.
+//   - NaN for unknown usage/util/total/shared/committed.
+//   - Preserve available=0 valid=0 contract.
+//   - Zero CollectedAt yields NaN sample age.
+//   - Valid zero values remain zero (not NaN).
 func publishGpuMetrics(gpuM *sysinfo.GpuMetrics, now time.Time) {
 	if gpuM == nil {
 		return
