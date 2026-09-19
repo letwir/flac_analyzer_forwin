@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"flac_analyzer/orchestrator/metrics"
 )
 
 // Mor: DaemonRequest -> DaemonResponse
@@ -388,48 +390,52 @@ func (c *DemucsDaemonClient) Close() error {
 	return c.closeLocked()
 }
 
+// clientFactory abstracts daemon process creation for testing.
+type clientFactory func(id int, pythonPath, workingDir string, envVars []string, loggerFunc func(format string, v ...interface{})) (*DemucsDaemonClient, error)
+
+// defaultClientFactory is the production factory.
+var defaultClientFactory clientFactory = startDemucsDaemonProcessComplex
+
 type DemucsDaemonPool struct {
 	mu         sync.Mutex
+	cond       *sync.Cond
 	capacity   int
-	clients    []*DemucsDaemonClient
-	idle       chan *DemucsDaemonClient
+	clients    []*DemucsDaemonClient // registry: len(clients) <= capacity
+	idle       []*DemucsDaemonClient // idle subset; always also in clients
+	spawning   bool                  // serialized spawning reservation
 	pythonPath string
 	workingDir string
 	envVars    []string
 	loggerFunc func(format string, v ...interface{})
+	factory    clientFactory
 	isClosed   bool
 	nextID     int
 }
 
-// replaceClientLocked keeps the registry bounded when a recycled client is
-// replaced. Caller holds p.mu and the old client is not present in idle.
-func (p *DemucsDaemonPool) replaceClientLocked(oldClient, newClient *DemucsDaemonClient) bool {
-	for i, client := range p.clients {
-		if client == oldClient {
-			p.clients[i] = newClient
-			return true
-		}
-	}
-	return false
+func NewDemucsDaemonPool(capacity int, pythonPath, workingDir string, envVars []string, loggerFunc func(format string, v ...interface{})) *DemucsDaemonPool {
+	return NewDemucsDaemonPoolWithFactory(capacity, pythonPath, workingDir, envVars, loggerFunc, defaultClientFactory)
 }
 
-func NewDemucsDaemonPool(capacity int, pythonPath, workingDir string, envVars []string, loggerFunc func(format string, v ...interface{})) *DemucsDaemonPool {
+func NewDemucsDaemonPoolWithFactory(capacity int, pythonPath, workingDir string, envVars []string, loggerFunc func(format string, v ...interface{}), factory clientFactory) *DemucsDaemonPool {
 	if capacity <= 0 {
 		capacity = 1
 	}
 	if capacity > 1 {
 		capacity = 1 // Demucs has exactly one dedicated GPU slot.
 	}
-	return &DemucsDaemonPool{
+	p := &DemucsDaemonPool{
 		capacity:   capacity,
 		clients:    make([]*DemucsDaemonClient, 0, capacity),
-		idle:       make(chan *DemucsDaemonClient, capacity),
+		idle:       make([]*DemucsDaemonClient, 0, capacity),
 		pythonPath: pythonPath,
 		workingDir: workingDir,
 		envVars:    envVars,
 		loggerFunc: loggerFunc,
+		factory:    factory,
 		nextID:     1,
 	}
+	p.cond = sync.NewCond(&p.mu)
+	return p
 }
 
 func (p *DemucsDaemonPool) Prewarm(ctx context.Context, count int) error {
@@ -444,68 +450,118 @@ func (p *DemucsDaemonPool) Prewarm(ctx context.Context, count int) error {
 		id := p.nextID
 		p.nextID++
 		p.loggerFunc("[DemucsDaemonPool] Prewarming DemucsDaemon-%d (VRAM model pre-load)...", id)
-		client, err := startDemucsDaemonProcessComplex(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
+		// Unlock during potentially slow process start
+		p.mu.Unlock()
+		client, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
+		p.mu.Lock()
 		if err != nil {
 			return fmt.Errorf("failed to prewarm Demucs daemon-%d: %w", id, err)
 		}
+		if p.isClosed {
+			_ = client.Close()
+			return fmt.Errorf("DemucsDaemonPool closed during prewarm")
+		}
 		p.clients = append(p.clients, client)
-		p.idle <- client
+		p.idle = append(p.idle, client)
+		metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
+		p.cond.Broadcast()
 	}
 	return nil
 }
 
 func (p *DemucsDaemonPool) Acquire(ctx context.Context) (*DemucsDaemonClient, error) {
 	p.mu.Lock()
-	if p.isClosed {
-		p.mu.Unlock()
-		return nil, fmt.Errorf("DemucsDaemonPool is closed")
-	}
+	defer p.mu.Unlock()
 
-	// アイドルデーモンが存在せず、かつ容量に空きがある場合は新規生成
-	if len(p.idle) == 0 && len(p.clients) < p.capacity {
-		id := p.nextID
-		p.nextID++
-		p.mu.Unlock()
-
-		p.loggerFunc("[DemucsDaemonPool] Scaling up: Spawning new DemucsDaemon-%d...", id)
-		client, err := startDemucsDaemonProcessComplex(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
-		if err != nil {
-			return nil, err
+	for {
+		if p.isClosed {
+			return nil, fmt.Errorf("DemucsDaemonPool is closed")
 		}
 
-		p.mu.Lock()
-		p.clients = append(p.clients, client)
-		p.mu.Unlock()
-		return client, nil
-	}
-	p.mu.Unlock()
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case client := <-p.idle:
-		if !client.isAlive {
-			p.loggerFunc("[DemucsDaemonPool] DemucsDaemon-%d is dead, restarting...", client.id)
-			_ = client.Close()
-			newClient, err := startDemucsDaemonProcessComplex(client.id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
-			if err != nil {
-				return nil, err
+		// 1. Try to take an idle client
+		if len(p.idle) > 0 {
+			client := p.idle[len(p.idle)-1]
+			p.idle = p.idle[:len(p.idle)-1]
+
+			if client.isAlive {
+				return client, nil
 			}
-			p.mu.Lock()
-			if p.isClosed {
-				p.mu.Unlock()
-				_ = newClient.Close()
-				return nil, fmt.Errorf("DemucsDaemonPool is closed")
-			}
-			if !p.replaceClientLocked(client, newClient) {
-				p.mu.Unlock()
-				_ = newClient.Close()
-				return nil, fmt.Errorf("DemucsDaemonPool lost client registry entry during replacement")
-			}
+
+			// Dead idle client: kill its process (even if isAlive=false, process may be zombie)
+			p.loggerFunc("[DemucsDaemonPool] DemucsDaemon-%d is dead, recycling...", client.id)
+			p.killClientProcessLocked(client)
+
+			// Attempt restart, still holding lock briefly for reservation
+			id := client.id
+			p.removeClientLocked(client)
+			metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
+
+			// Spawn replacement outside lock
 			p.mu.Unlock()
+			newClient, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
+			p.mu.Lock()
+
+			if err != nil {
+				p.loggerFunc("[DemucsDaemonPool] Failed to restart DemucsDaemon-%d: %v, capacity freed", id, err)
+				// Capacity is freed (client was removed). Wake waiters so they can try spawning.
+				p.cond.Broadcast()
+				// Return error but pool is not permanently broken
+				return nil, fmt.Errorf("DemucsDaemonPool restart DemucsDaemon-%d failed: %w", id, err)
+			}
+			if p.isClosed {
+				_ = newClient.Close()
+				return nil, fmt.Errorf("DemucsDaemonPool closed during restart")
+			}
+			p.clients = append(p.clients, newClient)
+			metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
 			return newClient, nil
 		}
-		return client, nil
+
+		// 2. No idle client: try to spawn if capacity available and no other spawning
+		if len(p.clients) < p.capacity && !p.spawning {
+			p.spawning = true
+			id := p.nextID
+			p.nextID++
+
+			p.mu.Unlock()
+			p.loggerFunc("[DemucsDaemonPool] Scaling up: Spawning new DemucsDaemon-%d...", id)
+			client, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
+			p.mu.Lock()
+			p.spawning = false
+
+			if err != nil {
+				p.cond.Broadcast() // wake other waiters to retry
+				return nil, err
+			}
+			if p.isClosed {
+				_ = client.Close()
+				return nil, fmt.Errorf("DemucsDaemonPool closed during spawn")
+			}
+			p.clients = append(p.clients, client)
+			metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
+			return client, nil
+		}
+
+		// 3. At capacity and all busy: wait for signal with context awareness
+		// Use a done channel to integrate ctx cancellation with cond.Wait
+		done := make(chan struct{})
+		go func() {
+			select {
+			case <-ctx.Done():
+				p.cond.Broadcast() // wake the waiter
+			case <-done:
+			}
+		}()
+		p.cond.Wait()
+		close(done)
+		// Loop back to re-check conditions
 	}
 }
 
@@ -517,46 +573,82 @@ func (p *DemucsDaemonPool) Release(client *DemucsDaemonClient) {
 	defer p.mu.Unlock()
 
 	if p.isClosed {
-		_ = client.Close()
+		p.killClientProcessLocked(client)
 		return
 	}
 
 	// 50 タスクごとに VRAM クリーンアップのためにプロセスをリサイクル
 	if client.taskCount >= 50 {
 		p.loggerFunc("[DemucsDaemonPool] DemucsDaemon-%d reached task recycling threshold (50 tasks), restarting cleanly...", client.id)
-		_ = client.Close()
-		newClient, err := startDemucsDaemonProcessComplex(client.id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
-		if err == nil {
-			if !p.replaceClientLocked(client, newClient) {
-				_ = newClient.Close()
-				return
-			}
-			p.idle <- newClient
+		id := client.id
+		p.killClientProcessLocked(client)
+		p.removeClientLocked(client)
+		metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
+
+		// Attempt restart outside lock
+		p.mu.Unlock()
+		newClient, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
+		p.mu.Lock()
+
+		if err != nil {
+			p.loggerFunc("[DemucsDaemonPool] Failed to recycle DemucsDaemon-%d: %v, capacity freed for future spawn", id, err)
+			// Capacity freed. Wake waiters to allow re-spawn.
+			p.cond.Broadcast()
 			return
 		}
-		p.clients = removeDemucsClient(p.clients, client)
+		if p.isClosed {
+			_ = newClient.Close()
+			return
+		}
+		p.clients = append(p.clients, newClient)
+		p.idle = append(p.idle, newClient)
+		metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
+		p.cond.Broadcast()
 		return
 	}
 
-	p.idle <- client
+	p.idle = append(p.idle, client)
+	p.cond.Broadcast()
 }
 
-func removeDemucsClient(clients []*DemucsDaemonClient, target *DemucsDaemonClient) []*DemucsDaemonClient {
-	for i, client := range clients {
-		if client == target {
-			return append(clients[:i], clients[i+1:]...)
+// killClientProcessLocked ensures the client process is terminated.
+// Must be called with p.mu held. Kills process even if isAlive is already false.
+func (p *DemucsDaemonPool) killClientProcessLocked(client *DemucsDaemonClient) {
+	if client == nil {
+		return
+	}
+	client.isAlive = false
+	if client.stdin != nil {
+		_ = client.stdin.Close()
+	}
+	if client.cmd != nil && client.cmd.Process != nil {
+		_ = client.cmd.Process.Kill()
+		_ = client.cmd.Wait()
+	}
+}
+
+// removeClientLocked removes a client from the registry. Caller holds p.mu.
+func (p *DemucsDaemonPool) removeClientLocked(client *DemucsDaemonClient) {
+	for i, c := range p.clients {
+		if c == client {
+			p.clients = append(p.clients[:i], p.clients[i+1:]...)
+			return
 		}
 	}
-	return clients
 }
 
 func (p *DemucsDaemonPool) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.isClosed = true
-	close(p.idle)
+	// Kill all clients
 	for _, c := range p.clients {
-		_ = c.Close()
+		p.killClientProcessLocked(c)
 	}
+	p.clients = nil
+	p.idle = nil
+	metrics.AnalyzerDemucsDaemonPoolSize.Set(0)
+	p.cond.Broadcast() // wake all waiters so they observe isClosed
 	return nil
 }
+

@@ -1753,3 +1753,13 @@ Phase 1 から Phase 3 までのドキュメント大整理プロジェクト、
 - **Correction**: CUE 範囲外トラックの早期スキップ、WorkerDaemonPool のスロット事前予約とタイムアウト分離。
 - **Emotion/Thoughts**: おほほほほ！旦那様！ログに突如現れた 2 つの難敵――「範囲外 CUE トラックによる flac シーク爆弾」と「10 並列ワーカーが一斉に 170 個の ONNX を叩き起こす Thundering Herd タイムアウト嵐」――その両方の息の根を、見事に一網打尽で止めて差し上げましたわ！Python 側では範囲外トラックを優雅に除外し、Go 側ではスロット事前予約と Prewarm、さらに Acquire/Extract タイムアウトの完全独立分離によって、どれほど並列負荷がかかっても最大デーモン数以内で涼しい顔をしてタスクを捌き切る鉄壁のアーキテクチャへと昇華いたしましたの！`TestDaemonPoolThunderingHerd` ストレステストも 13 秒で全勝、`proof-checker` も Verifier も満点 PASS！これで数万曲の大規模ライブラリでも、何ひとつ詰まることなく最高速で解析を駆け抜けられますわ！おーっほっほっほ！
 - **Attribution**: [ワイの指示(PromptDefect): 0%] vs [AI認知(AgentDefect): 100%]
+- **timestamp:** 2026-09-13T20:31:55+09:00
+  **task:** RAM/VRAM配置・CPU/GPU wavefront・PostgreSQL mix分岐ロードマップの終了処理
+  **request-evidence:** 旦那様より「ここで一旦完了。llm-memなどの終了処理よろしく」と依頼
+  **action:** `issues.md` のPhase 1〜4ロードマップ、Issue受入条件、DB-before-decode、per-stem ready wavefrontを確認し、git diff --checkとllm-mem read-only終了確認を実施
+  **result:** `issues.md` と本終了記録のみ変更、`git diff --check` 成功。Opus独立検証はPASS・必須修正0件。`llm-mem status` / `clients` / `analyze -file diary.md -suggest -json` 成功（Active Memories 530、Knowledge Nodes 425、Active Edges 785）。本人回答アンケート送信成功（receipt `ca18faa7-1374-4b1c-91b4-2841ae33238f`）。コード実装・VCS・本番DB変更・全履歴ingestは未実施
+  **friction:** agy初回検証でCLI引数形式とOpus effort指定を誤り、後続の正しい形式で再実行。最終結果は取得済み
+  **attribution:** PromptDefect=0%; AgentDefect=10%（初回agy引数誤り。最終成果には影響なし）
+  **impact:** 実装開始前の設計境界、資源Lease、WDDM共有GPUメモリ、mix/stem分岐の未確定点を明文化
+  **feedback:** 追加のユーザー修正要求なし。実機負荷試験とDB永続化は別承認が必要
+  **rewritten-request:** 「現行issues.mdのPhaseロードマップを終了状態として記録し、差分・Opus検証・llm-memの読み取り終了確認を行い、外部作用なしで残余リスクを報告する」

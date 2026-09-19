@@ -292,6 +292,13 @@ var (
 		},
 	)
 
+	AnalyzerGpuUtilizationValid = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_utilization_valid",
+			Help: "Whether GPU utilization percent is valid (1) or invalid/unknown (0)",
+		},
+	)
+
 	AnalyzerGpuDedicatedUsedBytes = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "analyzer_gpu_dedicated_used_bytes",
@@ -303,6 +310,13 @@ var (
 		prometheus.GaugeOpts{
 			Name: "analyzer_gpu_dedicated_total_bytes",
 			Help: "Dedicated video memory (VRAM) total capacity in bytes",
+		},
+	)
+
+	AnalyzerGpuDedicatedValid = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_dedicated_valid",
+			Help: "Whether dedicated VRAM usage and total capacity are valid (1) or invalid/unknown (0)",
 		},
 	)
 
@@ -334,10 +348,31 @@ var (
 		},
 	)
 
+	AnalyzerGpuSharedValid = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_shared_valid",
+			Help: "Whether shared system memory usage is valid (1) or invalid/unknown (0)",
+		},
+	)
+
 	AnalyzerGpuTotalCommittedBytes = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "analyzer_gpu_total_committed_bytes",
 			Help: "Total committed GPU memory in bytes",
+		},
+	)
+
+	AnalyzerGpuCommittedValid = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_committed_valid",
+			Help: "Whether total committed GPU memory is valid (1) or invalid/unknown (0)",
+		},
+	)
+
+	AnalyzerGpuSampleAgeSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "analyzer_gpu_sample_age_seconds",
+			Help: "Age of the latest GPU metrics sample in seconds",
 		},
 	)
 

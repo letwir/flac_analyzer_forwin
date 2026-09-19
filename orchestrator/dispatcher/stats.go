@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 
@@ -300,6 +301,101 @@ func (st *StatsTracker) StartSystemResourceCollector(ctx context.Context, queueD
 	}()
 }
 
+var getLatestGpuMetrics = sysinfo.GetLatestGpuMetrics
+
+// publishGpuMetrics exports GPU metrics to Prometheus gauges. Directly testable.
+// - Usage and capacity are independently valid.
+// - Stale age (> DefaultGpuStaleThreshold) invalidates usage for exported telemetry.
+//   GetLatestGpuMetrics only invalidates utilization/available; this function additionally
+//   invalidates usage, shared, and committed when stale.
+// - NaN for unknown usage/util/total/shared/committed.
+// - Preserve available=0 valid=0 contract.
+// - Zero CollectedAt yields NaN sample age.
+// - Valid zero values remain zero (not NaN).
+func publishGpuMetrics(gpuM *sysinfo.GpuMetrics, now time.Time) {
+	if gpuM == nil {
+		return
+	}
+
+	// Determine staleness: zero timestamp or age > threshold.
+	stale := false
+	if gpuM.CollectedAt.IsZero() {
+		stale = true
+	} else if now.Sub(gpuM.CollectedAt) > sysinfo.DefaultGpuStaleThreshold {
+		stale = true
+	}
+
+	// Utilization
+	if gpuM.UtilizationValid && !stale {
+		metrics.AnalyzerGpuUtilizationPercent.Set(gpuM.UtilizationPercent)
+		metrics.AnalyzerGpuUtilizationValid.Set(1)
+	} else {
+		metrics.AnalyzerGpuUtilizationPercent.Set(math.NaN())
+		metrics.AnalyzerGpuUtilizationValid.Set(0)
+	}
+
+	// Dedicated usage (independent of capacity)
+	if gpuM.DedicatedUsageValid && !stale {
+		metrics.AnalyzerGpuDedicatedUsedBytes.Set(float64(gpuM.DedicatedUsedBytes))
+	} else {
+		metrics.AnalyzerGpuDedicatedUsedBytes.Set(math.NaN())
+	}
+
+	// Dedicated capacity (independent of usage, not invalidated by staleness)
+	if gpuM.DedicatedCapacityValid {
+		metrics.AnalyzerGpuDedicatedTotalBytes.Set(float64(gpuM.DedicatedTotalBytes))
+	} else {
+		metrics.AnalyzerGpuDedicatedTotalBytes.Set(math.NaN())
+	}
+
+	// Dedicated valid: both usage AND capacity must be valid and fresh
+	if gpuM.DedicatedUsageValid && gpuM.DedicatedCapacityValid && !stale {
+		metrics.AnalyzerGpuDedicatedValid.Set(1)
+	} else {
+		metrics.AnalyzerGpuDedicatedValid.Set(0)
+	}
+
+	// Dedicated available: preserve available=0 valid=0 contract
+	metrics.AnalyzerGpuDedicatedAvailableBytes.Set(float64(gpuM.AvailableVramBytes))
+	if gpuM.DedicatedAvailableValid {
+		metrics.AnalyzerGpuDedicatedAvailableValid.Set(1)
+	} else {
+		metrics.AnalyzerGpuDedicatedAvailableValid.Set(0)
+	}
+
+	// Capacity provenance
+	capacitySource := 0.0
+	if gpuM.DedicatedCapacityProvenance == sysinfo.ProvenanceManualOverride {
+		capacitySource = 1
+	}
+	metrics.AnalyzerGpuDedicatedCapacitySource.Set(capacitySource)
+
+	// Shared usage
+	if gpuM.SharedUsageValid && !stale {
+		metrics.AnalyzerGpuSharedUsedBytes.Set(float64(gpuM.SharedUsedBytes))
+		metrics.AnalyzerGpuSharedValid.Set(1)
+	} else {
+		metrics.AnalyzerGpuSharedUsedBytes.Set(math.NaN())
+		metrics.AnalyzerGpuSharedValid.Set(0)
+	}
+
+	// Total committed
+	if gpuM.TotalCommittedValid && !stale {
+		metrics.AnalyzerGpuTotalCommittedBytes.Set(float64(gpuM.TotalCommittedBytes))
+		metrics.AnalyzerGpuCommittedValid.Set(1)
+	} else {
+		metrics.AnalyzerGpuTotalCommittedBytes.Set(math.NaN())
+		metrics.AnalyzerGpuCommittedValid.Set(0)
+	}
+
+	// Sample age: zero CollectedAt yields NaN
+	if gpuM.CollectedAt.IsZero() {
+		metrics.AnalyzerGpuSampleAgeSeconds.Set(math.NaN())
+	} else {
+		metrics.AnalyzerGpuSampleAgeSeconds.Set(now.Sub(gpuM.CollectedAt).Seconds())
+	}
+}
+
 func (st *StatsTracker) collectSystemResources(queueDir string) {
 	// 1. RAM 測定
 	if memInfo, err := sysinfo.GetMemoryInfo(); err == nil && memInfo != nil {
@@ -316,23 +412,6 @@ func (st *StatsTracker) collectSystemResources(queueDir string) {
 	}
 
 	// 3. GPU / VRAM メトリクス測定
-	gpuM := sysinfo.GetLatestGpuMetrics()
-	if gpuM != nil {
-		metrics.AnalyzerGpuUtilizationPercent.Set(gpuM.UtilizationPercent)
-		metrics.AnalyzerGpuDedicatedUsedBytes.Set(float64(gpuM.DedicatedUsedBytes))
-		metrics.AnalyzerGpuDedicatedTotalBytes.Set(float64(gpuM.DedicatedTotalBytes))
-		metrics.AnalyzerGpuDedicatedAvailableBytes.Set(float64(gpuM.AvailableVramBytes))
-		if gpuM.DedicatedAvailableValid {
-			metrics.AnalyzerGpuDedicatedAvailableValid.Set(1)
-		} else {
-			metrics.AnalyzerGpuDedicatedAvailableValid.Set(0)
-		}
-		capacitySource := 0.0
-		if gpuM.DedicatedCapacityProvenance == sysinfo.ProvenanceManualOverride {
-			capacitySource = 1
-		}
-		metrics.AnalyzerGpuDedicatedCapacitySource.Set(capacitySource)
-		metrics.AnalyzerGpuSharedUsedBytes.Set(float64(gpuM.SharedUsedBytes))
-		metrics.AnalyzerGpuTotalCommittedBytes.Set(float64(gpuM.TotalCommittedBytes))
-	}
+	gpuM := getLatestGpuMetrics()
+	publishGpuMetrics(gpuM, time.Now())
 }

@@ -189,28 +189,39 @@ func (d *Dispatcher) checkDuplicateHash(id int, task TaskPayload) (bool, string,
 		if endSampleParam == 0 {
 			endSampleParam = -1
 		}
-		ctxHash, cancelHash := context.WithTimeout(d.currentExecutionContext(), 120*time.Second)
-		defer cancelHash()
+		out, scriptErr := d.runPythonScript("worker_hash.py", []string{
+			"--flac-path", task.FlacPath,
+			"--start-sample", fmt.Sprintf("%d", task.StartSample),
+			"--end-sample", fmt.Sprintf("%d", endSampleParam),
+		}, id, "HashCheck", logger.ColorCyan, true)
 
-		demucsClient, dErr := d.demucsPool.Acquire(ctxHash)
-		if dErr != nil {
-			return false, "", fmt.Errorf("failed to acquire Demucs daemon for hash check: %w", dErr)
+		if scriptErr != nil {
+			return false, "", fmt.Errorf("hash calculation failed via worker_hash.py: %w", scriptErr)
 		}
-		hashResp, hashErr := demucsClient.CheckHash(ctxHash, DemucsCheckHashPayload{
-			FlacPath:    task.FlacPath,
-			StartSample: task.StartSample,
-			EndSample:   endSampleParam,
-		})
-		d.demucsPool.Release(demucsClient)
 
-		if hashErr != nil {
-			return false, "", fmt.Errorf("hash calculation failed via Demucs daemon: %w", hashErr)
+		var hashResp struct {
+			Status    string             `json:"status"`
+			AudioHash string             `json:"audio_hash"`
+			Profile   map[string]float64 `json:"profile"`
+			Message   string             `json:"message"`
+		}
+		if parseErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &hashResp); parseErr != nil {
+			return false, "", fmt.Errorf("failed to parse worker_hash output: %w, output: %s", parseErr, out)
+		}
+		if hashResp.Status != "success" {
+			return false, "", fmt.Errorf("worker_hash reported failure: %s", hashResp.Message)
+		}
+		if hashResp.AudioHash == "" {
+			return false, "", fmt.Errorf("worker_hash returned empty hash")
+		}
+		if !isHex32(hashResp.AudioHash) {
+			return false, "", fmt.Errorf("worker_hash returned invalid hash (not 32 hex): %s", hashResp.AudioHash)
 		}
 
 		trackHash = hashResp.AudioHash
 		if d.statsTracker != nil && hashResp.Profile != nil {
 			for step, dur := range hashResp.Profile {
-				d.statsTracker.RecordPythonStepDuration("demucs", step, dur)
+				d.statsTracker.RecordPythonStepDuration("worker_hash", step, dur)
 			}
 		}
 	}
@@ -239,4 +250,17 @@ func (d *Dispatcher) checkDuplicateHash(id int, task TaskPayload) (bool, string,
 	}
 
 	return exists, trackHash, nil
+}
+
+// isHex32 validates that s is exactly 32 lowercase hexadecimal characters (MD5).
+func isHex32(s string) bool {
+	if len(s) != 32 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
