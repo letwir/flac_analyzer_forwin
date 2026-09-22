@@ -484,4 +484,3 @@ func (p *ShmArenaPool) Close() {
 		delete(p.workers, id)
 	}
 }
-

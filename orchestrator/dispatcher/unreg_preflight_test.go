@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"flac_analyzer/orchestrator/state"
 )
@@ -16,6 +18,7 @@ type fakeUnregLookup struct {
 	states        map[int]state.TaskState
 	stateErr      map[int]error
 	registrations map[unregTrackKey]struct{}
+	snapshots     map[unregTrackKey]AnalysisSnapshot
 	catalogErr    error
 	requested     []unregTrackKey
 	catalogCalls  int
@@ -35,10 +38,39 @@ func (f *fakeUnregLookup) SQLiteTaskState(_ string, trackNumber int) (state.Task
 	return state.TaskState{}, sql.ErrNoRows
 }
 
-func (f *fakeUnregLookup) PostgreSQLRegistrations(_ context.Context, requested []unregTrackKey) (map[unregTrackKey]struct{}, error) {
+func (f *fakeUnregLookup) Lookup(_ context.Context, requested []unregTrackKey) ([]analysisSnapshotRow, error) {
 	f.catalogCalls++
 	f.requested = append([]unregTrackKey(nil), requested...)
-	return f.registrations, f.catalogErr
+	if f.catalogErr != nil {
+		return nil, f.catalogErr
+	}
+	var rows []analysisSnapshotRow
+	for _, req := range requested {
+		if f.snapshots != nil {
+			if snap, ok := f.snapshots[req]; ok {
+				rows = append(rows, analysisSnapshotRow{
+					key:      req,
+					snapshot: snap,
+				})
+				continue
+			}
+		}
+		if _, ok := f.registrations[req]; ok {
+			now := time.Now()
+			rows = append(rows, analysisSnapshotRow{
+				key: req,
+				snapshot: AnalysisSnapshot{
+					Exists:      true,
+					RowVersion:  1,
+					AnalyzedAt:  &now,
+					Meta:        []byte(fmt.Sprintf(`{"analysis_schema_version": %d}`, AnalysisSchemaVersion)),
+					Features:    []byte(`{"mix":{"feature":1},"demucs":{"vocals":{"f":1},"drums":{"f":1},"bass":{"f":1},"other":{"f":1},"guitar":{"f":1},"piano":{"f":1}}}`),
+					Predictions: []byte(`{"pred":1}`),
+				},
+			})
+		}
+	}
+	return rows, nil
 }
 
 func TestClassifySQLiteUnregStatus(t *testing.T) {
@@ -79,23 +111,27 @@ func TestFilterUnregisteredSingleTasksFourQuadrants(t *testing.T) {
 	lookup := &fakeUnregLookup{
 		states: map[int]state.TaskState{
 			1: {Status: state.StatusCompleted},
-			3: {Status: state.StatusFailed},
+			3: {Status: state.StatusRunning},
 		},
 		stateErr: map[int]error{},
 		registrations: map[unregTrackKey]struct{}{
+			mustUnregTrackKey(t, path, 1): {},
 			mustUnregTrackKey(t, path, 2): {},
-			mustUnregTrackKey(t, path, 3): {},
 		},
 	}
 	result, err := filterUnregisteredSingleTasks(t.Context(), tasks, lookup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.SQLiteSkipped != 1 || result.PostgreSQLSkipped != 2 {
+	// Track 1: PG complete + SQLite completed -> PostgreSQLSkipped
+	// Track 2: PG complete + SQLite absent -> Eligible (lightweight reconciliation)
+	// Track 3: PG missing  + SQLite running -> SQLiteSkipped (active suppression)
+	// Track 4: PG missing  + SQLite absent -> Eligible
+	if result.SQLiteSkipped != 1 || result.PostgreSQLSkipped != 1 {
 		t.Fatalf("unexpected skip counts: %+v", result)
 	}
-	if len(result.Eligible) != 1 || result.Eligible[0].TrackNumber != 4 {
-		t.Fatalf("eligible=%+v, want only track 4", result.Eligible)
+	if len(result.Eligible) != 2 || result.Eligible[0].TrackNumber != 2 || result.Eligible[1].TrackNumber != 4 {
+		t.Fatalf("eligible=%+v, want tracks 2 and 4", result.Eligible)
 	}
 	if lookup.catalogCalls != 1 || len(lookup.requested) != len(tasks) {
 		t.Fatalf("PostgreSQL batch calls=%d keys=%d, want 1 call with %d keys", lookup.catalogCalls, len(lookup.requested), len(tasks))
@@ -233,7 +269,9 @@ func TestNormalizedTrackNumberPolicy(t *testing.T) {
 func TestZeroTrackNumberUsesTrackOneRegistration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "single.flac")
 	lookup := &fakeUnregLookup{
-		states:   map[int]state.TaskState{},
+		states: map[int]state.TaskState{
+			1: {Status: state.StatusCompleted},
+		},
 		stateErr: map[int]error{},
 		registrations: map[unregTrackKey]struct{}{
 			mustUnregTrackKey(t, path, 1): {},
@@ -251,19 +289,134 @@ func TestZeroTrackNumberUsesTrackOneRegistration(t *testing.T) {
 	}
 }
 
-func TestUnregRegistrationQueryContract(t *testing.T) {
-	for _, required := range []string{
-		"unnest($1::text[], $2::integer[])",
-		"FROM raw.library_flac",
-		"COALESCE(library.track_number, 1)",
-		"analyzed_at IS NOT NULL",
-	} {
-		if !strings.Contains(unregRegistrationQuery, required) {
-			t.Fatalf("query missing %q", required)
-		}
+func TestFilterUnregisteredSingleTasksScenarios(t *testing.T) {
+	now := time.Now()
+	completeSnapshot := AnalysisSnapshot{
+		Exists:      true,
+		RowVersion:  1,
+		AnalyzedAt:  &now,
+		Meta:        []byte(fmt.Sprintf(`{"analysis_schema_version": %d}`, AnalysisSchemaVersion)),
+		Features:    []byte(`{"mix":{"feature":1},"demucs":{"vocals":{"f":1},"drums":{"f":1},"bass":{"f":1},"other":{"f":1},"guitar":{"f":1},"piano":{"f":1}}}`),
+		Predictions: []byte(`{"pred":1}`),
 	}
-	if strings.Contains(strings.ToLower(unregRegistrationQuery), "history") {
-		t.Fatal("query must not reference history tables")
+	incompleteSnapshot := AnalysisSnapshot{
+		Exists:      true,
+		RowVersion:  1,
+		AnalyzedAt:  &now,
+		Meta:        []byte(fmt.Sprintf(`{"analysis_schema_version": %d}`, AnalysisSchemaVersion)),
+		Features:    []byte(`{"mix":{"feature":1},"demucs":{"vocals":{"f":1}}}`), // missing stems
+		Predictions: []byte(`{"pred":1}`),
+	}
+
+	tests := []struct {
+		name             string
+		task             TaskPayload
+		sqliteState      *state.TaskState  // nil means sql.ErrNoRows (absent)
+		pgSnapshot       *AnalysisSnapshot // nil means not in pg
+		wantEligible     bool
+		wantSQLiteSkip   int
+		wantPostgresSkip int
+	}{
+		{
+			name:             "pg complete+sqlite completed skip",
+			task:             TaskPayload{TrackNumber: 1},
+			sqliteState:      &state.TaskState{Status: state.StatusCompleted},
+			pgSnapshot:       &completeSnapshot,
+			wantEligible:     false,
+			wantSQLiteSkip:   0,
+			wantPostgresSkip: 1,
+		},
+		{
+			name:             "pg complete+sqlite missing eligible",
+			task:             TaskPayload{TrackNumber: 1},
+			sqliteState:      nil,
+			pgSnapshot:       &completeSnapshot,
+			wantEligible:     true,
+			wantSQLiteSkip:   0,
+			wantPostgresSkip: 0,
+		},
+		{
+			name:             "pg missing+sqlite completed eligible",
+			task:             TaskPayload{TrackNumber: 1},
+			sqliteState:      &state.TaskState{Status: state.StatusCompleted},
+			pgSnapshot:       nil,
+			wantEligible:     true,
+			wantSQLiteSkip:   0,
+			wantPostgresSkip: 0,
+		},
+		{
+			name:             "pg incomplete+sqlite completed eligible",
+			task:             TaskPayload{TrackNumber: 1},
+			sqliteState:      &state.TaskState{Status: state.StatusCompleted},
+			pgSnapshot:       &incompleteSnapshot,
+			wantEligible:     true,
+			wantSQLiteSkip:   0,
+			wantPostgresSkip: 0,
+		},
+		{
+			name:             "active suppression pending",
+			task:             TaskPayload{TrackNumber: 1},
+			sqliteState:      &state.TaskState{Status: state.StatusPending},
+			pgSnapshot:       &completeSnapshot,
+			wantEligible:     false,
+			wantSQLiteSkip:   1,
+			wantPostgresSkip: 0,
+		},
+		{
+			name:             "active suppression queued",
+			task:             TaskPayload{TrackNumber: 1},
+			sqliteState:      &state.TaskState{Status: state.StatusQueued},
+			pgSnapshot:       &completeSnapshot,
+			wantEligible:     false,
+			wantSQLiteSkip:   1,
+			wantPostgresSkip: 0,
+		},
+		{
+			name:             "active suppression running",
+			task:             TaskPayload{TrackNumber: 1},
+			sqliteState:      &state.TaskState{Status: state.StatusRunning},
+			pgSnapshot:       nil,
+			wantEligible:     false,
+			wantSQLiteSkip:   1,
+			wantPostgresSkip: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "track.flac")
+			tt.task.FlacPath = path
+			key := mustUnregTrackKey(t, path, tt.task.TrackNumber)
+
+			states := map[int]state.TaskState{}
+			if tt.sqliteState != nil {
+				states[tt.task.TrackNumber] = *tt.sqliteState
+			}
+			snapshots := map[unregTrackKey]AnalysisSnapshot{}
+			if tt.pgSnapshot != nil {
+				snapshots[key] = *tt.pgSnapshot
+			}
+
+			lookup := &fakeUnregLookup{
+				states:    states,
+				stateErr:  map[int]error{},
+				snapshots: snapshots,
+			}
+
+			res, err := filterUnregisteredSingleTasks(t.Context(), []TaskPayload{tt.task}, lookup)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if res.SQLiteSkipped != tt.wantSQLiteSkip {
+				t.Errorf("SQLiteSkipped = %d, want %d", res.SQLiteSkipped, tt.wantSQLiteSkip)
+			}
+			if res.PostgreSQLSkipped != tt.wantPostgresSkip {
+				t.Errorf("PostgreSQLSkipped = %d, want %d", res.PostgreSQLSkipped, tt.wantPostgresSkip)
+			}
+			if (len(res.Eligible) > 0) != tt.wantEligible {
+				t.Errorf("len(Eligible) = %d, wantEligible = %v", len(res.Eligible), tt.wantEligible)
+			}
+		})
 	}
 }
 

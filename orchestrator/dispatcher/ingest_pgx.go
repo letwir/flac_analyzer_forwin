@@ -309,8 +309,8 @@ func (d *Dispatcher) processIngestPayloadComplex(payload IngestPayload) {
 
 	if ingestRes.SavedToDLQ {
 		d.LogWarn("[IngestWorker] DLQ fallback triggered for %s (Track %d). Preserved in send_failed.db.", task.FlacPath, task.TrackNumber)
-		d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "Saved to DLQ (send_failed.db)")
-		metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
+		d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailedMaybeRetry, "Saved to DLQ (send_failed.db)")
+		metrics.AnalyzerTasksTotal.WithLabelValues("retry_pending").Inc()
 		return
 	}
 

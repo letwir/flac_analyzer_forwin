@@ -268,11 +268,17 @@ func (d *Dispatcher) Enqueue(task TaskPayload) error {
 // EnqueueDurable returns false when the task was already completed, active, or
 // durably queued. The payload is stored before the caller acknowledges intake.
 func (d *Dispatcher) EnqueueDurable(task TaskPayload) (bool, error) {
+	planned, err := d.prepareAnalysisTasks(d.currentExecutionContext(), []TaskPayload{task})
+	if err != nil {
+		return false, fmt.Errorf("preflight failed: %w", err)
+	}
+	task = planned[0]
+
 	payloadJSON, err := json.Marshal(task)
 	if err != nil {
 		return false, fmt.Errorf("failed to serialize task payload for %s track %d: %w", task.FlacPath, task.TrackNumber, err)
 	}
-	shouldRun, err := d.db.CheckOrInsertWithPayload(task.FlacPath, task.TrackNumber, string(payloadJSON), task.Force)
+	shouldRun, err := d.db.CheckOrInsertRequiredAnalysisWithRequeue(task.FlacPath, task.TrackNumber, string(payloadJSON), task.Force, task.AnalysisDecision != Skip)
 	if err != nil {
 		return false, err
 	}

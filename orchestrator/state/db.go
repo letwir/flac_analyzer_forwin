@@ -61,16 +61,17 @@ func estimatePriorityScore(payloadJSON string) float64 {
 }
 
 type dbWriteOp struct {
-	opType      string // "check_or_insert", "update_status"
-	filePath    string
-	trackNumber int
-	payloadJSON string
-	status      TaskStatus
-	errMsg      string
-	force       bool
-	limit       int
-	delaySec    int
-	resChan     chan dbWriteResult
+	opType           string // "check_or_insert", "update_status"
+	filePath         string
+	trackNumber      int
+	payloadJSON      string
+	status           TaskStatus
+	errMsg           string
+	force            bool
+	requeueCompleted bool
+	limit            int
+	delaySec         int
+	resChan          chan dbWriteResult
 }
 
 type dbWriteResult struct {
@@ -146,7 +147,7 @@ func (db *DB) writerLoop() {
 	for op := range db.opQueue {
 		switch op.opType {
 		case "check_or_insert":
-			shouldRun, err := db.execCheckOrInsert(op.filePath, op.trackNumber, op.payloadJSON, op.force)
+			shouldRun, err := db.execCheckOrInsert(op.filePath, op.trackNumber, op.payloadJSON, op.force, op.requeueCompleted)
 			if op.resChan != nil {
 				op.resChan <- dbWriteResult{shouldRun: shouldRun, err: err}
 			}
@@ -378,23 +379,36 @@ func (db *DB) CheckOrInsert(filePath string) (bool, error) {
 // CheckOrInsertWithPayload registers a durable task and stores the complete
 // track payload before the HTTP request is acknowledged.
 func (db *DB) CheckOrInsertWithPayload(filePath string, trackNumber int, payloadJSON string, force bool) (bool, error) {
-	return db.checkOrInsertWithPayload(filePath, trackNumber, payloadJSON, force)
+	return db.checkOrInsertWithPayload(filePath, trackNumber, payloadJSON, force, false)
+}
+
+// CheckOrInsertRequiredAnalysis behaves like CheckOrInsertWithPayload but will requeue existing COMPLETED rows if they are missing/incomplete in the reference.
+func (db *DB) CheckOrInsertRequiredAnalysis(filePath string, trackNumber int, payloadJSON string, force bool) (bool, error) {
+	return db.checkOrInsertWithPayload(filePath, trackNumber, payloadJSON, force, true)
+}
+
+// CheckOrInsertRequiredAnalysisWithRequeue behaves like CheckOrInsertWithPayload with explicit control over whether existing COMPLETED rows are requeued.
+func (db *DB) CheckOrInsertRequiredAnalysisWithRequeue(filePath string, trackNumber int, payloadJSON string, force, requeueCompleted bool) (bool, error) {
+	return db.checkOrInsertWithPayload(filePath, trackNumber, payloadJSON, force, requeueCompleted)
 }
 
 // CheckOrInsertWithForce checks if a task should be executed via async writer channel.
 // Optimized with Read-First pattern for fast parallel checks without write channel bottleneck.
 func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force bool) (bool, error) {
-	return db.checkOrInsertWithPayload(filePath, trackNumber, "", force)
+	return db.checkOrInsertWithPayload(filePath, trackNumber, "", force, false)
 }
 
-func (db *DB) checkOrInsertWithPayload(filePath string, trackNumber int, payloadJSON string, force bool) (bool, error) {
+func (db *DB) checkOrInsertWithPayload(filePath string, trackNumber int, payloadJSON string, force, requeueCompleted bool) (bool, error) {
 	// 1. Fast parallel read (WAL concurrent read)
 	if !force {
 		var status string
 		err := db.conn.QueryRow(`SELECT status FROM task_state WHERE file_path = ? AND track_number = ?`, filePath, trackNumber).Scan(&status)
 		if err == nil {
 			// Already completed, active, or durably queued -> skip immediately.
-			if status == string(StatusCompleted) || status == string(StatusRunning) || status == string(StatusPending) || status == string(StatusQueued) {
+			if status == string(StatusRunning) || status == string(StatusPending) || status == string(StatusQueued) {
+				return false, nil
+			}
+			if status == string(StatusCompleted) && !requeueCompleted {
 				return false, nil
 			}
 		} else if err != sql.ErrNoRows {
@@ -406,18 +420,19 @@ func (db *DB) checkOrInsertWithPayload(filePath string, trackNumber int, payload
 	// 2. Write path (Serialized via writerLoop channel)
 	resChan := make(chan dbWriteResult, 1)
 	db.opQueue <- dbWriteOp{
-		opType:      "check_or_insert",
-		filePath:    filePath,
-		trackNumber: trackNumber,
-		payloadJSON: payloadJSON,
-		force:       force,
-		resChan:     resChan,
+		opType:           "check_or_insert",
+		filePath:         filePath,
+		trackNumber:      trackNumber,
+		payloadJSON:      payloadJSON,
+		force:            force,
+		requeueCompleted: requeueCompleted,
+		resChan:          resChan,
 	}
 	res := <-resChan
 	return res.shouldRun, res.err
 }
 
-func (db *DB) execCheckOrInsert(filePath string, trackNumber int, payloadJSON string, force bool) (bool, error) {
+func (db *DB) execCheckOrInsert(filePath string, trackNumber int, payloadJSON string, force, requeueCompleted bool) (bool, error) {
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return false, err
@@ -431,7 +446,7 @@ func (db *DB) execCheckOrInsert(filePath string, trackNumber int, payloadJSON st
 	}
 
 	if err == nil {
-		if force || status == string(StatusFailed) || status == string(StatusFailedMaybeRetry) {
+		if force || status == string(StatusFailed) || status == string(StatusFailedMaybeRetry) || (requeueCompleted && status == string(StatusCompleted)) {
 			_, err = tx.Exec(`
 				UPDATE task_state
 				SET status = ?, error_message = NULL,
@@ -627,9 +642,7 @@ func (db *DB) execUpdateStatus(filePath string, trackNumber int, status TaskStat
 	return err
 }
 
-// ClaimSingleTask atomically reserves exactly one requested track. Active work
-// is never stolen, even with force; process-level exclusion protects ResetStaleTasks.
-func (db *DB) ClaimSingleTask(filePath string, trackNumber int, payloadJSON string, force, recoverActive bool) (bool, error) {
+func (db *DB) claimSingleTask(filePath string, trackNumber int, payloadJSON string, force, recoverActive, requeueCompleted bool) (bool, error) {
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return false, fmt.Errorf("begin single-task claim: %w", err)
@@ -652,7 +665,7 @@ func (db *DB) ClaimSingleTask(filePath string, trackNumber int, payloadJSON stri
 	if (status == string(StatusQueued) || status == string(StatusRunning)) && !recoverActive {
 		return false, fmt.Errorf("task is already active with status %s", status)
 	}
-	if status == string(StatusCompleted) && !force {
+	if status == string(StatusCompleted) && !force && !requeueCompleted {
 		return false, nil
 	}
 	res, err := tx.Exec(`UPDATE task_state SET status = ?, error_message = NULL, payload_json = ?, priority_score = ?, updated_at = CURRENT_TIMESTAMP
@@ -665,6 +678,17 @@ func (db *DB) ClaimSingleTask(filePath string, trackNumber int, payloadJSON stri
 		return false, fmt.Errorf("single-task claim lost race (affected=%d): %w", n, err)
 	}
 	return true, tx.Commit()
+}
+
+// ClaimSingleTask atomically reserves exactly one requested track. Active work
+// is never stolen, even with force; process-level exclusion protects ResetStaleTasks.
+func (db *DB) ClaimSingleTask(filePath string, trackNumber int, payloadJSON string, force, recoverActive bool) (bool, error) {
+	return db.claimSingleTask(filePath, trackNumber, payloadJSON, force, recoverActive, false)
+}
+
+// ClaimSingleTaskRequiredAnalysis behaves like ClaimSingleTask but will requeue existing COMPLETED rows if they are missing/incomplete in the reference.
+func (db *DB) ClaimSingleTaskRequiredAnalysis(filePath string, trackNumber int, payloadJSON string, force, recoverActive bool) (bool, error) {
+	return db.claimSingleTask(filePath, trackNumber, payloadJSON, force, recoverActive, true)
 }
 
 func (db *DB) Flush() error {

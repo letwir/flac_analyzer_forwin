@@ -10,24 +10,12 @@ import (
 	"time"
 
 	"flac_analyzer/orchestrator/state"
-	"github.com/lib/pq"
 )
-
-const unregRegistrationQuery = `
-WITH requested(filepath_key, track_number) AS (
-	SELECT * FROM unnest($1::text[], $2::integer[])
-)
-SELECT library.filepath, COALESCE(library.track_number, 1)
-FROM raw.library_flac AS library
-JOIN requested
-	ON lower(replace(library.filepath, '/', E'\\')) = requested.filepath_key
-	AND COALESCE(library.track_number, 1) = requested.track_number
-WHERE library.analyzed_at IS NOT NULL`
 
 type unregLookup interface {
 	Ping(context.Context) error
 	SQLiteTaskState(string, int) (state.TaskState, error)
-	PostgreSQLRegistrations(context.Context, []unregTrackKey) (map[unregTrackKey]struct{}, error)
+	analysisSnapshotLookup
 }
 
 type databaseUnregLookup struct {
@@ -133,23 +121,29 @@ func filterUnregisteredSingleTasks(ctx context.Context, tasks []TaskPayload, loo
 
 	if err := lookup.Ping(ctx); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return UnregPreflightResult{}, fmt.Errorf("PostgreSQL registration preflight cancelled: %w", err)
+			return UnregPreflightResult{}, fmt.Errorf("PostgreSQL analysis preflight cancelled: %w", err)
 		}
-		return UnregPreflightResult{}, errors.New("PostgreSQL registration preflight unavailable")
+		return UnregPreflightResult{}, errors.New("PostgreSQL analysis preflight unavailable")
 	}
-	postgresRegistrations, err := lookup.PostgreSQLRegistrations(ctx, requestedKeys)
+	analysisRows, err := lookup.Lookup(ctx, requestedKeys)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return UnregPreflightResult{}, fmt.Errorf("PostgreSQL registration catalog lookup cancelled: %w", err)
+			return UnregPreflightResult{}, fmt.Errorf("PostgreSQL analysis catalog lookup cancelled: %w", err)
 		}
-		return UnregPreflightResult{}, errors.New("PostgreSQL registration catalog lookup failed")
+		return UnregPreflightResult{}, errors.New("PostgreSQL analysis catalog lookup failed")
+	}
+	pgSnapshots := make(map[unregTrackKey]AnalysisSnapshot, len(analysisRows))
+	for _, row := range analysisRows {
+		pgSnapshots[row.key] = row.snapshot
 	}
 
 	result := UnregPreflightResult{Eligible: make([]TaskPayload, 0, len(normalizedTasks))}
-	for _, task := range normalizedTasks {
+	for i, task := range normalizedTasks {
 		if err := ctx.Err(); err != nil {
 			return UnregPreflightResult{}, fmt.Errorf("unregistered preflight cancelled before track %d: %w", task.TrackNumber, err)
 		}
+		trackKey := requestedKeys[i]
+
 		taskState, stateErr := lookup.SQLiteTaskState(task.FlacPath, task.TrackNumber)
 		switch {
 		case stateErr == nil:
@@ -157,24 +151,24 @@ func filterUnregisteredSingleTasks(ctx context.Context, tasks []TaskPayload, loo
 			if err != nil {
 				return UnregPreflightResult{}, fmt.Errorf("classify SQLite track %d: %w", task.TrackNumber, err)
 			}
-			if decision == sqliteUnregSkip {
+			if decision == sqliteUnregSkip && taskState.Status != state.StatusCompleted {
 				result.SQLiteSkipped++
 				continue
 			}
 		case errors.Is(stateErr, sql.ErrNoRows):
-			// An absent SQLite row remains eligible for the PostgreSQL check.
+			// An absent SQLite row is eligible.
 		default:
 			return UnregPreflightResult{}, fmt.Errorf("read SQLite registration for track %d: %w", task.TrackNumber, stateErr)
 		}
 
-		trackKey, err := newUnregTrackKey(task.FlacPath, task.TrackNumber)
-		if err != nil {
-			return UnregPreflightResult{}, fmt.Errorf("normalize PostgreSQL registration key for track %d: %w", task.TrackNumber, err)
-		}
-		if _, registered := postgresRegistrations[trackKey]; registered {
+		snapshot, hasPg := pgSnapshots[trackKey]
+		pgComplete := hasPg && DecideAnalysis(snapshot).Decision == Skip
+
+		if pgComplete && stateErr == nil && taskState.Status == state.StatusCompleted {
 			result.PostgreSQLSkipped++
 			continue
 		}
+
 		result.Eligible = append(result.Eligible, task)
 	}
 	return result, nil
@@ -193,41 +187,8 @@ func (l databaseUnregLookup) SQLiteTaskState(path string, trackNumber int) (stat
 	return l.sqlite.GetTaskState(path, trackNumber)
 }
 
-func (l databaseUnregLookup) PostgreSQLRegistrations(ctx context.Context, requested []unregTrackKey) (map[unregTrackKey]struct{}, error) {
-	registrations := make(map[unregTrackKey]struct{})
-	if len(requested) == 0 {
-		return registrations, nil
-	}
-	paths := make([]string, len(requested))
-	trackNumbers := make([]int, len(requested))
-	for i, key := range requested {
-		paths[i] = key.path
-		trackNumbers[i] = key.trackNumber
-	}
-	queryCtx, cancel := context.WithTimeout(ctx, l.timeout)
-	defer cancel()
-	rows, err := l.pg.QueryContext(queryCtx, unregRegistrationQuery, pq.Array(paths), pq.Array(trackNumbers))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var path string
-		var trackNumber int
-		if err := rows.Scan(&path, &trackNumber); err != nil {
-			return nil, err
-		}
-		key, err := newUnregTrackKey(path, trackNumber)
-		if err != nil {
-			return nil, err
-		}
-		registrations[key] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return registrations, nil
+func (l databaseUnregLookup) Lookup(ctx context.Context, requested []unregTrackKey) ([]analysisSnapshotRow, error) {
+	return databaseAnalysisSnapshotLookup{pg: l.pg, timeout: l.timeout}.Lookup(ctx, requested)
 }
 
 func unregDBTimeout(cfg Config) time.Duration {

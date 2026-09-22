@@ -279,12 +279,21 @@ func TestIngestWorker_DecoupledPipeline(t *testing.T) {
 	close(d.ingestQueue)
 	d.ingestWg.Wait()
 
-	// 状態が COMPLETED (Saved to DLQ) に更新されたため、再実行判定で false になることを検証
+	if err := stateDB.Flush(); err != nil {
+		t.Fatalf("Failed to flush state DB: %v", err)
+	}
+	st, err := stateDB.GetTaskState(testFlac, 1)
+	if err != nil {
+		t.Fatalf("Failed to get task state: %v", err)
+	}
+	if st.Status != state.StatusFailedMaybeRetry {
+		t.Errorf("expected status %v, got %v", state.StatusFailedMaybeRetry, st.Status)
+	}
 	shouldRun, err := stateDB.CheckOrInsertWithForce(testFlac, 1, false)
 	if err != nil {
 		t.Fatalf("Failed to check task status: %v", err)
 	}
-	if shouldRun {
-		t.Errorf("Expected shouldRun to be false after completion, got true")
+	if !shouldRun {
+		t.Errorf("expected shouldRun to be true, got false")
 	}
 }

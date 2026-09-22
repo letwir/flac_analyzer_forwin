@@ -56,24 +56,31 @@ func (d *Dispatcher) RunSingleTask(ctx context.Context, task TaskPayload) (bool,
 		return false, fmt.Errorf("resolve FLAC path: %w", err)
 	}
 	task.FlacPath = filepath.Clean(abs)
+
+	planned, err := d.prepareAnalysisTasks(ctx, []TaskPayload{task})
+	if err != nil {
+		return false, fmt.Errorf("preflight failed: %w", err)
+	}
+	task = planned[0]
+
 	payload, err := json.Marshal(task)
 	if err != nil {
 		return false, fmt.Errorf("encode task payload: %w", err)
 	}
-	claimed, err := d.db.ClaimSingleTask(task.FlacPath, task.TrackNumber, string(payload), task.Force, true)
-	if err != nil || !claimed {
-		return claimed, err
-	}
-	planned, err := d.prepareAnalysisTasks(ctx, []TaskPayload{task})
-	if err != nil {
-		_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailedMaybeRetry, err.Error())
-		return true, err
-	}
-	task = planned[0]
+
 	if task.AnalysisDecision == Skip {
+		claimed, err := d.db.ClaimSingleTask(task.FlacPath, task.TrackNumber, string(payload), task.Force, true)
+		if err != nil || !claimed {
+			return claimed, err
+		}
 		_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "analysis preflight: complete")
 		_ = d.db.Flush()
 		return true, nil
+	}
+
+	claimed, err := d.db.ClaimSingleTaskRequiredAnalysis(task.FlacPath, task.TrackNumber, string(payload), task.Force, true)
+	if err != nil || !claimed {
+		return claimed, err
 	}
 
 	for {
