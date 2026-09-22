@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -120,7 +121,7 @@ func TestStemWavefrontBoundedHandoff(t *testing.T) {
 	runner.CloseInput()
 	cancel()
 	_, _, _, _, err = runner.Wait()
-	if err == nil || (err != context.Canceled && err.Error() != "context canceled") {
+	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context canceled error, got %v", err)
 	}
 }
