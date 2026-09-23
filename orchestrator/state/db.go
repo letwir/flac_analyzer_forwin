@@ -37,13 +37,17 @@ type QueuedTask struct {
 // added without changing the feeder or its bounded-claim behavior.
 type PendingTaskOrder string
 
-const PendingTaskOrderFIFO PendingTaskOrder = "fifo"
+const (
+	PendingTaskOrderFIFO      PendingTaskOrder = "fifo"
+	PendingTaskOrderSizeAging PendingTaskOrder = "size-aging"
+)
 
 type priorityPayload struct {
-	FileSize    int64 `json:"fileSize"`
-	StartSample int64 `json:"startSample"`
-	EndSample   int64 `json:"endSample"`
-	SampleRate  int   `json:"sampleRate"`
+	FileSize       int64 `json:"fileSize"`
+	StartSample    int64 `json:"startSample"`
+	EndSample      int64 `json:"endSample"`
+	SampleRate     int   `json:"sampleRate"`
+	FileTrackCount int   `json:"fileTrackCount,omitempty"`
 }
 
 func estimatePriorityScore(payloadJSON string) float64 {
@@ -67,26 +71,32 @@ func estimatePriorityScore(payloadJSON string) float64 {
 	return 0
 }
 
+type CheckOrInsertTask struct {
+	FilePath         string
+	TrackNumber      int
+	PayloadJSON      string
+	Force            bool
+	RequeueCompleted bool
+}
+
 type dbWriteOp struct {
-	opType           string // "check_or_insert", "update_status", "count_waiting", etc.
-	filePath         string
-	trackNumber      int
-	payloadJSON      string
-	status           TaskStatus
-	errMsg           string
-	force            bool
-	requeueCompleted bool
-	limit            int
-	order            PendingTaskOrder
-	delaySec         int
-	resChan          chan dbWriteResult
+	opType      string // "check_or_insert_batch", "update_status", "count_waiting", etc.
+	batchTasks  []CheckOrInsertTask
+	filePath    string
+	trackNumber int
+	status      TaskStatus
+	errMsg      string
+	limit       int
+	order       PendingTaskOrder
+	delaySec    int
+	resChan     chan dbWriteResult
 }
 
 type dbWriteResult struct {
-	shouldRun bool
-	tasks     []QueuedTask
-	count     int64
-	err       error
+	shouldRunBatch []bool
+	tasks          []QueuedTask
+	count          int64
+	err            error
 }
 
 type TaskState struct {
@@ -154,10 +164,10 @@ func OpenReadOnly(dbPath string) (*DB, error) {
 func (db *DB) writerLoop() {
 	for op := range db.opQueue {
 		switch op.opType {
-		case "check_or_insert":
-			shouldRun, err := db.execCheckOrInsert(op.filePath, op.trackNumber, op.payloadJSON, op.force, op.requeueCompleted)
+		case "check_or_insert_batch":
+			shouldRun, err := db.execCheckOrInsertBatch(op.batchTasks)
 			if op.resChan != nil {
-				op.resChan <- dbWriteResult{shouldRun: shouldRun, err: err}
+				op.resChan <- dbWriteResult{shouldRunBatch: shouldRun, err: err}
 			}
 		case "update_status":
 			err := db.execUpdateStatus(op.filePath, op.trackNumber, op.status, op.errMsg)
@@ -408,6 +418,18 @@ func (db *DB) ResetStaleTasks() (int64, error) {
 	return queuedReset + runningReset, nil
 }
 
+// CheckOrInsertBatch atomically processes a batch of tasks.
+func (db *DB) CheckOrInsertBatch(tasks []CheckOrInsertTask) ([]bool, error) {
+	resChan := make(chan dbWriteResult, 1)
+	db.opQueue <- dbWriteOp{
+		opType:     "check_or_insert_batch",
+		batchTasks: tasks,
+		resChan:    resChan,
+	}
+	res := <-resChan
+	return res.shouldRunBatch, res.err
+}
+
 // CheckOrInsert checks if a task is already processed or processing.
 func (db *DB) CheckOrInsert(filePath string) (bool, error) {
 	return db.CheckOrInsertWithForce(filePath, 0, false)
@@ -436,12 +458,11 @@ func (db *DB) CheckOrInsertWithForce(filePath string, trackNumber int, force boo
 }
 
 func (db *DB) checkOrInsertWithPayload(filePath string, trackNumber int, payloadJSON string, force, requeueCompleted bool) (bool, error) {
-	// 1. Fast parallel read (WAL concurrent read)
+	// Fast parallel read (WAL concurrent read)
 	if !force {
 		var status string
 		err := db.conn.QueryRow(`SELECT status FROM task_state WHERE file_path = ? AND track_number = ?`, filePath, trackNumber).Scan(&status)
 		if err == nil {
-			// Already completed, active, or durably queued -> skip immediately.
 			if status == string(StatusRunning) || status == string(StatusPending) || status == string(StatusQueued) {
 				return false, nil
 			}
@@ -451,63 +472,68 @@ func (db *DB) checkOrInsertWithPayload(filePath string, trackNumber int, payload
 		} else if err != sql.ErrNoRows {
 			return false, err
 		}
-		// If ErrNoRows or a retryable failure, proceed to the serialized writer.
 	}
 
-	// 2. Write path (Serialized via writerLoop channel)
-	resChan := make(chan dbWriteResult, 1)
-	db.opQueue <- dbWriteOp{
-		opType:           "check_or_insert",
-		filePath:         filePath,
-		trackNumber:      trackNumber,
-		payloadJSON:      payloadJSON,
-		force:            force,
-		requeueCompleted: requeueCompleted,
-		resChan:          resChan,
-	}
-	res := <-resChan
-	return res.shouldRun, res.err
-}
-
-func (db *DB) execCheckOrInsert(filePath string, trackNumber int, payloadJSON string, force, requeueCompleted bool) (bool, error) {
-	tx, err := db.conn.Begin()
+	results, err := db.CheckOrInsertBatch([]CheckOrInsertTask{
+		{
+			FilePath:         filePath,
+			TrackNumber:      trackNumber,
+			PayloadJSON:      payloadJSON,
+			Force:            force,
+			RequeueCompleted: requeueCompleted,
+		},
+	})
 	if err != nil {
 		return false, err
+	}
+	return results[0], nil
+}
+
+func (db *DB) execCheckOrInsertBatch(tasks []CheckOrInsertTask) ([]bool, error) {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return nil, err
 	}
 	defer tx.Rollback()
 
-	var status string
-	err = tx.QueryRow(`SELECT status FROM task_state WHERE file_path = ? AND track_number = ?`, filePath, trackNumber).Scan(&status)
-	if err != nil && err != sql.ErrNoRows {
-		return false, err
-	}
+	results := make([]bool, len(tasks))
+	for i, task := range tasks {
+		var status string
+		err = tx.QueryRow(`SELECT status FROM task_state WHERE file_path = ? AND track_number = ?`, task.FilePath, task.TrackNumber).Scan(&status)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, err
+		}
 
-	if err == nil {
-		if force || status == string(StatusFailed) || status == string(StatusFailedMaybeRetry) || (requeueCompleted && status == string(StatusCompleted)) {
-			_, err = tx.Exec(`
-				UPDATE task_state
-				SET status = ?, error_message = NULL,
-					payload_json = CASE WHEN ? <> '' THEN ? ELSE payload_json END,
-					priority_score = CASE WHEN ? <> '' THEN ? ELSE priority_score END,
-					updated_at = CURRENT_TIMESTAMP
-				WHERE file_path = ? AND track_number = ?
-			`, StatusPending, payloadJSON, payloadJSON, payloadJSON, estimatePriorityScore(payloadJSON), filePath, trackNumber)
-			if err != nil {
-				return false, err
+		if err == nil {
+			if task.Force || status == string(StatusFailed) || status == string(StatusFailedMaybeRetry) || (task.RequeueCompleted && status == string(StatusCompleted)) {
+				_, err = tx.Exec(`
+					UPDATE task_state
+					SET status = ?, error_message = NULL,
+						payload_json = CASE WHEN ? <> '' THEN ? ELSE payload_json END,
+						priority_score = CASE WHEN ? <> '' THEN ? ELSE priority_score END,
+						updated_at = CURRENT_TIMESTAMP
+					WHERE file_path = ? AND track_number = ?
+				`, StatusPending, task.PayloadJSON, task.PayloadJSON, task.PayloadJSON, estimatePriorityScore(task.PayloadJSON), task.FilePath, task.TrackNumber)
+				if err != nil {
+					return nil, err
+				}
+				results[i] = true
+				continue
 			}
-			return true, tx.Commit()
+			if status == string(StatusCompleted) || status == string(StatusRunning) || status == string(StatusPending) || status == string(StatusQueued) {
+				results[i] = false
+				continue
+			}
 		}
-		if status == string(StatusCompleted) || status == string(StatusRunning) || status == string(StatusPending) || status == string(StatusQueued) {
-			return false, nil
+
+		_, err = tx.Exec(`INSERT INTO task_state (file_path, track_number, status, payload_json, priority_score) VALUES (?, ?, ?, ?, ?)`, task.FilePath, task.TrackNumber, StatusPending, task.PayloadJSON, estimatePriorityScore(task.PayloadJSON))
+		if err != nil {
+			return nil, err
 		}
+		results[i] = true
 	}
 
-	_, err = tx.Exec(`INSERT INTO task_state (file_path, track_number, status, payload_json, priority_score) VALUES (?, ?, ?, ?, ?)`, filePath, trackNumber, StatusPending, payloadJSON, estimatePriorityScore(payloadJSON))
-	if err != nil {
-		return false, err
-	}
-
-	return true, tx.Commit()
+	return results, tx.Commit()
 }
 
 // ClaimPendingTasks atomically moves a bounded batch from durable PENDING to
@@ -518,12 +544,12 @@ func (db *DB) ClaimPendingTasks(limit int) ([]QueuedTask, error) {
 }
 
 // ClaimPendingTasksInOrder atomically claims a bounded batch using the requested
-// ordering policy. FIFO is the default and the only policy currently supported.
+// ordering policy.
 func (db *DB) ClaimPendingTasksInOrder(limit int, order PendingTaskOrder) ([]QueuedTask, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
-	if order != PendingTaskOrderFIFO {
+	if order != PendingTaskOrderFIFO && order != PendingTaskOrderSizeAging {
 		return nil, fmt.Errorf("unsupported pending task order %q", order)
 	}
 	resChan := make(chan dbWriteResult, 1)
@@ -533,7 +559,7 @@ func (db *DB) ClaimPendingTasksInOrder(limit int, order PendingTaskOrder) ([]Que
 }
 
 func (db *DB) execClaimPending(limit int, order PendingTaskOrder) ([]QueuedTask, error) {
-	if order != PendingTaskOrderFIFO {
+	if order != PendingTaskOrderFIFO && order != PendingTaskOrderSizeAging {
 		return nil, fmt.Errorf("unsupported pending task order %q", order)
 	}
 	tx, err := db.conn.Begin()
@@ -542,13 +568,20 @@ func (db *DB) execClaimPending(limit int, order PendingTaskOrder) ([]QueuedTask,
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.Query(`
+	orderByClause := "ORDER BY rowid ASC"
+	if order == PendingTaskOrderSizeAging {
+		orderByClause = "ORDER BY (priority_score - (julianday('now') - julianday(age_anchor_at)) * 86400.0) ASC, rowid ASC"
+	}
+
+	query := fmt.Sprintf(`
 		SELECT file_path, track_number, COALESCE(payload_json, '')
 		FROM task_state
 		WHERE status = ?
-		ORDER BY rowid ASC
+		%s
 		LIMIT ?
-	`, StatusPending, limit)
+	`, orderByClause)
+
+	rows, err := tx.Query(query, StatusPending, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select pending tasks: %w", err)
 	}

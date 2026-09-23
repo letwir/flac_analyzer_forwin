@@ -220,3 +220,14 @@
   - [ ] 4-2. `--from-audio` による FLAC 直接デコード・新特徴量高速バッチ抽出モードの実装（Demucs再実行バイパス）
   - [ ] 4-3. `--dry-run`, `--fix-tags`, `--batch-size` 等の運用管理オプションおよび単体テスト整備
   - [ ] 4-4. 実DBおよびテスト音源に対するマイグレーション動作検証
+
+### 13. ワークロード適応型SQLiteキュー・スケジューラー (`goal:workload-scheduler`)
+- [*] **【Arch/SQLite】CUEバッチ・長尺単曲・短尺単曲を区別し、資源に合わせてタスク順序とCPU枝数を調整する**
+  - SQLiteへCUE由来の全トラックを一括登録し、Feederが部分バッチを先取りしないようにする。
+  - 推定処理時間の短いタスクを優先し、ageingで長尺タスクも飢餓させない。等順位は受付FIFO。
+  - CUE複数曲は曲単位の有界並列、長尺単曲はCPU枝を絞り、短尺単曲はDemucs後のCPUステム枝を有界並列化する。
+  - Demucs/Tensor GPU共有排他を維持し、全特徴抽出枝のJoin後にPyTorch未使用キャッシュを解放する。
+  - SQLite旧スキーマ・旧payloadを保ち、scheduler metadataがない既存行は保守的な単一枝で処理する。
+  - [x] SQLite一括登録・claim順序・ageing、3種ワークロードの純粋ポリシー、Join後cleanup、ビルドをローカルで確認する。
+  - [ ] 実ホストでCUE複数曲・長尺単曲・短尺単曲を流し、待ち行列の進行、CPU枝数、VRAM回復を確認する（push後に継続）。
+  - 要件: `docs/workload_scheduler_requirements.lrf`

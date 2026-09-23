@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"flac_analyzer/orchestrator/metrics"
@@ -66,7 +67,7 @@ func (d *Dispatcher) fillTaskQueue() {
 		return
 	}
 
-	tasks, err := d.db.ClaimPendingTasksInOrder(availableSlots, state.PendingTaskOrderFIFO)
+	tasks, err := d.db.ClaimPendingTasksInOrder(availableSlots, state.PendingTaskOrderSizeAging)
 	if err != nil {
 		d.LogError("[TaskFeeder] Failed to claim durable tasks: %v", err)
 		return
@@ -105,7 +106,9 @@ func (d *Dispatcher) fillTaskQueue() {
 		d.statsTracker.SetQueueLength(len(d.taskQueue))
 		return
 	}
-
+	if len(d.taskQueue) == 0 && atomic.LoadInt32(&d.activeTaskCount) == 0 && d.cpuDaemonPool != nil {
+		d.cpuDaemonPool.TrimIdle(1)
+	}
 }
 
 func (d *Dispatcher) parkTaskForAdmission(task TaskPayload, cause error) {

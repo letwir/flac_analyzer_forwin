@@ -236,6 +236,35 @@ func (p *WorkerDaemonPool) removeDaemonLocked(client *WorkerDaemonClient) {
 	}
 }
 
+// TrimIdle safely closes and removes idle worker daemons from the pool.
+// Checked-out (healthy/working) daemons are skipped.
+func (p *WorkerDaemonPool) TrimIdle(minRetain int) int {
+	var toClose []*WorkerDaemonClient
+
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return 0
+	}
+
+	for len(p.daemons) > minRetain {
+		select {
+		case client := <-p.daemons:
+			toClose = append(toClose, client)
+			p.removeDaemonLocked(client)
+		default:
+			goto Done
+		}
+	}
+Done:
+	p.mu.Unlock()
+
+	for _, client := range toClose {
+		_ = client.Close()
+	}
+	return len(toClose)
+}
+
 // Close closes all running worker daemons and releases all resources.
 func (p *WorkerDaemonPool) Close() error {
 	p.mu.Lock()

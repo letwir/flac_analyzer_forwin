@@ -158,6 +158,7 @@ func setupTaskServer(
 		enqueuedCount := 0
 		skippedCount := 0
 
+		var batchTasks []dispatcher.TaskPayload
 		for _, tr := range cueRes.Tracks {
 			taskItem := payload
 			taskItem.TrackNumber = tr.TrackNumber
@@ -168,19 +169,23 @@ func setupTaskServer(
 			taskItem.Artist = tr.Artist.String()
 			taskItem.Album = cueRes.Album.String()
 			taskItem.AlbumArtist = cueRes.AlbumArtist.String()
+			taskItem.FileTrackCount = len(cueRes.Tracks)
+			batchTasks = append(batchTasks, taskItem)
+		}
 
-			shouldRun, dbErr := disp.EnqueueDurable(taskItem)
-			if dbErr != nil {
-				log.Printf("DB error for %s track %d: %v", taskItem.FlacPath, taskItem.TrackNumber, dbErr)
-				continue
-			}
+		results, dbErr := disp.EnqueueDurableBatch(batchTasks)
+		if dbErr != nil {
+			log.Printf("DB error enqueueing batch for %s: %v", payload.FlacPath, dbErr)
+			http.Error(w, "Failed to enqueue task batch", http.StatusInternalServerError)
+			return
+		}
 
-			if !shouldRun {
+		for _, shouldRun := range results {
+			if shouldRun {
+				enqueuedCount++
+			} else {
 				skippedCount++
-				continue
 			}
-
-			enqueuedCount++
 		}
 
 		if enqueuedCount == 0 && skippedCount > 0 {

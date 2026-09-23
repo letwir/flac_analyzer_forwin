@@ -8,6 +8,7 @@ import time
 import traceback
 from typing import Any
 
+import gc
 import numpy as np
 import torch
 
@@ -55,6 +56,14 @@ def handle_extract_gpu(payload: dict[str, Any], device: torch.device) -> dict[st
     return {"status": "success", "tensor": _nest_stem_features(extracted), "profile": {"gpu_total_sec": time.perf_counter() - started, "tensor_sec": tensor_sec}}
 
 
+def handle_cleanup_gpu(device: torch.device) -> dict[str, Any]:
+    gc.collect()
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.synchronize(device)
+    torch.cuda.empty_cache()
+    return {"status": "success"}
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] [WorkerGPU] %(message)s", handlers=[logging.StreamHandler(sys.stderr)])
     if not torch.cuda.is_available():
@@ -72,6 +81,9 @@ def main() -> None:
                 response = handle_extract_gpu(req["payload"], device)
                 response["id"] = req.get("id", "unknown")
                 task_count += 1
+            elif req.get("action") == "cleanup_gpu":
+                response = handle_cleanup_gpu(device)
+                response["id"] = req.get("id", "unknown")
             else:
                 response = {"id": req.get("id", "unknown"), "status": "error", "error": "GPU daemon only accepts extract_gpu"}
         except Exception as exc:

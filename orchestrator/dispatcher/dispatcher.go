@@ -225,7 +225,7 @@ func (d *Dispatcher) Start() {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
-			_ = d.cpuDaemonPool.Prewarm(ctx, d.config.NumWorkers)
+			_ = d.cpuDaemonPool.Prewarm(ctx, 1)
 		}()
 	}
 	if d.gpuDaemonPool != nil {
@@ -273,19 +273,29 @@ func (d *Dispatcher) EnqueueDurable(task TaskPayload) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("preflight failed: %w", err)
 	}
-	task = planned[0]
-
-	payloadJSON, err := json.Marshal(task)
-	if err != nil {
-		return false, fmt.Errorf("failed to serialize task payload for %s track %d: %w", task.FlacPath, task.TrackNumber, err)
+	if len(planned) == 0 {
+		return false, nil
 	}
-	shouldRun, err := d.db.CheckOrInsertRequiredAnalysisWithRequeue(task.FlacPath, task.TrackNumber, string(payloadJSON), task.Force, task.AnalysisDecision != Skip)
+	p := planned[0]
+
+	payloadJSON, err := json.Marshal(p)
+	if err != nil {
+		return false, fmt.Errorf("failed to serialize task payload for %s track %d: %w", p.FlacPath, p.TrackNumber, err)
+	}
+
+	shouldRun, err := d.db.CheckOrInsertRequiredAnalysisWithRequeue(
+		p.FlacPath,
+		p.TrackNumber,
+		string(payloadJSON),
+		p.Force,
+		p.AnalysisDecision != Skip,
+	)
 	if err != nil {
 		return false, err
 	}
 	if shouldRun {
 		sequence := d.queueIntakeSequence.Add(1)
-		label := taskQueueLabel(task)
+		label := taskQueueLabel(p)
 		waiting, countErr := d.db.CountWaitingTasks()
 		if countErr != nil {
 			d.LogWarn("[TaskQueue] Queued #%d; durable waiting count unavailable: %v: %q", sequence, countErr, label)
@@ -295,6 +305,65 @@ func (d *Dispatcher) EnqueueDurable(task TaskPayload) (bool, error) {
 		d.notifyTaskFeeder()
 	}
 	return shouldRun, nil
+}
+
+// EnqueueDurableBatch atomically checks or inserts a batch of tasks.
+func (d *Dispatcher) EnqueueDurableBatch(tasks []TaskPayload) ([]bool, error) {
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+	planned, err := d.prepareAnalysisTasks(d.currentExecutionContext(), tasks)
+	if err != nil {
+		return nil, fmt.Errorf("preflight failed: %w", err)
+	}
+
+	var batch []state.CheckOrInsertTask
+	for _, task := range planned {
+		payloadJSON, err := json.Marshal(task)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize task payload for %s track %d: %w", task.FlacPath, task.TrackNumber, err)
+		}
+		batch = append(batch, state.CheckOrInsertTask{
+			FilePath:         task.FlacPath,
+			TrackNumber:      task.TrackNumber,
+			PayloadJSON:      string(payloadJSON),
+			Force:            task.Force,
+			RequeueCompleted: task.AnalysisDecision != Skip,
+		})
+	}
+
+	results, err := d.db.CheckOrInsertBatch(batch)
+	if err != nil {
+		return nil, err
+	}
+
+	var waiting int64
+	var countErr error
+	hasQueued := false
+	for _, shouldRun := range results {
+		if shouldRun {
+			hasQueued = true
+			break
+		}
+	}
+	if hasQueued {
+		waiting, countErr = d.db.CountWaitingTasks()
+	}
+
+	for i, shouldRun := range results {
+		if shouldRun {
+			task := planned[i]
+			sequence := d.queueIntakeSequence.Add(1)
+			label := taskQueueLabel(task)
+			if countErr != nil {
+				d.LogWarn("[TaskQueue] Queued #%d; durable waiting count unavailable: %v: %q", sequence, countErr, label)
+			} else {
+				d.LogInfo("[TaskQueue] Queued #%d; durable waiting=%d: %q", sequence, waiting, label)
+			}
+			d.notifyTaskFeeder()
+		}
+	}
+	return results, nil
 }
 
 func taskQueueLabel(task TaskPayload) string {

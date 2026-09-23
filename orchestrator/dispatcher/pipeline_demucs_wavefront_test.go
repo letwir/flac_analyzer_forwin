@@ -16,7 +16,7 @@ func TestStemWavefrontStartsBothLanesOnFirstPublishedStem(t *testing.T) {
 	firstCPU := make(chan struct{})
 	firstGPU := make(chan struct{})
 	releaseFirst := make(chan struct{})
-	runner, err := newStemWavefront(child, 4, lifecycle, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
+	runner, err := newStemWavefront(child, 4, lifecycle, 1, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
 		if _, isFirst := payload.Stems["mix"]; isFirst {
 			if lane == FeatureLaneCPU {
 				close(firstCPU)
@@ -91,7 +91,7 @@ func TestStemWavefrontBoundedHandoff(t *testing.T) {
 	ctx, cancel := context.WithCancel(child)
 	defer cancel()
 
-	runner, err := newStemWavefront(ctx, len(stems), lifecycle, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
+	runner, err := newStemWavefront(ctx, len(stems), lifecycle, 1, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	})

@@ -39,9 +39,12 @@ type stemWavefront struct {
 	gpu       *DaemonResponse
 }
 
-func newStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycle, run func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)) (*stemWavefront, error) {
+func newStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycle, cpuConsumers int, run func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)) (*stemWavefront, error) {
 	if ctx == nil || lifecycle == nil || run == nil {
 		return nil, fmt.Errorf("stem wavefront requires context, lifecycle, and lane runner")
+	}
+	if cpuConsumers < 1 {
+		cpuConsumers = 1
 	}
 	w := &stemWavefront{
 		ctx:       ctx,
@@ -53,8 +56,10 @@ func newStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycl
 		cpu:       &DaemonResponse{Librosa: make(map[string]interface{}), Essentia: make(map[string]interface{})},
 		gpu:       &DaemonResponse{Tensor: make(map[string]interface{})},
 	}
-	w.wg.Add(2)
-	go w.consume(FeatureLaneCPU, w.cpuJobs)
+	w.wg.Add(1 + cpuConsumers)
+	for i := 0; i < cpuConsumers; i++ {
+		go w.consume(FeatureLaneCPU, w.cpuJobs)
+	}
 	go w.consume(FeatureLaneGPU, w.gpuJobs)
 	return w, nil
 }
@@ -413,7 +418,8 @@ func (d *Dispatcher) executeDemucsStage(
 		return "", 0, nil, nil, nil, fmt.Errorf("create stem lifecycle: %w", err)
 	}
 	defer lifecycle.Close()
-	wavefront, err := newStemWavefront(waveCtx, len(stems), lifecycle, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
+	cpuConsumers := GetCPUConsumerCount(task, d.config.NumWorkers, len(stems))
+	wavefront, err := newStemWavefront(waveCtx, len(stems), lifecycle, cpuConsumers, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
 		return d.executeFeatureLane(ctx, lane, payload)
 	})
 	if err != nil {
@@ -465,33 +471,71 @@ func (d *Dispatcher) executeDemucsStage(
 		return nil
 	})
 
+	if d.statsTracker != nil {
+		d.statsTracker.RecordStageDuration("demucs", time.Since(demucsStageStart))
+	}
+
 	if !gpuArbiterReleased {
 		d.gpuArbiter.Release()
 		gpuArbiterReleased = true
 	}
 	d.demucsPool.Release(demucsClient)
-	d.demucsScheduler.Release()
-	demucsReleased = true
-	d.releaseExecutionAdmission(executionLease)
-	leaseReleased = true
-
-	if d.statsTracker != nil {
-		d.statsTracker.RecordStageDuration("demucs", time.Since(demucsStageStart))
+	if !demucsReleased {
+		d.demucsScheduler.Release()
+		demucsReleased = true
 	}
+	if !leaseReleased {
+		d.releaseExecutionAdmission(executionLease)
+		leaseReleased = true
+	}
+
+	var cpuResp *DaemonResponse
+	var gpuResp *DaemonResponse
+	var waveHash string
+	var waveSR int
+	var waveErr error
 
 	if sepErr != nil {
 		wavefront.Fail(sepErr)
-		wavefront.CloseInput()
-		_, _, _, _, _ = wavefront.Wait()
+	}
+	wavefront.CloseInput()
+	cpuResp, gpuResp, waveHash, waveSR, waveErr = wavefront.Wait()
+
+	var cleanupErr error
+	if err := d.gpuArbiter.Acquire(ctxPost); err == nil {
+		gpuClient, err := d.gpuDaemonPool.Acquire(ctxPost)
+		if err == nil {
+			cleanupErr = gpuClient.CleanupGPU(ctxPost)
+			d.gpuDaemonPool.Release(gpuClient)
+		} else {
+			cleanupErr = fmt.Errorf("acquire GPU daemon for cleanup: %w", err)
+		}
+		d.gpuArbiter.Release()
+	} else {
+		cleanupErr = fmt.Errorf("acquire GPU arbiter for cleanup: %w", err)
+	}
+
+	if sepErr != nil {
+		if cleanupErr != nil {
+			sepErr = fmt.Errorf("%w; additionally, GPU cleanup failed: %v", sepErr, cleanupErr)
+		}
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("Demucs daemon separation failed: %w", sepErr)
 	}
-	wavefront.CloseInput()
-	cpuResp, gpuResp, waveHash, waveSR, waveErr := wavefront.Wait()
+
 	if waveErr != nil {
+		if cleanupErr != nil {
+			waveErr = fmt.Errorf("%w; additionally, GPU cleanup failed: %v", waveErr, cleanupErr)
+		}
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("post-inference stem wavefront failed: %w", waveErr)
 	}
+
+	if cleanupErr != nil {
+		closeArenaOnError()
+		return "", 0, nil, nil, nil, fmt.Errorf("GPU cleanup failed: %w", cleanupErr)
+	}
+
 	if sepResp.AudioHash != waveHash || sepResp.SR != waveSR {
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("final Demucs response does not match stem transfer metadata")

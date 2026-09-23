@@ -57,6 +57,7 @@ type TaskPayload struct {
 	Artist             string           `json:"artist"`
 	Album              string           `json:"album"`
 	AlbumArtist        string           `json:"albumArtist"`
+	FileTrackCount     int              `json:"fileTrackCount,omitempty"`
 	Force              bool             `json:"force"`
 	RepairRecordID     int64            `json:"repairRecordId,omitzero"`
 	RepairAudioHash    string           `json:"repairAudioHash,omitempty"`

@@ -1,0 +1,17 @@
+@lrf=1|aud=GPT-5.6|scope=workload-scheduler
+R|goal|task:change|MUST|LW_SCOPE|schedule durable FLAC analysis work by workload shape and current resource capacity
+R|durable.shelf|*|MUST|LW_SCOPE|SQLite remains the acceptance boundary; CUE tracks from one request become visible atomically before scheduling
+R|ordering|*|MUST|LW_SCOPE|prefer smaller estimated track work when resources fit; preserve intake order for ties; age waiting work so long tracks cannot starve
+R|shape|*|MUST|LW_SCOPE|persist source track count and use sample bounds or conservative file-size estimate to classify track batches, long singles, and short singles
+R|cue.batch|*|MUST|LW_SCOPE|multi-track CUE work uses bounded per-track CPU lanes and scales track concurrency only within live RAM, CPU, disk, and GPU budgets
+R|long.single|*|MUST|LW_SCOPE|long single-track work uses one post-Demucs CPU lane and retains disk fallback and existing resource admission
+R|short.single|*|MUST|LW_SCOPE|short single-track work may fan out independent post-Demucs CPU stems up to stem count, worker capacity, and admission budget
+R|gpu|*|MUST|LW_SCOPE|Demucs inference remains serialized; Tensor work and Demucs share the existing GPU arbiter; no GPU daemon multiplication
+R|cache|*|MUST|LW_SCOPE|after CPU and GPU feature branches join, serialize PyTorch cache cleanup through GPU arbiter; only unreferenced allocator cache may be released
+R|lifecycle|*|MUST|LW_SCOPE|cancellation, failure, timeout, and shutdown release durable claims, RAM/disk leases, stem references, worker daemons, and GPU arbiter ownership exactly once
+R|compat|*|MUST|LW_SCOPE|legacy SQLite rows and task payloads without scheduler metadata remain claimable with conservative single-lane behavior
+R|non-goals|*|MUST_NOT|LW_SCOPE|deploy to the live host, raise Demucs concurrency above one, weaken GPU unknown-state blocking, or add production dependencies
+R|acceptance.sqlite|*|MUST|LW_SCOPE|batch insert is atomic; claims are deterministic; ties preserve FIFO; aging admits old large work; legacy schema opens without data loss
+R|acceptance.policy|*|MUST|LW_SCOPE|pure policy distinguishes many-track CUE, long single, and short single workloads and returns bounded lane plans
+R|acceptance.lifecycle|*|MUST|LW_SCOPE|branch join precedes cache cleanup; cancellation and failures leave no held leases or stem references
+R|acceptance.build|*|MUST|LW_SCOPE|project Go build completes; focused changed-path checks pass before push

@@ -368,3 +368,86 @@ func TestClaimSingleTaskStatusBoundaries(t *testing.T) {
 		t.Fatalf("force should reclaim completed task: claimed=%v err=%v", claimed, err)
 	}
 }
+func TestPendingTaskOrderSizeAging(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	db, err := InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	tasks := []CheckOrInsertTask{
+		{
+			FilePath:    "/test1.flac",
+			TrackNumber: 1,
+			PayloadJSON: `{"fileSize":1000000, "startSample":0, "endSample":44100}`, // duration 1s
+			Force:       true,
+		},
+		{
+			FilePath:    "/test2.flac",
+			TrackNumber: 1,
+			PayloadJSON: `{"fileSize":2000000, "startSample":0, "endSample":88200}`, // duration 2s
+			Force:       true,
+		},
+	}
+
+	results, err := db.CheckOrInsertBatch(tasks)
+	if err != nil {
+		t.Fatalf("CheckOrInsertBatch failed: %v", err)
+	}
+	if !results[0] || !results[1] {
+		t.Fatalf("CheckOrInsertBatch results %v", results)
+	}
+
+	claimed, err := db.ClaimPendingTasksInOrder(2, PendingTaskOrderSizeAging)
+	if err != nil {
+		t.Fatalf("ClaimPendingTasksInOrder failed: %v", err)
+	}
+	if len(claimed) != 2 {
+		t.Fatalf("Expected 2 claimed tasks, got %d", len(claimed))
+	}
+	if claimed[0].FilePath != "/test1.flac" {
+		t.Errorf("Expected /test1.flac first due to shorter duration, got %v", claimed[0].FilePath)
+	}
+}
+
+func TestBatchTransaction(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_batch.db")
+	db, err := InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	tasks := []CheckOrInsertTask{
+		{
+			FilePath:    "/test1.flac",
+			TrackNumber: 1,
+			PayloadJSON: "{}",
+			Force:       false,
+		},
+		{
+			FilePath:    "/test2.flac",
+			TrackNumber: 1,
+			PayloadJSON: "{}",
+			Force:       false,
+		},
+	}
+	results, err := db.CheckOrInsertBatch(tasks)
+	if err != nil {
+		t.Fatalf("CheckOrInsertBatch failed: %v", err)
+	}
+	if !results[0] || !results[1] {
+		t.Fatalf("Expected both to run")
+	}
+
+	results2, err := db.CheckOrInsertBatch(tasks)
+	if err != nil {
+		t.Fatalf("CheckOrInsertBatch failed: %v", err)
+	}
+	if results2[0] || results2[1] {
+		t.Fatalf("Expected both not to run on second try")
+	}
+}

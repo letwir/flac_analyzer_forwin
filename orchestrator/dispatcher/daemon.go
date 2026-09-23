@@ -270,6 +270,71 @@ func (c *WorkerDaemonClient) ExtractGPU(ctx context.Context, payload ExtractAllP
 	return c.extract(ctx, "extract_gpu", payload)
 }
 
+// CleanupGPU sends the cleanup_gpu request to worker_daemon.py
+func (c *WorkerDaemonClient) CleanupGPU(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("cleanup_gpu request cancelled before write: %w", err)
+	}
+	if c.closed || c.cmd == nil || c.cmd.Process == nil {
+		return fmt.Errorf("worker daemon %d is closed or dead", c.id)
+	}
+
+	reqID := fmt.Sprintf("req-%d-%d", c.id, time.Now().UnixNano())
+	req := DaemonRequest{
+		ID:     reqID,
+		Action: "cleanup_gpu",
+	}
+
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cleanup_gpu request: %w", err)
+	}
+
+	if _, err := c.stdin.Write(append(reqBytes, '\n')); err != nil {
+		_ = c.closeLocked()
+		return fmt.Errorf("failed to write cleanup_gpu request to daemon stdin: %w", err)
+	}
+
+	resultCh := make(chan error, 1)
+	go func() {
+		line, readErr := c.stdout.ReadString('\n')
+		if readErr != nil {
+			resultCh <- fmt.Errorf("failed to read cleanup_gpu response: %w", readErr)
+			return
+		}
+		var resp DaemonResponse
+		if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(line)), &resp); jsonErr != nil {
+			resultCh <- fmt.Errorf("invalid response JSON from daemon for cleanup_gpu: %w (raw: %s)", jsonErr, line)
+			return
+		}
+		if resp.Status != "success" {
+			errMsg := resp.Error
+			if errMsg == "" {
+				errMsg = "daemon returned non-success status for cleanup_gpu"
+			}
+			resultCh <- fmt.Errorf("daemon error (%s): %s", resp.ID, errMsg)
+			return
+		}
+		resultCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = c.closeLocked()
+		return fmt.Errorf("daemon CleanupGPU context cancelled: %w", ctx.Err())
+	case err := <-resultCh:
+		if err != nil {
+			_ = c.closeLocked()
+			return err
+		}
+		c.taskCount++
+		return nil
+	}
+}
+
 func (c *WorkerDaemonClient) extract(ctx context.Context, action string, payload ExtractAllPayload) (*DaemonResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
