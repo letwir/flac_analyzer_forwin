@@ -66,7 +66,7 @@ func (d *Dispatcher) fillTaskQueue() {
 		return
 	}
 
-	tasks, err := d.db.ClaimPendingTasks(availableSlots)
+	tasks, err := d.db.ClaimPendingTasksInOrder(availableSlots, state.PendingTaskOrderFIFO)
 	if err != nil {
 		d.LogError("[TaskFeeder] Failed to claim durable tasks: %v", err)
 		return

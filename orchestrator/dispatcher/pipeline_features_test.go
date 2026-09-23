@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -75,23 +76,96 @@ func TestRunFeatureLanesJoinsBackwardCompatibleOutputs(t *testing.T) {
 	}
 }
 
-func TestGPUArbiterSerialization(t *testing.T) {
-	d := &Dispatcher{
-		gpuArbiter: make(chan struct{}, 1),
+func TestGPUArbiterFIFO(t *testing.T) {
+	arbiter := NewGPUArbiter()
+	if err := arbiter.Acquire(t.Context()); err != nil { // Hold ownership
+		t.Fatal(err)
 	}
-	// Hold the arbiter lock
-	d.gpuArbiter <- struct{}{}
+
+	var order []int
+	acquired := make(chan struct{}, 3)
+	for i := range 3 {
+		go func(id int) {
+			if err := arbiter.Acquire(t.Context()); err != nil {
+				acquired <- struct{}{}
+				return
+			}
+			order = append(order, id)
+			arbiter.Release()
+			acquired <- struct{}{}
+		}(i)
+		waitForGPUArbiterWaiters(t, arbiter, i+1)
+	}
+
+	arbiter.Release() // Start the chain
+
+	for i := 0; i < 3; i++ {
+		<-acquired
+	}
+	if len(order) != 3 || order[0] != 0 || order[1] != 1 || order[2] != 2 {
+		t.Fatalf("expected FIFO order [0 1 2], got: %v", order)
+	}
+}
+
+func TestGPUArbiterCanceledWaiterRemoval(t *testing.T) {
+	arbiter := NewGPUArbiter()
+	if err := arbiter.Acquire(t.Context()); err != nil { // Hold ownership
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- arbiter.Acquire(ctx)
+	}()
+
+	waitForGPUArbiterWaiters(t, arbiter, 1)
+	cancel()
+	err := <-errCh
+	if err == nil {
+		t.Fatal("expected cancellation error, got nil")
+	}
+
+	arbiter.mu.Lock()
+	count := len(arbiter.waiters)
+	arbiter.mu.Unlock()
+	if count != 0 {
+		t.Fatalf("expected 0 waiters after cancellation, got: %d", count)
+	}
+}
+
+func waitForGPUArbiterWaiters(t *testing.T, arbiter *GPUArbiter, count int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		arbiter.mu.Lock()
+		waiters := len(arbiter.waiters)
+		arbiter.mu.Unlock()
+		if waiters == count {
+			return
+		}
+		runtime.Gosched()
+	}
+	t.Fatalf("GPU arbiter waiters did not reach %d before timeout", count)
+}
+
+func TestGPUArbiterRetryableDeadlineClassification(t *testing.T) {
+	d := &Dispatcher{
+		gpuArbiter: NewGPUArbiter(),
+	}
+	if err := d.gpuArbiter.Acquire(t.Context()); err != nil { // Hold the arbiter lock
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
 	defer cancel()
 
 	_, err := d.executeFeatureLane(ctx, FeatureLaneGPU, ExtractAllPayload{})
-	if err == nil || (!strings.Contains(err.Error(), "acquire GPU arbiter: context deadline exceeded") && !strings.Contains(err.Error(), "context canceled")) {
-		t.Fatalf("expected context canceled error during GPU arbiter acquire, got: %v", err)
+	if !errors.Is(err, ErrRetryableTimeout) {
+		t.Fatalf("expected ErrRetryableTimeout when GPU arbiter times out, got: %v", err)
 	}
 
-	// Release it
-	<-d.gpuArbiter
+	d.gpuArbiter.Release()
 
 	// Now it should pass the arbiter but fail at pool check
 	_, err = d.executeFeatureLane(t.Context(), FeatureLaneGPU, ExtractAllPayload{})

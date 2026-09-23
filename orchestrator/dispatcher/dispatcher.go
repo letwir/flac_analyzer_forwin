@@ -70,7 +70,7 @@ type Dispatcher struct {
 	gpuDaemonPool          *WorkerDaemonPool
 	demucsPool             *DemucsDaemonPool
 	demucsScheduler        *AdaptiveDemucsScheduler
-	gpuArbiter             chan struct{}
+	gpuArbiter             *GPUArbiter
 }
 
 func (d *Dispatcher) currentExecutionContext() context.Context {
@@ -169,7 +169,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		gpuDaemonPool:          gpuDaemonPool,
 		demucsPool:             demucsPool,
 		demucsScheduler:        demucsScheduler,
-		gpuArbiter:             make(chan struct{}, 1),
+		gpuArbiter:             NewGPUArbiter(),
 	}
 }
 

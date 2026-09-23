@@ -193,7 +193,7 @@ func TestRetryableLegacyTaskWithoutPayloadCanBeReleased(t *testing.T) {
 	}
 }
 
-func TestClaimPendingTasksPrefersShorterEstimatedDuration(t *testing.T) {
+func TestClaimPendingTasksUsesFIFORegardlessOfEstimatedDuration(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "orchestrator.db")
 	db, err := InitDB(dbPath)
 	if err != nil {
@@ -214,31 +214,42 @@ func TestClaimPendingTasksPrefersShorterEstimatedDuration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClaimPendingTasks failed: %v", err)
 	}
-	if len(claimed) != 2 || claimed[0].FilePath != "C:/music/short.flac" {
-		t.Fatalf("expected short task first, claimed=%#v", claimed)
+	if len(claimed) != 2 || claimed[0].FilePath != "C:/music/long.flac" || claimed[1].FilePath != "C:/music/short.flac" {
+		t.Fatalf("expected FIFO task order [long, short], claimed=%#v", claimed)
 	}
 }
 
-func TestClaimPendingTasksAgesLargeTaskAheadOfFreshSmallTask(t *testing.T) {
+func TestClaimPendingTasksFIFOIgnoresAgingPriority(t *testing.T) {
 	db, err := InitDB(filepath.Join(t.TempDir(), "orchestrator.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	longPayload := `{"flacPath":"C:/music/aged-long.flac","trackNumber":1,"startSample":0,"endSample":52920000,"sampleRate":44100}`
 	shortPayload := `{"flacPath":"C:/music/fresh-short.flac","trackNumber":1,"startSample":0,"endSample":441000,"sampleRate":44100}`
+	longPayload := `{"flacPath":"C:/music/aged-long.flac","trackNumber":1,"startSample":0,"endSample":52920000,"sampleRate":44100}`
+	if _, err := db.CheckOrInsertWithPayload("C:/music/fresh-short.flac", 1, shortPayload, false); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.CheckOrInsertWithPayload("C:/music/aged-long.flac", 1, longPayload, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.conn.Exec(`UPDATE task_state SET age_anchor_at = datetime('now', '-1801 seconds') WHERE file_path = ?`, "C:/music/aged-long.flac"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CheckOrInsertWithPayload("C:/music/fresh-short.flac", 1, shortPayload, false); err != nil {
+	claimed, err := db.ClaimPendingTasks(1)
+	if err != nil || len(claimed) != 1 || claimed[0].FilePath != "C:/music/fresh-short.flac" {
+		t.Fatalf("expected the earlier task first: claimed=%#v err=%v", claimed, err)
+	}
+}
+
+func TestClaimPendingTasksRejectsUnknownOrder(t *testing.T) {
+	db, err := InitDB(filepath.Join(t.TempDir(), "orchestrator.db"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, err := db.ClaimPendingTasks(1)
-	if err != nil || len(claimed) != 1 || claimed[0].FilePath != "C:/music/aged-long.flac" {
-		t.Fatalf("aged large task was starved: claimed=%#v err=%v", claimed, err)
+	defer db.Close()
+	if _, err := db.ClaimPendingTasksInOrder(1, "file_size"); err == nil {
+		t.Fatal("expected unsupported ordering to fail until a policy is implemented")
 	}
 }
 

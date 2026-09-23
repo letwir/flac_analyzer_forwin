@@ -32,6 +32,13 @@ type QueuedTask struct {
 	PayloadJSON string
 }
 
+// PendingTaskOrder selects the ordering policy used when claiming durable work.
+// Keep policy selection at this boundary so config-backed orderings can be
+// added without changing the feeder or its bounded-claim behavior.
+type PendingTaskOrder string
+
+const PendingTaskOrderFIFO PendingTaskOrder = "fifo"
+
 type priorityPayload struct {
 	FileSize    int64 `json:"fileSize"`
 	StartSample int64 `json:"startSample"`
@@ -70,6 +77,7 @@ type dbWriteOp struct {
 	force            bool
 	requeueCompleted bool
 	limit            int
+	order            PendingTaskOrder
 	delaySec         int
 	resChan          chan dbWriteResult
 }
@@ -157,7 +165,7 @@ func (db *DB) writerLoop() {
 				op.resChan <- dbWriteResult{err: err}
 			}
 		case "claim_pending":
-			tasks, err := db.execClaimPending(op.limit)
+			tasks, err := db.execClaimPending(op.limit, op.order)
 			if op.resChan != nil {
 				op.resChan <- dbWriteResult{tasks: tasks, err: err}
 			}
@@ -308,6 +316,9 @@ func (db *DB) migrateTables() error {
 	}
 	if _, err := db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_task_state_pending_priority ON task_state(status, priority_score, updated_at)`); err != nil {
 		return fmt.Errorf("failed to create pending priority index: %w", err)
+	}
+	if _, err := db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_task_state_pending_fifo ON task_state(status)`); err != nil {
+		return fmt.Errorf("failed to create pending FIFO index: %w", err)
 	}
 	return nil
 }
@@ -503,16 +514,28 @@ func (db *DB) execCheckOrInsert(filePath string, trackNumber int, payloadJSON st
 // in-memory QUEUED ownership. Only the feeder calls this method, but the
 // transaction also protects against a second dispatcher instance.
 func (db *DB) ClaimPendingTasks(limit int) ([]QueuedTask, error) {
+	return db.ClaimPendingTasksInOrder(limit, PendingTaskOrderFIFO)
+}
+
+// ClaimPendingTasksInOrder atomically claims a bounded batch using the requested
+// ordering policy. FIFO is the default and the only policy currently supported.
+func (db *DB) ClaimPendingTasksInOrder(limit int, order PendingTaskOrder) ([]QueuedTask, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
+	if order != PendingTaskOrderFIFO {
+		return nil, fmt.Errorf("unsupported pending task order %q", order)
+	}
 	resChan := make(chan dbWriteResult, 1)
-	db.opQueue <- dbWriteOp{opType: "claim_pending", limit: limit, resChan: resChan}
+	db.opQueue <- dbWriteOp{opType: "claim_pending", limit: limit, order: order, resChan: resChan}
 	res := <-resChan
 	return res.tasks, res.err
 }
 
-func (db *DB) execClaimPending(limit int) ([]QueuedTask, error) {
+func (db *DB) execClaimPending(limit int, order PendingTaskOrder) ([]QueuedTask, error) {
+	if order != PendingTaskOrderFIFO {
+		return nil, fmt.Errorf("unsupported pending task order %q", order)
+	}
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin pending-task claim: %w", err)
@@ -523,15 +546,7 @@ func (db *DB) execClaimPending(limit int) ([]QueuedTask, error) {
 		SELECT file_path, track_number, COALESCE(payload_json, '')
 		FROM task_state
 		WHERE status = ?
-		ORDER BY
-			CASE
-				WHEN COALESCE(age_anchor_at, updated_at) <= datetime('now', '-1800 seconds') THEN 0
-				WHEN priority_score > 0 AND priority_score <= 300 THEN 1
-				ELSE 2
-			END ASC,
-			CASE WHEN COALESCE(age_anchor_at, updated_at) <= datetime('now', '-1800 seconds') THEN COALESCE(age_anchor_at, updated_at) END ASC,
-			CASE WHEN priority_score > 0 THEN priority_score ELSE 1.0e18 END ASC,
-			file_path ASC, track_number ASC
+		ORDER BY rowid ASC
 		LIMIT ?
 	`, StatusPending, limit)
 	if err != nil {

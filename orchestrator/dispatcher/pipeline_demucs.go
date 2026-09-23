@@ -423,16 +423,18 @@ func (d *Dispatcher) executeDemucsStage(
 	}
 
 	gpuArbiterReleased := false
-	select {
-	case d.gpuArbiter <- struct{}{}:
-	case <-ctxDemucs.Done():
+	if err := d.gpuArbiter.Acquire(ctxDemucs); err != nil {
 		d.demucsPool.Release(demucsClient)
 		closeArenaOnError()
-		return "", 0, nil, nil, nil, ctxDemucs.Err()
+		// Preserve context cancellation versus our own internal timeouts.
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", 0, nil, nil, nil, fmt.Errorf("%w: failed to acquire GPU arbiter: %w", ErrRetryableTimeout, err)
+		}
+		return "", 0, nil, nil, nil, err
 	}
 	defer func() {
 		if !gpuArbiterReleased {
-			<-d.gpuArbiter
+			d.gpuArbiter.Release()
 		}
 	}()
 
@@ -464,7 +466,7 @@ func (d *Dispatcher) executeDemucsStage(
 	})
 
 	if !gpuArbiterReleased {
-		<-d.gpuArbiter
+		d.gpuArbiter.Release()
 		gpuArbiterReleased = true
 	}
 	d.demucsPool.Release(demucsClient)
