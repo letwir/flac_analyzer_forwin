@@ -61,7 +61,7 @@ func estimatePriorityScore(payloadJSON string) float64 {
 }
 
 type dbWriteOp struct {
-	opType           string // "check_or_insert", "update_status"
+	opType           string // "check_or_insert", "update_status", "count_waiting", etc.
 	filePath         string
 	trackNumber      int
 	payloadJSON      string
@@ -170,6 +170,11 @@ func (db *DB) writerLoop() {
 			err := db.execParkRetryable(op.filePath, op.trackNumber, op.errMsg, op.delaySec)
 			if op.resChan != nil {
 				op.resChan <- dbWriteResult{err: err}
+			}
+		case "count_waiting":
+			count, err := db.execCountWaitingTasks()
+			if op.resChan != nil {
+				op.resChan <- dbWriteResult{count: count, err: err}
 			}
 		case "flush":
 			if op.resChan != nil {
@@ -338,6 +343,27 @@ func (db *DB) backfillPriorityScores() error {
 		}
 	}
 	return nil
+}
+
+// CountWaitingTasks returns durable tasks awaiting a worker or retry eligibility.
+// The writer loop keeps this count ordered with queued status updates.
+func (db *DB) CountWaitingTasks() (int64, error) {
+	resChan := make(chan dbWriteResult, 1)
+	db.opQueue <- dbWriteOp{opType: "count_waiting", resChan: resChan}
+	res := <-resChan
+	return res.count, res.err
+}
+
+func (db *DB) execCountWaitingTasks() (int64, error) {
+	var count int64
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*) FROM task_state
+		WHERE status IN (?, ?, ?)
+	`, StatusPending, StatusQueued, StatusFailedMaybeRetry).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count durable waiting tasks: %w", err)
+	}
+	return count, nil
 }
 
 // ResetStaleTasks preserves durable PENDING work, resumes QUEUED work, and

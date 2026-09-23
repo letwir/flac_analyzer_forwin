@@ -170,11 +170,12 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 
 	if synchronousIngest {
 		d.processIngestPayloadComplex(ingestPayload)
+		d.LogInfo("[W-%d] Compute & tagging completed; synchronous DB ingest processing returned: %q", id, taskQueueLabel(task))
 	} else {
 		d.ingestQueue <- ingestPayload
+		d.LogInfo("[W-%d] Compute & tagging completed; sent to DB ingest queue: %q", id, taskQueueLabel(task))
 	}
 	taskSuccess = true
-	d.LogInfo("[W-%d] Compute & tagging completed, dispatched to IngestWorker: %s (Track %d)", id, task.FlacPath, task.TrackNumber)
 }
 
 // checkDuplicateHash determines if the track audio hash already exists in PostgreSQL.

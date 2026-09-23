@@ -94,6 +94,75 @@ func TestPoolPrewarmAndGauge(t *testing.T) {
 	}
 }
 
+func TestPoolPrewarmReservesSpawnAgainstConcurrentAcquire(t *testing.T) {
+	factoryStarted := make(chan struct{})
+	allowFactoryReturn := make(chan struct{})
+	acquireWaiting := make(chan struct{}, 1)
+	var spawnCount atomic.Int32
+	factory := func(id int, pythonPath, workingDir string, envVars []string, loggerFunc func(format string, v ...interface{})) (*DemucsDaemonClient, error) {
+		spawnCount.Add(1)
+		close(factoryStarted)
+		<-allowFactoryReturn
+		return fakeClient(id), nil
+	}
+	logger := func(format string, v ...interface{}) {
+		if strings.Contains(format, "Waiting for the reserved daemon spawn") {
+			acquireWaiting <- struct{}{}
+		}
+	}
+	pool := NewDemucsDaemonPoolWithFactory(1, "python", ".", nil, logger, factory)
+	t.Cleanup(func() { _ = pool.Close() })
+
+	prewarmDone := make(chan error, 1)
+	go func() { prewarmDone <- pool.Prewarm(t.Context(), 1) }()
+	select {
+	case <-factoryStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Prewarm did not enter the blocked factory")
+	}
+
+	acquired := make(chan *DemucsDaemonClient, 1)
+	acquireErr := make(chan error, 1)
+	go func() {
+		client, err := pool.Acquire(t.Context())
+		if err != nil {
+			acquireErr <- err
+			return
+		}
+		acquired <- client
+	}()
+	select {
+	case <-acquireWaiting:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Acquire did not wait for Prewarm's spawn reservation")
+	}
+
+	close(allowFactoryReturn)
+	select {
+	case err := <-prewarmDone:
+		if err != nil {
+			t.Fatalf("Prewarm failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Prewarm did not finish after factory returned")
+	}
+	select {
+	case client := <-acquired:
+		pool.Release(client)
+	case err := <-acquireErr:
+		t.Fatalf("Acquire failed: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("Acquire did not take the prewarmed client")
+	}
+
+	pool.mu.Lock()
+	clientCount := len(pool.clients)
+	pool.mu.Unlock()
+	if got := spawnCount.Load(); got != 1 || clientCount != 1 {
+		t.Fatalf("spawn count=%d, registered clients=%d; want exactly one", got, clientCount)
+	}
+}
+
 func TestPoolRestartFailureThenRecovery(t *testing.T) {
 	// First factory call succeeds (prewarm), second fails (restart), third succeeds (recovery)
 	factory, spawnCount := failNTimesFactory(0) // all succeed initially

@@ -314,7 +314,7 @@ func (d *Dispatcher) processIngestPayloadComplex(payload IngestPayload) {
 		return
 	}
 
-	d.LogInfo("[IngestWorker] Successfully ingested into PostgreSQL: %s (Track %d)", task.FlacPath, task.TrackNumber)
+	d.LogInfo("[IngestWorker] Successfully ingested into PostgreSQL: %q", taskQueueLabel(task))
 	d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "")
 	metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 }

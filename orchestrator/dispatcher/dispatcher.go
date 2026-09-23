@@ -35,6 +35,7 @@ type Dispatcher struct {
 	db                     *state.DB
 	pgDB                   *sql.DB
 	taskQueue              chan TaskPayload
+	queueIntakeSequence    atomic.Uint64
 	taskWakeCh             chan struct{}
 	taskFeederCtx          context.Context
 	cancelTaskFeeder       context.CancelFunc
@@ -283,9 +284,25 @@ func (d *Dispatcher) EnqueueDurable(task TaskPayload) (bool, error) {
 		return false, err
 	}
 	if shouldRun {
+		sequence := d.queueIntakeSequence.Add(1)
+		label := taskQueueLabel(task)
+		waiting, countErr := d.db.CountWaitingTasks()
+		if countErr != nil {
+			d.LogWarn("[TaskQueue] Queued #%d; durable waiting count unavailable: %v: %q", sequence, countErr, label)
+		} else {
+			d.LogInfo("[TaskQueue] Queued #%d; durable waiting=%d: %q", sequence, waiting, label)
+		}
 		d.notifyTaskFeeder()
 	}
 	return shouldRun, nil
+}
+
+func taskQueueLabel(task TaskPayload) string {
+	name := strings.TrimSpace(task.Title)
+	if name == "" {
+		name = filepath.Base(task.FlacPath)
+	}
+	return fmt.Sprintf("%s (Track %d)", name, task.TrackNumber)
 }
 
 // RegisterFileTracks registers the number of tracks expected for a FLAC file to measure overall file duration.

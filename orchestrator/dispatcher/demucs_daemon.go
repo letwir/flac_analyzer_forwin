@@ -447,31 +447,69 @@ func (p *DemucsDaemonPool) Prewarm(ctx context.Context, count int) error {
 	}
 
 	for len(p.clients) < count {
+		if p.isClosed {
+			return fmt.Errorf("DemucsDaemonPool is closed")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if p.spawning {
+			p.waitForChangeLocked(ctx)
+			continue
+		}
+
+		p.spawning = true
 		id := p.nextID
 		p.nextID++
 		p.loggerFunc("[DemucsDaemonPool] Prewarming DemucsDaemon-%d (VRAM model pre-load)...", id)
-		// Unlock during potentially slow process start
-		p.mu.Unlock()
-		client, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
-		p.mu.Lock()
+		_, err := p.spawnReservedLocked(id, true)
 		if err != nil {
 			return fmt.Errorf("failed to prewarm Demucs daemon-%d: %w", id, err)
 		}
-		if p.isClosed {
-			_ = client.Close()
-			return fmt.Errorf("DemucsDaemonPool closed during prewarm")
-		}
-		p.clients = append(p.clients, client)
-		p.idle = append(p.idle, client)
-		metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
-		p.cond.Broadcast()
 	}
 	return nil
+}
+
+// spawnReservedLocked starts one daemon while the caller owns p.spawning.
+// The caller enters and returns with p.mu locked.
+func (p *DemucsDaemonPool) spawnReservedLocked(id int, idle bool) (*DemucsDaemonClient, error) {
+	p.mu.Unlock()
+	client, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
+	p.mu.Lock()
+	p.spawning = false
+	defer p.cond.Broadcast()
+
+	if err != nil {
+		return nil, err
+	}
+	if p.isClosed {
+		_ = client.Close()
+		return nil, fmt.Errorf("DemucsDaemonPool closed during spawn")
+	}
+	p.clients = append(p.clients, client)
+	if idle {
+		p.idle = append(p.idle, client)
+	}
+	metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
+	return client, nil
+}
+
+// waitForChangeLocked integrates condition waits with context cancellation.
+// The caller enters and returns with p.mu locked.
+func (p *DemucsDaemonPool) waitForChangeLocked(ctx context.Context) {
+	stopWake := context.AfterFunc(ctx, func() {
+		p.mu.Lock()
+		p.cond.Broadcast()
+		p.mu.Unlock()
+	})
+	p.cond.Wait()
+	stopWake()
 }
 
 func (p *DemucsDaemonPool) Acquire(ctx context.Context) (*DemucsDaemonClient, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	spawnWaitLogged := false
 
 	for {
 		if p.isClosed {
@@ -503,24 +541,15 @@ func (p *DemucsDaemonPool) Acquire(ctx context.Context) (*DemucsDaemonClient, er
 			p.removeClientLocked(client)
 			metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
 
-			// Spawn replacement outside lock
-			p.mu.Unlock()
-			newClient, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
-			p.mu.Lock()
+			// Keep the freed slot reserved while the replacement starts.
+			p.spawning = true
+			newClient, err := p.spawnReservedLocked(id, false)
 
 			if err != nil {
 				p.loggerFunc("[DemucsDaemonPool] Failed to restart DemucsDaemon-%d: %v, capacity freed", id, err)
-				// Capacity is freed (client was removed). Wake waiters so they can try spawning.
-				p.cond.Broadcast()
 				// Return error but pool is not permanently broken
 				return nil, fmt.Errorf("DemucsDaemonPool restart DemucsDaemon-%d failed: %w", id, err)
 			}
-			if p.isClosed {
-				_ = newClient.Close()
-				return nil, fmt.Errorf("DemucsDaemonPool closed during restart")
-			}
-			p.clients = append(p.clients, newClient)
-			metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
 			return newClient, nil
 		}
 
@@ -530,38 +559,21 @@ func (p *DemucsDaemonPool) Acquire(ctx context.Context) (*DemucsDaemonClient, er
 			id := p.nextID
 			p.nextID++
 
-			p.mu.Unlock()
 			p.loggerFunc("[DemucsDaemonPool] Scaling up: Spawning new DemucsDaemon-%d...", id)
-			client, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
-			p.mu.Lock()
-			p.spawning = false
+			client, err := p.spawnReservedLocked(id, false)
 
 			if err != nil {
-				p.cond.Broadcast() // wake other waiters to retry
 				return nil, err
 			}
-			if p.isClosed {
-				_ = client.Close()
-				return nil, fmt.Errorf("DemucsDaemonPool closed during spawn")
-			}
-			p.clients = append(p.clients, client)
-			metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
 			return client, nil
 		}
 
-		// 3. At capacity and all busy: wait for signal with context awareness
-		// Use a done channel to integrate ctx cancellation with cond.Wait
-		done := make(chan struct{})
-		go func() {
-			select {
-			case <-ctx.Done():
-				p.cond.Broadcast() // wake the waiter
-			case <-done:
-			}
-		}()
-		p.cond.Wait()
-		close(done)
-		// Loop back to re-check conditions
+		// At capacity or while a spawn is reserved; wait for release or context cancellation.
+		if p.spawning && !spawnWaitLogged {
+			p.loggerFunc("[DemucsDaemonPool] Waiting for the reserved daemon spawn to finish...")
+			spawnWaitLogged = true
+		}
+		p.waitForChangeLocked(ctx)
 	}
 }
 
@@ -585,25 +597,14 @@ func (p *DemucsDaemonPool) Release(client *DemucsDaemonClient) {
 		p.removeClientLocked(client)
 		metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
 
-		// Attempt restart outside lock
-		p.mu.Unlock()
-		newClient, err := p.factory(id, p.pythonPath, p.workingDir, p.envVars, p.loggerFunc)
-		p.mu.Lock()
+		// Reserve the slot through recycle, just like every other spawn path.
+		p.spawning = true
+		_, err := p.spawnReservedLocked(id, true)
 
 		if err != nil {
 			p.loggerFunc("[DemucsDaemonPool] Failed to recycle DemucsDaemon-%d: %v, capacity freed for future spawn", id, err)
-			// Capacity freed. Wake waiters to allow re-spawn.
-			p.cond.Broadcast()
 			return
 		}
-		if p.isClosed {
-			_ = newClient.Close()
-			return
-		}
-		p.clients = append(p.clients, newClient)
-		p.idle = append(p.idle, newClient)
-		metrics.AnalyzerDemucsDaemonPoolSize.Set(float64(len(p.clients)))
-		p.cond.Broadcast()
 		return
 	}
 

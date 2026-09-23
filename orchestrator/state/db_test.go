@@ -39,6 +39,54 @@ func TestDurableTaskLifecycle(t *testing.T) {
 	}
 }
 
+func TestCountWaitingTasksCountsDurableWaitingStatuses(t *testing.T) {
+	db, err := InitDB(filepath.Join(t.TempDir(), "orchestrator.db"))
+	if err != nil {
+		t.Fatalf("InitDB failed: %v", err)
+	}
+	defer db.Close()
+
+	paths := []string{
+		"C:/music/task-1.flac",
+		"C:/music/task-2.flac",
+		"C:/music/task-3.flac",
+		"C:/music/task-4.flac",
+		"C:/music/task-5.flac",
+	}
+	for _, path := range paths {
+		if _, err := db.CheckOrInsertWithPayload(path, 1, `{"trackNumber":1}`, false); err != nil {
+			t.Fatalf("register %s: %v", path, err)
+		}
+	}
+
+	claimed, err := db.ClaimPendingTasks(len(paths) - 2)
+	if err != nil || len(claimed) != len(paths)-2 {
+		t.Fatalf("claim tasks: count=%d err=%v", len(claimed), err)
+	}
+	if err := db.UpdateStatus(claimed[0].FilePath, claimed[0].TrackNumber, StatusRunning, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpdateStatus(claimed[1].FilePath, claimed[1].TrackNumber, StatusCompleted, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpdateStatus(paths[3], 1, StatusFailedMaybeRetry, "resource gate"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Flush(); err != nil {
+		t.Fatalf("flush status updates: %v", err)
+	}
+
+	got, err := db.CountWaitingTasks()
+	if err != nil {
+		t.Fatalf("CountWaitingTasks failed: %v", err)
+	}
+	// One queued, one retryable, and one pending task are waiting. RUNNING and
+	// COMPLETED rows must not be reported as queue backlog.
+	if got != 3 {
+		t.Fatalf("CountWaitingTasks()=%d, want 3", got)
+	}
+}
+
 func TestOpenReadOnlyDoesNotCreateOrModifyStateDB(t *testing.T) {
 	missingPath := filepath.Join(t.TempDir(), "missing.db")
 	if db, err := OpenReadOnly(missingPath); err == nil {

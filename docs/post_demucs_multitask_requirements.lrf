@@ -15,3 +15,10 @@ R|acceptance.overlap|*|MUST|LW_SCOPE|test proves Track B Demucs starts while Tra
 R|acceptance.gpu|*|MUST|LW_SCOPE|test proves Demucs and Tensor GPU work never exceed the configured shared GPU budget
 R|acceptance.lifecycle|*|MUST|LW_SCOPE|test covers out-of-order stems, duplicate/partial handoff, cancellation, timeout, post-lane failure, SHM reference release, and zero residual leases
 R|acceptance.regression|*|MUST|LW_SCOPE|focused Go tests plus project-native checks pass; exact diff confirms only the requirement file and bounded implementation/test files changed
+R|daemon.spawn_reservation|*|MUST|LW_SCOPE|prewarm, dead-client restart, and on-demand acquire share one atomic spawn reservation; an in-flight spawn counts against capacity and close/failure clears the reservation and wakes waiters
+R|queue.visibility|*|MUST|LW_SCOPE|log each newly persisted task once with a process-local intake ordinal and a live durable waiting count covering PENDING, QUEUED, and FAILED_MAYBE_RETRY rows; duplicate enqueue is not logged as a new item
+R|task.label|*|MUST|LW_SCOPE|queue, Demucs, post-analysis, and ingest-handoff logs identify the same task by readable title or file basename plus track number
+R|phase.logs|*|MUST|LW_SCOPE|log serialized Demucs start, post-Demucs feature processing start, and post-analysis handoff to the DB ingest queue; distinguish queue handoff from confirmed PostgreSQL success
+R|pipeline.overlap|*|MUST|LW_SCOPE|retain bounded durable feeder behavior and existing cross-track CPU post-Demucs overlap; do not add unbounded admission or serialize the DB ingest worker
+R|acceptance.spawn_race|*|MUST|LW_SCOPE|deterministic concurrency test blocks prewarm factory while Acquire races and proves exactly one Demucs client is spawned and registered
+R|acceptance.queue_log|*|MUST|LW_SCOPE|focused tests prove durable waiting count includes PENDING, QUEUED, and FAILED_MAYBE_RETRY while excluding RUNNING and completed rows

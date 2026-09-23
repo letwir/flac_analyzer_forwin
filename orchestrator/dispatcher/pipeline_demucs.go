@@ -436,6 +436,8 @@ func (d *Dispatcher) executeDemucsStage(
 		}
 	}()
 
+	d.LogInfo("[DemucsQueue] Processing next queued item: %q", taskQueueLabel(task))
+	downstreamLogged := false
 	sepResp, sepErr := demucsClient.SeparateWithEvents(ctxDemucs, DemucsSeparatePayload{
 		RequestID:      requestID,
 		FlacPath:       task.FlacPath,
@@ -451,7 +453,14 @@ func (d *Dispatcher) executeDemucsStage(
 		if err := freezeStemForWavefront(storageMode, arenaSet, event.Stem); err != nil {
 			return err
 		}
-		return wavefront.Publish(event)
+		if err := wavefront.Publish(event); err != nil {
+			return err
+		}
+		if !downstreamLogged {
+			d.LogInfo("[DemucsQueue] Stem ready; parallel feature processing started, DB ingest follows: %q", taskQueueLabel(task))
+			downstreamLogged = true
+		}
+		return nil
 	})
 
 	if !gpuArbiterReleased {
@@ -549,6 +558,7 @@ func (d *Dispatcher) executeMixOnlyStage(id int, task TaskPayload, storageMode S
 		closeOnError()
 		return "", nil, nil, fmt.Errorf("acquire decoder daemon: %w", err)
 	}
+	d.LogInfo("[DemucsQueue] Processing next queued item: %q", taskQueueLabel(task))
 	endSample := task.EndSample
 	if endSample == 0 {
 		endSample = -1
