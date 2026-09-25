@@ -38,8 +38,9 @@ type QueuedTask struct {
 type PendingTaskOrder string
 
 const (
-	PendingTaskOrderFIFO      PendingTaskOrder = "fifo"
-	PendingTaskOrderSizeAging PendingTaskOrder = "size-aging"
+	PendingTaskOrderFIFO          PendingTaskOrder = "fifo"
+	PendingTaskOrderSizeAscending PendingTaskOrder = "file-size"
+	PendingTaskOrderSizeAging     PendingTaskOrder = "size-aging"
 )
 
 type priorityPayload struct {
@@ -549,7 +550,7 @@ func (db *DB) ClaimPendingTasksInOrder(limit int, order PendingTaskOrder) ([]Que
 	if limit <= 0 {
 		return nil, nil
 	}
-	if order != PendingTaskOrderFIFO && order != PendingTaskOrderSizeAging {
+	if order != PendingTaskOrderFIFO && order != PendingTaskOrderSizeAscending && order != PendingTaskOrderSizeAging {
 		return nil, fmt.Errorf("unsupported pending task order %q", order)
 	}
 	resChan := make(chan dbWriteResult, 1)
@@ -559,7 +560,7 @@ func (db *DB) ClaimPendingTasksInOrder(limit int, order PendingTaskOrder) ([]Que
 }
 
 func (db *DB) execClaimPending(limit int, order PendingTaskOrder) ([]QueuedTask, error) {
-	if order != PendingTaskOrderFIFO && order != PendingTaskOrderSizeAging {
+	if order != PendingTaskOrderFIFO && order != PendingTaskOrderSizeAscending && order != PendingTaskOrderSizeAging {
 		return nil, fmt.Errorf("unsupported pending task order %q", order)
 	}
 	tx, err := db.conn.Begin()
@@ -569,8 +570,13 @@ func (db *DB) execClaimPending(limit int, order PendingTaskOrder) ([]QueuedTask,
 	defer tx.Rollback()
 
 	orderByClause := "ORDER BY rowid ASC"
-	if order == PendingTaskOrderSizeAging {
-		orderByClause = "ORDER BY (priority_score - (julianday('now') - julianday(age_anchor_at)) * 86400.0) ASC, rowid ASC"
+	if order == PendingTaskOrderSizeAscending || order == PendingTaskOrderSizeAging {
+		orderByClause = `ORDER BY CASE
+			WHEN json_valid(COALESCE(payload_json, ''))
+				AND CAST(json_extract(payload_json, '$.fileSize') AS INTEGER) > 0
+			THEN CAST(json_extract(payload_json, '$.fileSize') AS INTEGER)
+			ELSE 9223372036854775807
+		END ASC, rowid ASC`
 	}
 
 	query := fmt.Sprintf(`

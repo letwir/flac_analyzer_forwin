@@ -125,6 +125,13 @@ func setupTaskServer(
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
 		}
+		fileInfo, err := os.Stat(payload.FlacPath)
+		if err != nil || fileInfo.IsDir() {
+			http.Error(w, "FLAC file is unavailable", http.StatusBadRequest)
+			return
+		}
+		// The scheduler orders by actual on-disk bytes, not caller-supplied metadata.
+		payload.FileSize = fileInfo.Size()
 
 		// 1. Inspect CUE / FLAC tags automatically (throttled by semaphore)
 		cueInspectSem <- struct{}{}

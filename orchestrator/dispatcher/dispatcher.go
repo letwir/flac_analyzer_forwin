@@ -35,6 +35,7 @@ type Dispatcher struct {
 	db                     *state.DB
 	pgDB                   *sql.DB
 	taskQueue              chan TaskPayload
+	workerReadyCh          chan struct{}
 	queueIntakeSequence    atomic.Uint64
 	taskWakeCh             chan struct{}
 	taskFeederCtx          context.Context
@@ -136,19 +137,17 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 
 	ingestCtx, cancelIngest := context.WithCancel(context.Background())
 	taskFeederCtx, cancelTaskFeeder := context.WithCancel(context.Background())
-	queueCapacity := cfg.NumWorkers * 2
-	if queueCapacity < 2 {
-		queueCapacity = 2
-	}
-	if queueCapacity > 64 {
-		queueCapacity = 64
+	readyCapacity := cfg.NumWorkers
+	if readyCapacity < 1 {
+		readyCapacity = 1
 	}
 
 	return &Dispatcher{
 		config:                 cfg,
 		db:                     db,
 		pgDB:                   pgConn,
-		taskQueue:              make(chan TaskPayload, queueCapacity),
+		taskQueue:              make(chan TaskPayload),
+		workerReadyCh:          make(chan struct{}, readyCapacity),
 		taskWakeCh:             make(chan struct{}, 1),
 		taskFeederCtx:          taskFeederCtx,
 		cancelTaskFeeder:       cancelTaskFeeder,
@@ -269,6 +268,11 @@ func (d *Dispatcher) Enqueue(task TaskPayload) error {
 // EnqueueDurable returns false when the task was already completed, active, or
 // durably queued. The payload is stored before the caller acknowledges intake.
 func (d *Dispatcher) EnqueueDurable(task TaskPayload) (bool, error) {
+	var err error
+	task, err = taskWithActualFileSize(task)
+	if err != nil {
+		return false, err
+	}
 	planned, err := d.prepareAnalysisTasks(d.currentExecutionContext(), []TaskPayload{task})
 	if err != nil {
 		return false, fmt.Errorf("preflight failed: %w", err)
@@ -312,7 +316,15 @@ func (d *Dispatcher) EnqueueDurableBatch(tasks []TaskPayload) ([]bool, error) {
 	if len(tasks) == 0 {
 		return nil, nil
 	}
-	planned, err := d.prepareAnalysisTasks(d.currentExecutionContext(), tasks)
+	sizedTasks := make([]TaskPayload, len(tasks))
+	for i, task := range tasks {
+		sized, err := taskWithActualFileSize(task)
+		if err != nil {
+			return nil, err
+		}
+		sizedTasks[i] = sized
+	}
+	planned, err := d.prepareAnalysisTasks(d.currentExecutionContext(), sizedTasks)
 	if err != nil {
 		return nil, fmt.Errorf("preflight failed: %w", err)
 	}
@@ -364,6 +376,21 @@ func (d *Dispatcher) EnqueueDurableBatch(tasks []TaskPayload) ([]bool, error) {
 		}
 	}
 	return results, nil
+}
+
+func taskWithActualFileSize(task TaskPayload) (TaskPayload, error) {
+	if strings.TrimSpace(task.FlacPath) == "" {
+		return TaskPayload{}, fmt.Errorf("cannot determine file size for empty FLAC path")
+	}
+	info, err := os.Stat(task.FlacPath)
+	if err != nil {
+		return TaskPayload{}, fmt.Errorf("stat FLAC file %s for queue ordering: %w", task.FlacPath, err)
+	}
+	if info.IsDir() {
+		return TaskPayload{}, fmt.Errorf("stat FLAC file %s for queue ordering: path is a directory", task.FlacPath)
+	}
+	task.FileSize = info.Size()
+	return task, nil
 }
 
 func taskQueueLabel(task TaskPayload) string {
@@ -430,7 +457,17 @@ func (d *Dispatcher) failTask(task TaskPayload, errMsg string) {
 func (d *Dispatcher) worker(id int) {
 	defer d.wg.Done()
 
-	for task := range d.taskQueue {
+	for {
+		select {
+		case <-d.taskFeederCtx.Done():
+			return
+		case d.workerReadyCh <- struct{}{}:
+		}
+
+		task, ok := <-d.taskQueue
+		if !ok {
+			return
+		}
 		atomic.AddInt32(&d.activeTaskCount, 1)
 		func() {
 			defer atomic.AddInt32(&d.activeTaskCount, -1)

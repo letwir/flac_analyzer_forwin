@@ -37,59 +37,69 @@ func (d *Dispatcher) taskFeeder() {
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+	readyWorkers := 0
 
 	for {
+		if d.taskFeederCtx.Err() != nil {
+			return
+		}
 		select {
 		case <-d.taskFeederCtx.Done():
 			return
 		case <-d.taskWakeCh:
-			d.fillTaskQueue()
+			readyWorkers = d.fillTaskQueue(readyWorkers)
+		case <-d.workerReadyCh:
+			readyWorkers++
+			readyWorkers = d.fillTaskQueue(readyWorkers)
 		case <-ticker.C:
-			d.fillTaskQueue()
+			readyWorkers = d.fillTaskQueue(readyWorkers)
 		}
 	}
 }
 
-func (d *Dispatcher) fillTaskQueue() {
-	availableSlots := cap(d.taskQueue) - len(d.taskQueue)
-	if availableSlots <= 0 {
-		return
+func (d *Dispatcher) fillTaskQueue(readyWorkers int) int {
+	if readyWorkers <= 0 {
+		return 0
 	}
 	cfg := d.GetConfig()
 	retryDelay := cfg.GatekeeperRetryDelaySec
 	if retryDelay <= 0 {
 		retryDelay = 20
 	}
-	// Eligible parked tasks re-enter the same atomic claim path even while
-	// smaller work is active; next_evaluation_at prevents retry spinning.
-	if _, err := d.db.RequeueRetryableTasks(availableSlots, retryDelay); err != nil {
-		d.LogError("[TaskFeeder] Failed to release retryable tasks: %v", err)
-		return
-	}
-
-	tasks, err := d.db.ClaimPendingTasksInOrder(availableSlots, state.PendingTaskOrderSizeAging)
-	if err != nil {
-		d.LogError("[TaskFeeder] Failed to claim durable tasks: %v", err)
-		return
-	}
-	decoded := make([]TaskPayload, 0, len(tasks))
-	for _, queued := range tasks {
-		task, err := decodeQueuedTask(queued)
+	for readyWorkers > 0 {
+		if d.taskFeederCtx.Err() != nil {
+			break
+		}
+		// Claim only when a worker is waiting. This keeps every unstarted item
+		// PENDING in SQLite so each intake can affect the next size comparison.
+		if _, err := d.db.RequeueRetryableTasks(1, retryDelay); err != nil {
+			d.LogError("[TaskFeeder] Failed to release retryable tasks: %v", err)
+			break
+		}
+		queued, err := d.db.ClaimPendingTasksInOrder(1, state.PendingTaskOrderSizeAscending)
 		if err != nil {
-			d.db.UpdateStatus(queued.FilePath, queued.TrackNumber, state.StatusFailedMaybeRetry, err.Error())
+			d.LogError("[TaskFeeder] Failed to claim durable task: %v", err)
+			break
+		}
+		if len(queued) == 0 {
+			break
+		}
+		task, err := decodeQueuedTask(queued[0])
+		if err != nil {
+			_ = d.db.UpdateStatus(queued[0].FilePath, queued[0].TrackNumber, state.StatusFailedMaybeRetry, err.Error())
 			continue
 		}
-		decoded = append(decoded, task)
-	}
-	planned, err := d.prepareAnalysisTasks(d.taskFeederCtx, decoded)
-	if err != nil {
-		for _, task := range decoded {
+		planned, err := d.prepareAnalysisTasks(d.taskFeederCtx, []TaskPayload{task})
+		if err != nil {
 			_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailedMaybeRetry, err.Error())
+			d.LogError("[TaskFeeder] Analysis preflight failed closed: %v", err)
+			break
 		}
-		d.LogError("[TaskFeeder] Analysis preflight failed closed: %v", err)
-		return
-	}
-	for _, task := range planned {
+		if len(planned) == 0 {
+			_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailedMaybeRetry, "analysis preflight returned no task")
+			break
+		}
+		task = planned[0]
 		if task.AnalysisDecision == Skip {
 			_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusCompleted, "analysis preflight: complete")
 			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
@@ -99,15 +109,41 @@ func (d *Dispatcher) fillTaskQueue() {
 			d.parkTaskForAdmission(task, err)
 			continue
 		}
-		d.taskQueue <- task
-		metrics.AnalyzerQueueLength.Inc()
+		select {
+		case d.taskQueue <- task:
+			metrics.AnalyzerQueueLength.Inc()
+			readyWorkers--
+		case <-d.taskFeederCtx.Done():
+			d.releaseUnstartedTaskAdmission(task)
+			_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusPending, "feeder stopped before worker handoff")
+			return readyWorkers
+		}
 	}
-	if len(tasks) > 0 && d.statsTracker != nil {
-		d.statsTracker.SetQueueLength(len(d.taskQueue))
-		return
+	if d.statsTracker != nil {
+		if waiting, err := d.db.CountWaitingTasks(); err == nil {
+			queued := int(waiting) - int(atomic.LoadInt32(&d.activeTaskCount))
+			if queued < 0 {
+				queued = 0
+			}
+			d.statsTracker.SetQueueLength(queued)
+		}
 	}
 	if len(d.taskQueue) == 0 && atomic.LoadInt32(&d.activeTaskCount) == 0 && d.cpuDaemonPool != nil {
 		d.cpuDaemonPool.TrimIdle(1)
+	}
+	return readyWorkers
+}
+
+func (d *Dispatcher) releaseUnstartedTaskAdmission(task TaskPayload) {
+	key := admissionKey(task)
+	d.inFlightMutex.Lock()
+	ramLease, hasRAMLease := d.ramAdmissions[key]
+	d.inFlightMutex.Unlock()
+	if hasRAMLease {
+		d.releaseRamAdmission(task, ramLease)
+	}
+	if lease, ok := d.takeTaskAdmission(task); ok {
+		d.releaseTaskAdmission(task, lease)
 	}
 }
 

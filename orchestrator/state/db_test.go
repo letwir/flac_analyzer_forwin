@@ -368,7 +368,7 @@ func TestClaimSingleTaskStatusBoundaries(t *testing.T) {
 		t.Fatalf("force should reclaim completed task: claimed=%v err=%v", claimed, err)
 	}
 }
-func TestPendingTaskOrderSizeAging(t *testing.T) {
+func TestPendingTaskOrderUsesFileSizeAscending(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 	db, err := InitDB(dbPath)
@@ -400,15 +400,73 @@ func TestPendingTaskOrderSizeAging(t *testing.T) {
 		t.Fatalf("CheckOrInsertBatch results %v", results)
 	}
 
-	claimed, err := db.ClaimPendingTasksInOrder(2, PendingTaskOrderSizeAging)
+	claimed, err := db.ClaimPendingTasksInOrder(2, PendingTaskOrderSizeAscending)
 	if err != nil {
 		t.Fatalf("ClaimPendingTasksInOrder failed: %v", err)
 	}
 	if len(claimed) != 2 {
 		t.Fatalf("Expected 2 claimed tasks, got %d", len(claimed))
 	}
-	if claimed[0].FilePath != "/test1.flac" {
-		t.Errorf("Expected /test1.flac first due to shorter duration, got %v", claimed[0].FilePath)
+	if claimed[0].FilePath != "/test1.flac" || claimed[1].FilePath != "/test2.flac" {
+		t.Fatalf("expected byte-size order [/test1.flac /test2.flac], got [%s %s]", claimed[0].FilePath, claimed[1].FilePath)
+	}
+}
+
+func TestFileSizeOrderReevaluatesNewPendingTasks(t *testing.T) {
+	db, err := InitDB(filepath.Join(t.TempDir(), "orchestrator.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	for _, task := range []CheckOrInsertTask{
+		{FilePath: "/music/large.flac", TrackNumber: 1, PayloadJSON: `{"fileSize":9000}`},
+		{FilePath: "/music/medium.flac", TrackNumber: 1, PayloadJSON: `{"fileSize":4000}`},
+		{FilePath: "/music/new-small.flac", TrackNumber: 1, PayloadJSON: `{"fileSize":1200}`},
+	} {
+		if _, err := db.CheckOrInsertBatch([]CheckOrInsertTask{task}); err != nil {
+			t.Fatalf("enqueue %s: %v", task.FilePath, err)
+		}
+	}
+
+	first, err := db.ClaimPendingTasksInOrder(1, PendingTaskOrderSizeAscending)
+	if err != nil || len(first) != 1 || first[0].FilePath != "/music/new-small.flac" {
+		t.Fatalf("new smaller arrival was not selected first: tasks=%#v err=%v", first, err)
+	}
+	remaining, err := db.ClaimPendingTasksInOrder(2, PendingTaskOrderSizeAscending)
+	if err != nil || len(remaining) != 2 || remaining[0].FilePath != "/music/medium.flac" || remaining[1].FilePath != "/music/large.flac" {
+		t.Fatalf("remaining tasks not sorted by size: tasks=%#v err=%v", remaining, err)
+	}
+}
+
+func TestFileSizeOrderUsesEnqueueOrderForTiesAndPutsUnknownLast(t *testing.T) {
+	db, err := InitDB(filepath.Join(t.TempDir(), "orchestrator.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	tasks := []CheckOrInsertTask{
+		{FilePath: "/music/equal-first.flac", TrackNumber: 1, PayloadJSON: `{"fileSize":2000}`},
+		{FilePath: "/music/unknown.flac", TrackNumber: 1, PayloadJSON: `{"fileSize":0}`},
+		{FilePath: "/music/equal-second.flac", TrackNumber: 1, PayloadJSON: `{"fileSize":2000}`},
+		{FilePath: "/music/invalid.flac", TrackNumber: 1, PayloadJSON: `not-json`},
+	}
+	if _, err := db.CheckOrInsertBatch(tasks); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := db.ClaimPendingTasksInOrder(len(tasks), PendingTaskOrderSizeAscending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/music/equal-first.flac", "/music/equal-second.flac", "/music/unknown.flac", "/music/invalid.flac"}
+	if len(claimed) != len(want) {
+		t.Fatalf("claimed %d tasks, want %d", len(claimed), len(want))
+	}
+	for i := range want {
+		if claimed[i].FilePath != want[i] {
+			t.Fatalf("task[%d]=%s, want %s; all=%#v", i, claimed[i].FilePath, want[i], claimed)
+		}
 	}
 }
 

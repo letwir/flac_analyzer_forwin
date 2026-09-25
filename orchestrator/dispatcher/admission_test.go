@@ -251,11 +251,15 @@ func TestDurableFeederParksBlockedTasksWithoutOccupyingWorkers(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	workerCtx, stopWorkers := context.WithCancel(context.Background())
+	defer stopWorkers()
 	completed := make(chan TaskPayload, 4)
 	d := &Dispatcher{
 		config:         Config{GatekeeperRetryDelaySec: 60},
 		db:             db,
-		taskQueue:      make(chan TaskPayload, 8),
+		taskQueue:      make(chan TaskPayload),
+		workerReadyCh:  make(chan struct{}, 4),
+		taskFeederCtx:  workerCtx,
 		parkLogReasons: make(map[string]time.Time),
 		prepareAnalysisFn: func(_ context.Context, tasks []TaskPayload) ([]TaskPayload, error) {
 			for i := range tasks {
@@ -286,7 +290,8 @@ func TestDurableFeederParksBlockedTasksWithoutOccupyingWorkers(t *testing.T) {
 		d.wg.Add(1)
 		go d.worker(id)
 	}
-	d.fillTaskQueue()
+	d.fillTaskQueue(4)
+	stopWorkers()
 	close(d.taskQueue)
 	d.wg.Wait()
 	close(completed)
