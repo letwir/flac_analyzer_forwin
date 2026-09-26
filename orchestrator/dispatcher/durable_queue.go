@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -105,9 +106,22 @@ func (d *Dispatcher) fillTaskQueue(readyWorkers int) int {
 			metrics.AnalyzerTasksTotal.WithLabelValues("success").Inc()
 			continue
 		}
-		if _, err := d.tryReserveTaskAdmission(task); err != nil {
-			d.parkTaskForAdmission(task, err)
+		lease, err := d.tryReserveTaskAdmission(task)
+		if err != nil {
+			if errors.Is(err, ErrPermanentBudgetExcess) {
+				_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailed, err.Error())
+				metrics.AnalyzerTasksTotal.WithLabelValues("failed").Inc()
+			} else {
+				d.parkTaskForAdmission(task, err)
+			}
 			continue
+		}
+		if d.reserveTaskFn == nil {
+			if err := d.recheckTaskAdmissionBeforeDispatch(task, lease); err != nil {
+				d.releaseUnstartedTaskAdmission(task)
+				d.parkTaskForAdmission(task, err)
+				continue
+			}
 		}
 		select {
 		case d.taskQueue <- task:

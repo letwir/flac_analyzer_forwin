@@ -256,7 +256,7 @@ func (d *Dispatcher) executeDemucsStage(
 	cacheDir string,
 	currentCfg Config,
 	stems []string,
-) (string, int, map[string]StemInfo, *WorkerArenaSet, *FeatureOutputs, error) {
+) (audioHash string, sampleRate int, stemInfos map[string]StemInfo, resultArenaSet *WorkerArenaSet, features *FeatureOutputs, retErr error) {
 	demucsTimeoutDur := ComputeAdaptiveTimeoutPure(
 		task,
 		currentCfg.DemucsTimeoutSec,
@@ -285,10 +285,13 @@ func (d *Dispatcher) executeDemucsStage(
 	var arenaSet *WorkerArenaSet
 	var tagsMap map[string]string
 	var allocError error
+	var arenaCleanupErr error
+	defer func() {
+		retErr = errors.Join(retErr, arenaCleanupErr)
+	}()
 	closeArenaOnError := func() {
 		if arenaSet != nil {
-			_ = arenaSet.UnfreezeAll()
-			arenaSet.Close()
+			arenaCleanupErr = errors.Join(arenaCleanupErr, arenaSet.UnfreezeAll(), arenaSet.Close())
 			arenaSet = nil
 		}
 	}
@@ -544,7 +547,7 @@ func (d *Dispatcher) executeDemucsStage(
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, err
 	}
-	features, err := joinFeatureLaneResponses(cpuResp, gpuResp)
+	joinedFeatures, err := joinFeatureLaneResponses(cpuResp, gpuResp)
 	if err != nil {
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("join stem wavefront features: %w", err)
@@ -569,7 +572,7 @@ func (d *Dispatcher) executeDemucsStage(
 		}
 	}
 
-	return sepResp.AudioHash, demucsSR, sepResp.Stems, arenaSet, features, nil
+	return sepResp.AudioHash, demucsSR, sepResp.Stems, arenaSet, joinedFeatures, nil
 }
 
 // executeMixOnlyStage decodes the original mix into one bounded backing area

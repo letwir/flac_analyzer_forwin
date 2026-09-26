@@ -72,7 +72,7 @@ func canReserveRamPure(reserved, request, totalPhys uint64, maxRamRatio float64)
 	if totalPhys == 0 || maxRamRatio <= 0 || maxRamRatio > 1 {
 		return false
 	}
-	budget := uint64(float64(totalPhys) * maxRamRatio)
+	budget := ramBudget(totalPhys, maxRamRatio)
 	return request <= budget && reserved <= budget-request
 }
 
@@ -119,7 +119,11 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 	// 1. Disk Space Check (Storage Defense)
 	requiredDisk := in.MinAvailDisk
 	if in.StorageMode == StorageModeDisk {
-		requiredDisk += in.EstimatedTaskDisk
+		var ok bool
+		requiredDisk, ok = checkedAddUint64(requiredDisk, in.EstimatedTaskDisk)
+		if !ok {
+			return GatekeeperDecision{Reason: "required disk estimate overflow", StorageMode: in.StorageMode}
+		}
 	}
 	if requiredDisk > 0 && in.AvailDisk < requiredDisk {
 		return GatekeeperDecision{
@@ -145,7 +149,10 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 	// Disk Mode intentionally separates the task's working-set reservation
 	// from the SHM safety floor: audio stems are spooled to disk, so requiring
 	// the full SHM reserve here would defeat the fallback and starve the queue.
-	requiredBytes := in.EstimatedTaskRam + in.MinAvailRam
+	requiredBytes, ok := checkedAddUint64(in.EstimatedTaskRam, in.MinAvailRam)
+	if !ok {
+		return GatekeeperDecision{Reason: "required RAM estimate overflow", StorageMode: in.StorageMode}
+	}
 	if in.StorageMode == StorageModeDisk {
 		requiredBytes = in.EstimatedTaskRam
 	}
@@ -217,7 +224,10 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 
 		// VRAM 空き容量判定
 		if in.MinAvailVram > 0 && (!in.GPURequired || in.DedicatedVramKnown) {
-			requiredVram := in.EstimatedTaskVram + in.MinAvailVram
+			requiredVram, ok := checkedAddUint64(in.EstimatedTaskVram, in.MinAvailVram)
+			if !ok {
+				return GatekeeperDecision{Reason: "required VRAM estimate overflow", StorageMode: in.StorageMode}
+			}
 			if in.AvailVram < requiredVram {
 				return GatekeeperDecision{
 					IsGo:                false,

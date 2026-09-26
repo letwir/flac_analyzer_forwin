@@ -2,6 +2,8 @@
 // calculations. It has no process, filesystem, network, or database effects.
 package planner
 
+import "math"
+
 const (
 	bytesPerSampleStereoFloat32 uint64 = 2 * 4
 	defaultStemCount            uint64 = 7
@@ -31,6 +33,7 @@ type TaskSpec struct {
 // worker daemon runs Librosa, Tensor, and Essentia sequentially per stem.
 type StageProfile struct {
 	Name                 string
+	CPULane              bool
 	ResidentRamBytes     uint64
 	WorkingRamPerStemPCM float64
 	ResidentVramBytes    uint64
@@ -42,6 +45,7 @@ type StageProfile struct {
 // the dispatcher.
 type ResourceProfile struct {
 	StemCount          uint64
+	CPUParallelism     uint64
 	FileExpansionRatio float64
 	PcmWorkingRatio    float64
 	DiskBytesPerStem   float64
@@ -52,11 +56,13 @@ type ResourceProfile struct {
 type ResourceEstimate struct {
 	StorageBufferBytes uint64
 	StemBufferBytes    uint64
+	CPUWorkingRamBytes uint64
 	ShmRamBytes        uint64
 	DiskBytes          uint64
 	DiskModeRamBytes   uint64
 	ResidentVramBytes  uint64
 	WorkingVramBytes   uint64
+	Overflow           bool
 }
 
 // WaveformOwner identifies where the CPU-visible master waveform resides. It
@@ -206,9 +212,9 @@ func DefaultResourceProfile() ResourceProfile {
 		DiskModeRamBytes:   diskModeRamBytes,
 		Stages: []StageProfile{
 			{Name: "demucs", ResidentRamBytes: defaultResidentRamBytes, WorkingRamPerStemPCM: 1.8},
-			{Name: "librosa", WorkingRamPerStemPCM: 0.4},
+			{Name: "librosa", CPULane: true, WorkingRamPerStemPCM: 0.4},
 			{Name: "tensor", WorkingRamPerStemPCM: 0.6, WorkingVramBytes: 512 * 1024 * 1024},
-			{Name: "essentia", WorkingRamPerStemPCM: 0.25},
+			{Name: "essentia", CPULane: true, WorkingRamPerStemPCM: 0.25},
 		},
 	}
 }
@@ -216,6 +222,9 @@ func DefaultResourceProfile() ResourceProfile {
 func EstimateTaskResources(task TaskSpec, profile ResourceProfile) ResourceEstimate {
 	if profile.StemCount == 0 {
 		profile.StemCount = defaultStemCount
+	}
+	if profile.CPUParallelism == 0 {
+		profile.CPUParallelism = 1
 	}
 	if profile.FileExpansionRatio <= 0 {
 		profile.FileExpansionRatio = defaultFileExpansionRatio
@@ -230,35 +239,83 @@ func EstimateTaskResources(task TaskSpec, profile ResourceProfile) ResourceEstim
 		profile.DiskModeRamBytes = diskModeRamBytes
 	}
 
-	baseAudioBytes := estimateAudioBufferBytes(task, profile.FileExpansionRatio)
-	stemBytes := baseAudioBytes * profile.StemCount
+	baseAudioBytes, ok := estimateAudioBufferBytes(task, profile.FileExpansionRatio)
+	if !ok {
+		return overflowedResourceEstimate()
+	}
+	stemBytes, ok := checkedMul(baseAudioBytes, profile.StemCount)
+	if !ok {
+		return overflowedResourceEstimate()
+	}
 	residentRam := uint64(0)
 	peakWorkingRatio := profile.PcmWorkingRatio
+	peakCPUWorkingRatio := 0.0
 	residentVram := uint64(0)
 	workingVram := uint64(0)
 	for _, stage := range profile.Stages {
-		residentRam += stage.ResidentRamBytes
+		residentRam, ok = checkedAdd(residentRam, stage.ResidentRamBytes)
+		if !ok {
+			return overflowedResourceEstimate()
+		}
 		if stage.WorkingRamPerStemPCM > peakWorkingRatio {
 			peakWorkingRatio = stage.WorkingRamPerStemPCM
 		}
-		residentVram += stage.ResidentVramBytes
+		if stage.CPULane && stage.WorkingRamPerStemPCM > peakCPUWorkingRatio {
+			peakCPUWorkingRatio = stage.WorkingRamPerStemPCM
+		}
+		residentVram, ok = checkedAdd(residentVram, stage.ResidentVramBytes)
+		if !ok {
+			return overflowedResourceEstimate()
+		}
 		if stage.WorkingVramBytes > workingVram {
 			workingVram = stage.WorkingVramBytes
 		}
 	}
 
+	workingRam, ok := checkedScale(stemBytes, peakWorkingRatio)
+	if !ok {
+		return overflowedResourceEstimate()
+	}
+	cpuPerConsumer, ok := checkedScale(baseAudioBytes, peakCPUWorkingRatio)
+	if !ok {
+		return overflowedResourceEstimate()
+	}
+	cpuWorking, ok := checkedMul(cpuPerConsumer, profile.CPUParallelism)
+	if !ok {
+		return overflowedResourceEstimate()
+	}
+	if cpuWorking > workingRam {
+		workingRam = cpuWorking
+	}
+	diskModeRam, ok := checkedAdd(cpuWorking, residentRam)
+	if !ok {
+		return overflowedResourceEstimate()
+	}
+	diskModeRam = max(diskModeRam, profile.DiskModeRamBytes)
+	shmRam, ok := checkedAdd(workingRam, residentRam)
+	if !ok {
+		return overflowedResourceEstimate()
+	}
+	diskBytes, ok := checkedScale(stemBytes, profile.DiskBytesPerStem)
+	if !ok {
+		return overflowedResourceEstimate()
+	}
 	return ResourceEstimate{
 		StorageBufferBytes: baseAudioBytes,
 		StemBufferBytes:    stemBytes,
-		ShmRamBytes:        uint64(float64(stemBytes)*peakWorkingRatio) + residentRam,
-		DiskBytes:          uint64(float64(stemBytes) * profile.DiskBytesPerStem),
-		DiskModeRamBytes:   profile.DiskModeRamBytes,
+		CPUWorkingRamBytes: cpuWorking,
+		ShmRamBytes:        shmRam,
+		DiskBytes:          diskBytes,
+		DiskModeRamBytes:   diskModeRam,
 		ResidentVramBytes:  residentVram,
 		WorkingVramBytes:   workingVram,
 	}
 }
 
 func SelectStorageMode(estimate ResourceEstimate, availPhys, inFlightRam, minAvailRam uint64, thresholdRatio float64, enableDiskFallback bool) (StorageMode, uint64, uint64) {
+	if estimate.Overflow {
+		return StorageModeSHM, math.MaxUint64, math.MaxUint64
+	}
 	if !enableDiskFallback {
 		return StorageModeSHM, estimate.ShmRamBytes, 0
 	}
@@ -270,7 +327,10 @@ func SelectStorageMode(estimate ResourceEstimate, availPhys, inFlightRam, minAva
 	if availPhys > inFlightRam {
 		effectiveAvail = availPhys - inFlightRam
 	}
-	requiredWithMin := estimate.ShmRamBytes + minAvailRam
+	requiredWithMin, ok := checkedAdd(estimate.ShmRamBytes, minAvailRam)
+	if !ok {
+		return StorageModeDisk, estimate.DiskModeRamBytes, math.MaxUint64
+	}
 	safeThreshold := uint64(float64(effectiveAvail) * thresholdRatio)
 	if requiredWithMin > safeThreshold || effectiveAvail < requiredWithMin {
 		return StorageModeDisk, estimate.DiskModeRamBytes, estimate.DiskBytes
@@ -278,18 +338,60 @@ func SelectStorageMode(estimate ResourceEstimate, availPhys, inFlightRam, minAva
 	return StorageModeSHM, estimate.ShmRamBytes, 0
 }
 
-func estimateAudioBufferBytes(task TaskSpec, expansionRatio float64) uint64 {
+func estimateAudioBufferBytes(task TaskSpec, expansionRatio float64) (uint64, bool) {
 	if task.StartSample >= 0 && task.EndSample > task.StartSample {
 		numSamples := uint64(task.EndSample - task.StartSample)
-		estimated := uint64(float64(numSamples*bytesPerSampleStereoFloat32) * 1.5)
-		if estimated < minAudioBufferBytes {
-			return minAudioBufferBytes
+		pcmBytes, ok := checkedMul(numSamples, bytesPerSampleStereoFloat32)
+		if !ok {
+			return 0, false
 		}
-		return estimated
+		estimated, ok := checkedScale(pcmBytes, 1.5)
+		if !ok {
+			return 0, false
+		}
+		if estimated < minAudioBufferBytes {
+			return minAudioBufferBytes, true
+		}
+		return estimated, true
 	}
-	estimated := int64(float64(task.FileSize) * expansionRatio)
-	if estimated < int64(minAudioBufferBytes) {
-		return minAudioBufferBytes
+	if task.FileSize < 0 {
+		return 0, false
 	}
-	return uint64(estimated)
+	estimated, ok := checkedScale(uint64(task.FileSize), expansionRatio)
+	if !ok {
+		return 0, false
+	}
+	if estimated < minAudioBufferBytes {
+		return minAudioBufferBytes, true
+	}
+	return estimated, true
+}
+
+func checkedAdd(a, b uint64) (uint64, bool) {
+	if b > math.MaxUint64-a {
+		return 0, false
+	}
+	return a + b, true
+}
+
+func checkedMul(a, b uint64) (uint64, bool) {
+	if b != 0 && a > math.MaxUint64/b {
+		return 0, false
+	}
+	return a * b, true
+}
+
+func checkedScale(value uint64, ratio float64) (uint64, bool) {
+	if ratio < 0 || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+		return 0, false
+	}
+	scaled := float64(value) * ratio
+	if math.IsInf(scaled, 0) || scaled >= float64(math.MaxUint64) {
+		return 0, false
+	}
+	return uint64(scaled), true
+}
+
+func overflowedResourceEstimate() ResourceEstimate {
+	return ResourceEstimate{Overflow: true}
 }

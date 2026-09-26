@@ -125,6 +125,30 @@ func (d *Dispatcher) executeFeatureLane(
 	}
 }
 
+func (d *Dispatcher) cleanupGPUAfterFeatures() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if d.gpuArbiter == nil {
+		return fmt.Errorf("GPU arbiter is unavailable for cleanup")
+	}
+	if err := d.gpuArbiter.Acquire(ctx); err != nil {
+		return fmt.Errorf("acquire GPU arbiter for cleanup: %w", err)
+	}
+	defer d.gpuArbiter.Release()
+	if d.gpuDaemonPool == nil {
+		return fmt.Errorf("GPU daemon pool is unavailable for cleanup")
+	}
+	client, err := d.gpuDaemonPool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire GPU daemon for cleanup: %w", err)
+	}
+	defer d.gpuDaemonPool.Release(client)
+	if err := client.CleanupGPU(ctx); err != nil {
+		return fmt.Errorf("GPU cleanup failed: %w", err)
+	}
+	return nil
+}
+
 func joinFeatureLaneResponses(cpuResp, gpuResp *DaemonResponse) (*FeatureOutputs, error) {
 	if cpuResp == nil || gpuResp == nil {
 		return nil, fmt.Errorf("feature lane response missing")
@@ -181,7 +205,7 @@ func (d *Dispatcher) executeFeaturesStage(
 		return nil, fmt.Errorf("CPU and GPU worker daemon pools are required")
 	}
 	if arenaSet != nil {
-		defer func() { _ = arenaSet.UnfreezeAll() }()
+		defer func() { err = errors.Join(err, arenaSet.UnfreezeAll()) }()
 	}
 
 	start := time.Now()
@@ -204,8 +228,12 @@ func (d *Dispatcher) executeFeaturesStage(
 			return d.executeFeatureLane(laneCtx, FeatureLaneGPU, payload)
 		},
 	)
+	cleanupErr := d.cleanupGPUAfterFeatures()
 	if err != nil {
-		return nil, fmt.Errorf("feature extraction failed: %w", err)
+		err = fmt.Errorf("feature extraction failed: %w", err)
+	}
+	if err := errors.Join(err, cleanupErr); err != nil {
+		return nil, err
 	}
 	d.recordFeatureLaneStats(start, cpuResp, gpuResp)
 	return joinFeatureLaneResponses(cpuResp, gpuResp)

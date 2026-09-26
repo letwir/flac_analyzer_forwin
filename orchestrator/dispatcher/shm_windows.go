@@ -1,6 +1,7 @@
 package dispatcher
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -379,12 +380,14 @@ func (w *WorkerArenaSet) FreezeAll() error {
 }
 
 func (w *WorkerArenaSet) UnfreezeAll() error {
+	var unfreezeErrs []error
 	for stem, shm := range w.arenas {
 		if err := shm.Unfreeze(); err != nil {
 			log.Printf("[WARN] [Worker %d] Failed to unfreeze SHM %s: %v", w.WorkerID, stem, err)
+			unfreezeErrs = append(unfreezeErrs, fmt.Errorf("unfreeze SHM arena %s: %w", stem, err))
 		}
 	}
-	return nil
+	return errors.Join(unfreezeErrs...)
 }
 
 func (w *WorkerArenaSet) VerifyIntegrity(stems []string) error {
@@ -450,11 +453,15 @@ func (w *WorkerArenaSet) GetTagsMap() map[string]string {
 	return tags
 }
 
-func (w *WorkerArenaSet) Close() {
+func (w *WorkerArenaSet) Close() error {
+	var closeErrs []error
 	for stem, shm := range w.arenas {
-		_ = shm.Close()
+		if err := shm.Close(); err != nil {
+			closeErrs = append(closeErrs, fmt.Errorf("close SHM arena %s: %w", stem, err))
+		}
 		delete(w.arenas, stem)
 	}
+	return errors.Join(closeErrs...)
 }
 
 type ShmArenaPool struct {
@@ -478,9 +485,13 @@ func (p *ShmArenaPool) GetWorkerArenaSet(workerID int) *WorkerArenaSet {
 	return set
 }
 
-func (p *ShmArenaPool) Close() {
+func (p *ShmArenaPool) Close() error {
+	var closeErrs []error
 	for id, set := range p.workers {
-		set.Close()
+		if err := set.Close(); err != nil {
+			closeErrs = append(closeErrs, fmt.Errorf("close worker arena %d: %w", id, err))
+		}
 		delete(p.workers, id)
 	}
+	return errors.Join(closeErrs...)
 }

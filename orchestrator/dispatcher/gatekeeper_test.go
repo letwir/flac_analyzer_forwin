@@ -304,8 +304,8 @@ func TestDetermineStorageModePure(t *testing.T) {
 	if modeLarge != StorageModeDisk {
 		t.Fatalf("Expected StorageModeDisk for massive track, got %v", modeLarge)
 	}
-	if taskRamLarge != 2*1024*1024*1024 {
-		t.Fatalf("Expected clamped taskRam=2GB for Disk mode, got %d", taskRamLarge)
+	if taskRamLarge <= 2*1024*1024*1024 {
+		t.Fatalf("Expected Disk mode RAM to include the modeled CPU working set above the 2GB floor, got %d", taskRamLarge)
 	}
 	if diskBytesLarge == 0 {
 		t.Fatalf("Expected non-zero diskBytes for Disk mode")
@@ -361,6 +361,19 @@ func TestEvaluateGoNoGoPure_DiskMode(t *testing.T) {
 	decisionDiskLow := EvaluateGoNoGoPure(input)
 	if decisionDiskLow.IsGo {
 		t.Fatalf("Expected IsGo=false when SSD space is insufficient for Disk Mode, got true")
+	}
+}
+
+func TestEvaluateGoNoGoPure_RejectsVRAMRequirementOverflow(t *testing.T) {
+	decision := EvaluateGoNoGoPure(GatekeeperInput{
+		GPURequired:        true,
+		DedicatedVramKnown: true,
+		EnableGpuThrottle:  true,
+		MinAvailVram:       1,
+		EstimatedTaskVram:  ^uint64(0),
+	})
+	if decision.IsGo || decision.Reason != "required VRAM estimate overflow" {
+		t.Fatalf("overflowing VRAM requirement was not rejected: %+v", decision)
 	}
 }
 

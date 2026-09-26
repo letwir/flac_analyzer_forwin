@@ -3,6 +3,7 @@
 package dispatcher
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,14 +12,18 @@ import (
 )
 
 // cleanupCache deletes the temporary cache directory for a given track hash upon task termination.
-func cleanupCache(trackHash string) {
+func cleanupCache(trackHash string) error {
 	if trackHash == "" {
-		return
+		return nil
 	}
 	cacheDir := filepath.Join(os.TempDir(), "flac_analyzer_cache", trackHash)
-	if _, err := os.Stat(cacheDir); err == nil {
-		_ = os.RemoveAll(cacheDir)
+	if _, err := os.Stat(cacheDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
 	}
+	return os.RemoveAll(cacheDir)
 }
 
 // cleanupQueueFiles removes intermediate JSON files generated for a task if it fails or aborts.

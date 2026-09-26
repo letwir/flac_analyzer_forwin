@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,8 +85,18 @@ func (d *Dispatcher) RunSingleTask(ctx context.Context, task TaskPayload) (bool,
 	}
 
 	for {
-		if _, reserveErr := d.reserveTaskAdmission(task); reserveErr == nil {
-			break
+		lease, reserveErr := d.reserveTaskAdmission(task)
+		if reserveErr == nil {
+			reserveErr = d.recheckTaskAdmissionBeforeDispatch(task, lease)
+			if reserveErr == nil {
+				break
+			}
+			d.releaseUnstartedTaskAdmission(task)
+		}
+		if errors.Is(reserveErr, ErrPermanentBudgetExcess) {
+			_ = d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusFailed, reserveErr.Error())
+			_ = d.db.Flush()
+			return true, reserveErr
 		}
 		wait := secondsToDuration(d.GetConfig().GatekeeperRetryDelaySec)
 		timer := time.NewTimer(wait)

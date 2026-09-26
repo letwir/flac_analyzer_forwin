@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"math"
 	"reflect"
 	"sync"
 	"testing"
@@ -25,6 +26,33 @@ func TestSelectStorageModeSeparatesDiskRamFloor(t *testing.T) {
 	mode, ram, disk := SelectStorageMode(estimate, 4*1024*1024*1024, 0, 2*1024*1024*1024, 0.8, true)
 	if mode != StorageModeDisk || ram != estimate.DiskModeRamBytes || disk != estimate.DiskBytes {
 		t.Fatalf("expected Disk Mode fallback, got mode=%s ram=%d disk=%d", mode, ram, disk)
+	}
+}
+
+func TestEstimateTaskResourcesAccountsForCPUParallelismAndRejectsOverflow(t *testing.T) {
+	profile := DefaultResourceProfile()
+	profile.StemCount = 1
+	profile.CPUParallelism = 1
+	oneLane := EstimateTaskResources(TaskSpec{FileSize: 1_000_000_000}, profile)
+	profile.CPUParallelism = 4
+	fourLanes := EstimateTaskResources(TaskSpec{FileSize: 1_000_000_000}, profile)
+	if oneLane.Overflow || fourLanes.Overflow || fourLanes.CPUWorkingRamBytes <= oneLane.CPUWorkingRamBytes {
+		t.Fatalf("CPU lane working set was not scaled: one=%+v four=%+v", oneLane, fourLanes)
+	}
+	if fourLanes.ShmRamBytes < fourLanes.CPUWorkingRamBytes {
+		t.Fatalf("total RAM estimate undercounted CPU lanes: %+v", fourLanes)
+	}
+	if fourLanes.DiskModeRamBytes <= oneLane.DiskModeRamBytes {
+		t.Fatalf("disk fallback ignored parallel CPU working set: one=%+v four=%+v", oneLane, fourLanes)
+	}
+
+	tooLarge := EstimateTaskResources(TaskSpec{FileSize: math.MaxInt64}, DefaultResourceProfile())
+	if !tooLarge.Overflow {
+		t.Fatalf("overflowing task estimate was accepted: %+v", tooLarge)
+	}
+	mode, ram, disk := SelectStorageMode(tooLarge, math.MaxUint64, 0, 0, 0.8, true)
+	if mode != StorageModeSHM || ram != math.MaxUint64 || disk != math.MaxUint64 {
+		t.Fatalf("overflow did not fail closed: mode=%s ram=%d disk=%d", mode, ram, disk)
 	}
 }
 

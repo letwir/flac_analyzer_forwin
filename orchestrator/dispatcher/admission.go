@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"flac_analyzer/orchestrator/planner"
 	"flac_analyzer/orchestrator/sysinfo"
 )
 
@@ -20,6 +21,7 @@ import (
 type AdmissionPlan struct {
 	HostRAMBytes       uint64
 	DedicatedVRAMBytes uint64
+	DownstreamTracks   int
 	CPULanes           int
 	GPULanes           int
 	DemucsSlots        int
@@ -43,6 +45,7 @@ type AdmissionLease struct {
 	StorageMode        StorageMode
 	HostRAMBytes       uint64
 	DedicatedVRAMBytes uint64
+	DownstreamTracks   int
 	CPULanes           int
 	GPULanes           int
 	DemucsSlots        int
@@ -56,8 +59,9 @@ type AdmissionUsage = AdmissionPlan
 type AdmissionCapacity = AdmissionPlan
 
 var (
-	ErrAdmissionUnavailable = errors.New("admission resources unavailable")
-	ErrInvalidAdmissionPlan = errors.New("invalid admission plan")
+	ErrAdmissionUnavailable  = errors.New("admission resources unavailable")
+	ErrInvalidAdmissionPlan  = errors.New("invalid admission plan")
+	ErrPermanentBudgetExcess = errors.New("task resource requirements exceed total node capacity")
 )
 
 type admissionLeaseState struct {
@@ -153,6 +157,19 @@ func NewAdmissionController(capacity AdmissionCapacity) (*AdmissionController, e
 	}, nil
 }
 
+func (c *AdmissionController) UpdateCapacity(capacity AdmissionCapacity) error {
+	if c == nil {
+		return ErrInvalidAdmissionPlan
+	}
+	if err := validateAdmissionPlan(capacity); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.capacity = capacity
+	c.mu.Unlock()
+	return nil
+}
+
 // Plan takes a consistent snapshot without changing reservations.
 func (c *AdmissionController) Plan(request AdmissionPlan) AdmissionDecision {
 	if c == nil {
@@ -183,6 +200,9 @@ func (c *AdmissionController) AtomicReserve(plan AdmissionPlan) (AdmissionLease,
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if exceedsFixedAdmissionCapacity(plan, c.capacity) {
+		return AdmissionLease{}, fmt.Errorf("reserve admission lease: %w", ErrPermanentBudgetExcess)
+	}
 	available := subtractAdmissionPlan(c.capacity, c.used)
 	if !fitsAdmissionPlan(plan, available) {
 		return AdmissionLease{}, fmt.Errorf("reserve admission lease: %w", ErrAdmissionUnavailable)
@@ -195,6 +215,14 @@ func (c *AdmissionController) AtomicReserve(plan AdmissionPlan) (AdmissionLease,
 	c.used = addAdmissionPlan(c.used, plan)
 	c.leases[c.nextID] = admissionLeaseState{plan: plan}
 	return leaseFromPlan(c.nextID, plan), nil
+}
+
+func exceedsFixedAdmissionCapacity(request, capacity AdmissionCapacity) bool {
+	return request.HostRAMBytes > capacity.HostRAMBytes ||
+		request.DownstreamTracks > capacity.DownstreamTracks ||
+		request.CPULanes > capacity.CPULanes ||
+		request.GPULanes > capacity.GPULanes ||
+		request.DemucsSlots > capacity.DemucsSlots
 }
 
 // Dispatch executes work while holding a lease and always releases it. The
@@ -256,8 +284,18 @@ func (c *AdmissionController) Usage() AdmissionUsage {
 	return c.used
 }
 
+func cleanupThenRelease(cleanup func() error, release func()) error {
+	if release != nil {
+		defer release()
+	}
+	if cleanup == nil {
+		return nil
+	}
+	return cleanup()
+}
+
 func validateAdmissionPlan(plan AdmissionPlan) error {
-	if plan.CPULanes < 0 || plan.GPULanes < 0 || plan.DemucsSlots < 0 {
+	if plan.DownstreamTracks < 0 || plan.CPULanes < 0 || plan.GPULanes < 0 || plan.DemucsSlots < 0 {
 		return ErrInvalidAdmissionPlan
 	}
 	return nil
@@ -266,20 +304,36 @@ func validateAdmissionPlan(plan AdmissionPlan) error {
 func fitsAdmissionPlan(request, available AdmissionPlan) bool {
 	return request.HostRAMBytes <= available.HostRAMBytes &&
 		request.DedicatedVRAMBytes <= available.DedicatedVRAMBytes &&
+		request.DownstreamTracks <= available.DownstreamTracks &&
 		request.CPULanes <= available.CPULanes &&
 		request.GPULanes <= available.GPULanes &&
 		request.DemucsSlots <= available.DemucsSlots &&
 		request.DiskTempBytes <= available.DiskTempBytes
 }
 
+func safeSub(a, b uint64) uint64 {
+	if a < b {
+		return 0
+	}
+	return a - b
+}
+
+func intSafeSub(a, b int) int {
+	if a < b {
+		return 0
+	}
+	return a - b
+}
+
 func subtractAdmissionPlan(total, used AdmissionPlan) AdmissionPlan {
 	return AdmissionPlan{
-		HostRAMBytes:       total.HostRAMBytes - used.HostRAMBytes,
-		DedicatedVRAMBytes: total.DedicatedVRAMBytes - used.DedicatedVRAMBytes,
-		CPULanes:           total.CPULanes - used.CPULanes,
-		GPULanes:           total.GPULanes - used.GPULanes,
-		DemucsSlots:        total.DemucsSlots - used.DemucsSlots,
-		DiskTempBytes:      total.DiskTempBytes - used.DiskTempBytes,
+		HostRAMBytes:       safeSub(total.HostRAMBytes, used.HostRAMBytes),
+		DedicatedVRAMBytes: safeSub(total.DedicatedVRAMBytes, used.DedicatedVRAMBytes),
+		DownstreamTracks:   intSafeSub(total.DownstreamTracks, used.DownstreamTracks),
+		CPULanes:           intSafeSub(total.CPULanes, used.CPULanes),
+		GPULanes:           intSafeSub(total.GPULanes, used.GPULanes),
+		DemucsSlots:        intSafeSub(total.DemucsSlots, used.DemucsSlots),
+		DiskTempBytes:      safeSub(total.DiskTempBytes, used.DiskTempBytes),
 	}
 }
 
@@ -287,6 +341,7 @@ func addAdmissionPlan(left, right AdmissionPlan) AdmissionPlan {
 	return AdmissionPlan{
 		HostRAMBytes:       left.HostRAMBytes + right.HostRAMBytes,
 		DedicatedVRAMBytes: left.DedicatedVRAMBytes + right.DedicatedVRAMBytes,
+		DownstreamTracks:   left.DownstreamTracks + right.DownstreamTracks,
 		CPULanes:           left.CPULanes + right.CPULanes,
 		GPULanes:           left.GPULanes + right.GPULanes,
 		DemucsSlots:        left.DemucsSlots + right.DemucsSlots,
@@ -299,6 +354,7 @@ func leaseFromPlan(token uint64, plan AdmissionPlan) AdmissionLease {
 		Token:              token,
 		HostRAMBytes:       plan.HostRAMBytes,
 		DedicatedVRAMBytes: plan.DedicatedVRAMBytes,
+		DownstreamTracks:   plan.DownstreamTracks,
 		CPULanes:           plan.CPULanes,
 		GPULanes:           plan.GPULanes,
 		DemucsSlots:        plan.DemucsSlots,
@@ -313,19 +369,26 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 		return taskAdmissionPlan{}, fmt.Errorf("memory observation unavailable")
 	}
 
+	profile := planner.DefaultResourceProfile()
+	estimate, _, err := estimateTaskAdmissionResources(task, cfg.NumWorkers, profile)
+	if err != nil {
+		return taskAdmissionPlan{}, err
+	}
+
 	minAvailRAM := gigabytesToBytes(cfg.MinAvailRamGB)
-	storageMode, taskRAM, diskBytes := DetermineStorageModePure(
-		task,
+	storageMode, taskRAM, diskBytes := planner.SelectStorageMode(
+		estimate,
 		memInfo.AvailPhys,
 		0,
 		minAvailRAM,
 		cfg.DiskModeRamThresholdRatio,
 		cfg.EnableDiskModeFallback,
 	)
+	budget := ramBudget(memInfo.TotalPhys, cfg.MaxRamRatio)
 	pressure := d.evaluateMemoryPressure(memInfo.MemoryLoad, cfg.EnableDiskModeFallback)
 	if pressure.ForceDisk {
 		storageMode = StorageModeDisk
-		_, taskRAM, diskBytes = DetermineStorageModePure(task, 0, 0, minAvailRAM, 1, true)
+		taskRAM, diskBytes = estimate.DiskModeRamBytes, estimate.DiskBytes
 	}
 
 	availDisk, diskKnown := availableTaskDisk(cfg, task)
@@ -337,6 +400,9 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 	}
 
 	gpu := sysinfo.GetLatestGpuMetrics()
+	if err := validateSharedGPUMemoryObservation(gpu, time.Now()); err != nil {
+		return taskAdmissionPlan{}, err
+	}
 	estimatedVRAM := gigabytesToBytes(cfg.EstimatedDemucsVramGB)
 	if estimatedVRAM == 0 {
 		estimatedVRAM = 1024 * 1024 * 1024
@@ -347,9 +413,25 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 	utilization := 0.0
 	if gpu != nil {
 		availVRAM = gpu.AvailableVramBytes
-		dedicatedKnown = gpu.IsDedicatedAvailable()
+		dedicatedKnown = gpu.IsDedicatedAvailable() && gpu.DedicatedCapacityValid && gpu.DedicatedTotalBytes > 0
 		dedicatedStatus = gpu.StatusDetail
 		utilization = gpu.UtilizationPercent
+	}
+	sharedGPUReserve := max(estimate.WorkingVramBytes, estimatedVRAM)
+	taskRAM, ok := checkedAddUint64(taskRAM, sharedGPUReserve)
+	if !ok {
+		return taskAdmissionPlan{}, fmt.Errorf("%w: host RAM plus shared-GPU safety reserve overflow", ErrPermanentBudgetExcess)
+	}
+	if taskRAM > budget && cfg.EnableDiskModeFallback && storageMode != StorageModeDisk {
+		storageMode = StorageModeDisk
+		taskRAM, ok = checkedAddUint64(estimate.DiskModeRamBytes, sharedGPUReserve)
+		if !ok {
+			return taskAdmissionPlan{}, fmt.Errorf("%w: disk-mode RAM plus shared-GPU safety reserve overflow", ErrPermanentBudgetExcess)
+		}
+		diskBytes = estimate.DiskBytes
+	}
+	if taskRAM > budget {
+		return taskAdmissionPlan{}, fmt.Errorf("%w: required RAM %d exceeds configured total-RAM budget %d (storage=%s; shared-GPU reserve=%d)", ErrPermanentBudgetExcess, taskRAM, budget, storageMode, sharedGPUReserve)
 	}
 
 	retryDelay := secondsToDuration(cfg.GatekeeperRetryDelaySec)
@@ -380,28 +462,30 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 
 	d.admissionMu.Lock()
 	defer d.admissionMu.Unlock()
+	capacity := AdmissionCapacity{
+		HostRAMBytes:       ramBudget(memInfo.TotalPhys, cfg.MaxRamRatio),
+		DedicatedVRAMBytes: gpu.DedicatedTotalBytes,
+		DownstreamTracks:   1,
+		CPULanes:           max(cfg.NumWorkers, 1),
+		GPULanes:           1,
+		DemucsSlots:        1,
+		DiskTempBytes:      availDisk,
+	}
 	if d.admission == nil {
-		capacity := AdmissionCapacity{
-			HostRAMBytes:       ramBudget(memInfo.TotalPhys, cfg.MaxRamRatio),
-			DedicatedVRAMBytes: availVRAM,
-			CPULanes:           max(cfg.NumWorkers, 1),
-			// The adaptive scheduler starts at one and may contract back to one.
-			// Admission must never promise more execution slots than that floor.
-			GPULanes:      1,
-			DemucsSlots:   1,
-			DiskTempBytes: availDisk,
-		}
 		controller, createErr := NewAdmissionController(capacity)
 		if createErr != nil {
 			return taskAdmissionPlan{}, createErr
 		}
 		d.admission = controller
+	} else if err := d.admission.UpdateCapacity(capacity); err != nil {
+		return taskAdmissionPlan{}, fmt.Errorf("refresh admission capacity: %w", err)
 	}
 
 	return taskAdmissionPlan{
 		request: AdmissionPlan{
-			HostRAMBytes:  taskRAM,
-			DiskTempBytes: diskBytes,
+			HostRAMBytes:     taskRAM,
+			DiskTempBytes:    diskBytes,
+			DownstreamTracks: 1,
 		},
 		storageMode: storageMode,
 		totalPhys:   memInfo.TotalPhys,
@@ -485,6 +569,53 @@ func (d *Dispatcher) tryReserveTaskAdmission(task TaskPayload) (AdmissionLease, 
 	return d.reserveTaskAdmission(task)
 }
 
+func (d *Dispatcher) recheckTaskAdmissionBeforeDispatch(task TaskPayload, lease AdmissionLease) error {
+	cfg := d.GetConfig()
+	memInfo, err := sysinfo.GetMemoryInfo()
+	if err != nil || memInfo == nil || memInfo.TotalPhys == 0 {
+		return fmt.Errorf("last-mile memory observation unavailable")
+	}
+	gpu := sysinfo.GetLatestGpuMetrics()
+	if err := validateSharedGPUMemoryObservation(gpu, time.Now()); err != nil {
+		return err
+	}
+	availDisk, diskKnown := availableTaskDisk(cfg, task)
+	if lease.StorageMode == StorageModeDisk && !diskKnown {
+		return fmt.Errorf("last-mile disk observation unavailable")
+	}
+	if !diskKnown {
+		availDisk = math.MaxUint64
+	}
+	pressure := d.evaluateMemoryPressure(memInfo.MemoryLoad, cfg.EnableDiskModeFallback)
+	decision := EvaluateGoNoGoPure(GatekeeperInput{
+		StorageMode:         lease.StorageMode,
+		EstimatedTaskDisk:   lease.DiskTempBytes,
+		AvailPhys:           memInfo.AvailPhys,
+		EstimatedTaskRam:    lease.HostRAMBytes,
+		MinAvailRam:         gigabytesToBytes(cfg.MinAvailRamGB),
+		MemoryLoad:          memInfo.MemoryLoad,
+		AvailDisk:           availDisk,
+		MinAvailDisk:        gigabytesToBytes(cfg.MinAvailDiskGB),
+		GpuUtilization:      gpu.UtilizationPercent,
+		AvailVram:           gpu.AvailableVramBytes,
+		MinAvailVram:        gigabytesToBytes(cfg.MinAvailVramGB),
+		EstimatedTaskVram:   max(gigabytesToBytes(cfg.EstimatedDemucsVramGB), 1024*1024*1024),
+		GPURequired:         true,
+		DedicatedVramKnown:  gpu.IsDedicatedAvailable() && gpu.DedicatedCapacityValid && gpu.DedicatedTotalBytes > 0,
+		DedicatedVramStatus: gpu.StatusDetail,
+		MaxGpuUtilization:   cfg.MaxGpuUtilizationRatio,
+		EnableGpuThrottle:   cfg.EnableGpuThrottle,
+		AllowHighMemoryDisk: pressure.ForceDisk,
+		RetryDelay:          secondsToDuration(cfg.GatekeeperRetryDelaySec),
+	})
+	if !decision.IsGo {
+		return fmt.Errorf("last-mile admission NOGO: %s", decision.Reason)
+	}
+	// GlobalMemoryStatusEx.AvailPhys already reflects current shared-GPU memory use.
+	// Do not subtract SharedUsedBytes or active reservations from it a second time.
+	return nil
+}
+
 func (d *Dispatcher) takeTaskAdmission(task TaskPayload) (AdmissionLease, bool) {
 	d.admissionMu.Lock()
 	defer d.admissionMu.Unlock()
@@ -534,14 +665,22 @@ func gigabytesToBytes(gb float64) uint64 {
 	if gb <= 0 || math.IsNaN(gb) || math.IsInf(gb, 0) {
 		return 0
 	}
-	return uint64(gb * 1024 * 1024 * 1024)
+	bytes := gb * 1024 * 1024 * 1024
+	if math.IsInf(bytes, 0) || bytes >= float64(math.MaxUint64) {
+		return math.MaxUint64
+	}
+	return uint64(bytes)
 }
 
 func ramBudget(total uint64, ratio float64) uint64 {
 	if total == 0 || ratio <= 0 || ratio > 1 || math.IsNaN(ratio) || math.IsInf(ratio, 0) {
 		return 0
 	}
-	return uint64(float64(total) * ratio)
+	budget := float64(total) * ratio
+	if math.IsInf(budget, 0) || budget >= float64(math.MaxUint64) {
+		return math.MaxUint64
+	}
+	return uint64(budget)
 }
 
 func secondsToDuration(seconds int) time.Duration {
@@ -549,4 +688,46 @@ func secondsToDuration(seconds int) time.Duration {
 		return 20 * time.Second
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func checkedAddUint64(a, b uint64) (uint64, bool) {
+	if b > math.MaxUint64-a {
+		return 0, false
+	}
+	return a + b, true
+}
+
+func estimateTaskAdmissionResources(task TaskPayload, numWorkers int, profile planner.ResourceProfile) (planner.ResourceEstimate, int, error) {
+	plan, err := BuildAnalysisExecutionPlan(task.AnalysisDecision)
+	if err != nil {
+		return planner.ResourceEstimate{}, 0, fmt.Errorf("invalid admission analysis plan: %w", err)
+	}
+	if plan.Decision == Skip {
+		return planner.ResourceEstimate{}, 0, fmt.Errorf("skip decisions do not require admission")
+	}
+	stemCount := uint64(7)
+	switch plan.Decision {
+	case MixOnly:
+		stemCount = 1
+	case StemsOnly:
+		stemCount = 6
+	}
+	profile.StemCount = stemCount
+	cpuConsumers := GetCPUConsumerCount(task, max(numWorkers, 1), int(stemCount))
+	if cpuConsumers < 1 {
+		return planner.ResourceEstimate{}, 0, fmt.Errorf("%w: invalid CPU consumer estimate", ErrPermanentBudgetExcess)
+	}
+	profile.CPUParallelism = uint64(cpuConsumers)
+	estimate := planner.EstimateTaskResources(toPlannerTask(task), profile)
+	if estimate.Overflow {
+		return planner.ResourceEstimate{}, 0, fmt.Errorf("%w: resource estimate overflow", ErrPermanentBudgetExcess)
+	}
+	return estimate, cpuConsumers, nil
+}
+
+func validateSharedGPUMemoryObservation(gpu *sysinfo.GpuMetrics, now time.Time) error {
+	if gpu == nil || gpu.IsStale(now, sysinfo.DefaultGpuStaleThreshold) || !gpu.SharedUsageValid {
+		return fmt.Errorf("GPU shared-memory observation unavailable")
+	}
+	return nil
 }

@@ -27,18 +27,32 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	taskStartTime := time.Now()
 	taskSuccess := false
 	var arenaSet *WorkerArenaSet
-	defer func() {
-		// SHM arenas are owned by a worker for reuse, but retaining a long-track
-		// arena after the task pins its pages and makes the RAM guard observe
-		// low system availability even when no task is in flight.
-		if arenaSet != nil {
-			arenaSet.Close()
-		}
-	}()
+	var trackHash string
+	centralLease, centrallyAdmitted := d.takeTaskAdmission(task)
+	d.inFlightMutex.Lock()
+	admission, admitted := d.ramAdmissions[admissionKey(task)]
+	d.inFlightMutex.Unlock()
 	defer func() {
 		if d.statsTracker != nil {
 			d.statsTracker.RecordTaskCompletion(task.FlacPath, time.Since(taskStartTime), taskSuccess)
 			d.statsTracker.SetQueueLength(len(d.taskQueue))
+		}
+	}()
+	defer func() {
+		cleanupErr := cleanupThenRelease(func() error {
+			return cleanupTaskResources(trackHash, &arenaSet)
+		}, func() {
+			if admitted {
+				d.releaseRamAdmission(task, admission)
+			}
+			if centrallyAdmitted {
+				d.releaseTaskAdmission(task, centralLease)
+			}
+		})
+		if cleanupErr != nil {
+			d.LogError("[W-%d] task storage cleanup failed: %v", id, cleanupErr)
+			taskSuccess = false
+			d.failTask(task, fmt.Sprintf("task storage cleanup failed: %v", cleanupErr))
 		}
 	}()
 
@@ -52,32 +66,16 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 		d.failTask(task, fmt.Sprintf("invalid analysis execution plan: %v", err))
 		return
 	}
-	d.inFlightMutex.Lock()
-	admission, admitted := d.ramAdmissions[admissionKey(task)]
-	d.inFlightMutex.Unlock()
 	if !admitted {
 		d.failTask(task, "missing Gatekeeper RAM admission")
 		return
 	}
 	storageMode := admission.storageMode
-	centralLease, centrallyAdmitted := d.takeTaskAdmission(task)
-
-	defer func() {
-		d.releaseRamAdmission(task, admission)
-		if centrallyAdmitted {
-			d.releaseTaskAdmission(task, centralLease)
-		}
-	}()
 
 	d.LogInfo("[W-%d] [IO Monad] Starting processing (%s mode): %s (Track %d)", id, storageMode, task.FlacPath, task.TrackNumber)
 	d.db.UpdateStatus(task.FlacPath, task.TrackNumber, state.StatusRunning, "")
 
-	var trackHash string
 	stems := stemsForAnalysisPlan(executionPlan)
-
-	defer func() {
-		cleanupCache(trackHash)
-	}()
 
 	// 1. Hash Calculation & Duplicate Detection
 	// Existing incomplete rows must follow their MixOnly/StemsOnly plan. The
@@ -149,8 +147,15 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	// Feature extraction has closed its read handles, so release the producer
 	// mappings before tagging and ingestion continue.
 	if arenaSet != nil {
-		arenaSet.Close()
+		if err := arenaSet.Close(); err != nil {
+			d.failTask(task, fmt.Sprintf("close feature SHM: %v", err))
+			return
+		}
 		arenaSet = nil
+	}
+	if err := cleanupCache(trackHash); err != nil {
+		d.failTask(task, fmt.Sprintf("remove task cache: %v", err))
+		return
 	}
 
 	// 4. Tagging & Queue Output Stage
@@ -176,6 +181,20 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 		d.LogInfo("[W-%d] Compute & tagging completed; sent to DB ingest queue: %q", id, taskQueueLabel(task))
 	}
 	taskSuccess = true
+}
+
+func cleanupTaskResources(trackHash string, arenaSet **WorkerArenaSet) error {
+	var cleanupErrs []error
+	if arenaSet != nil && *arenaSet != nil {
+		if err := (*arenaSet).Close(); err != nil {
+			cleanupErrs = append(cleanupErrs, err)
+		}
+		*arenaSet = nil
+	}
+	if err := cleanupCache(trackHash); err != nil {
+		cleanupErrs = append(cleanupErrs, err)
+	}
+	return errors.Join(cleanupErrs...)
 }
 
 // checkDuplicateHash determines if the track audio hash already exists in PostgreSQL.
