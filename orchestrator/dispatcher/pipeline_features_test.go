@@ -173,3 +173,54 @@ func TestGPUArbiterRetryableDeadlineClassification(t *testing.T) {
 		t.Fatalf("expected pool unavailable error, got: %v", err)
 	}
 }
+
+func TestCleanupGPUAfterFeatures_NilArbiter(t *testing.T) {
+	d := &Dispatcher{}
+	err := d.cleanupGPUAfterFeatures()
+	if err == nil || !strings.Contains(err.Error(), "GPU arbiter is unavailable") {
+		t.Fatalf("expected arbiter unavailable, got %v", err)
+	}
+}
+
+func TestCleanupGPUAfterFeatures_NilPool(t *testing.T) {
+	d := &Dispatcher{gpuArbiter: NewGPUArbiter()}
+	err := d.cleanupGPUAfterFeatures()
+	if err == nil || !strings.Contains(err.Error(), "GPU daemon pool is unavailable") {
+		t.Fatalf("expected pool unavailable, got %v", err)
+	}
+}
+
+func TestCleanupGPUAfterFeatures_TrimsIdleAfterFeatureCancellation(t *testing.T) {
+	pool := NewWorkerDaemonPool(1, "", "", nil, nil, WorkerDaemonRoleFeatureGPU)
+	idle := &WorkerDaemonClient{}
+	pool.allDaemons = append(pool.allDaemons, idle)
+	pool.daemons <- idle
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	d := &Dispatcher{gpuDaemonPool: pool, executionCtx: ctx}
+	err := d.cleanupGPUAfterFeatures()
+	if err == nil || !strings.Contains(err.Error(), "GPU arbiter is unavailable") {
+		t.Fatalf("expected arbiter unavailable, got %v", err)
+	}
+	if !idle.closed || len(pool.daemons) != 0 || len(pool.allDaemons) != 0 {
+		t.Fatal("idle GPU daemon was not closed after canceled feature context and cleanup error")
+	}
+}
+
+func TestGPUFeaturePoolTrimIdleLeavesCheckedOutDaemon(t *testing.T) {
+	pool := NewWorkerDaemonPool(2, "", "", nil, nil, WorkerDaemonRoleFeatureGPU)
+	idle := &WorkerDaemonClient{}
+	checkedOut := &WorkerDaemonClient{}
+	pool.allDaemons = append(pool.allDaemons, idle, checkedOut)
+	pool.daemons <- idle
+
+	if count := pool.TrimIdle(0); count != 1 {
+		t.Fatalf("trimmed %d idle daemons, want 1", count)
+	}
+	if !idle.closed || checkedOut.closed {
+		t.Fatal("trim closed a checked-out daemon or retained an idle daemon")
+	}
+	if len(pool.allDaemons) != 1 || pool.allDaemons[0] != checkedOut {
+		t.Fatalf("pool retained %d daemons, want only the checked-out daemon", len(pool.allDaemons))
+	}
+}

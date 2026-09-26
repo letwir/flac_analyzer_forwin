@@ -227,13 +227,6 @@ func (d *Dispatcher) Start() {
 			_ = d.cpuDaemonPool.Prewarm(ctx, 1)
 		}()
 	}
-	if d.gpuDaemonPool != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			defer cancel()
-			_ = d.gpuDaemonPool.Prewarm(ctx, 1)
-		}()
-	}
 	if d.demucsPool != nil {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

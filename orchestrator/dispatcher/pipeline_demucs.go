@@ -513,9 +513,15 @@ func (d *Dispatcher) executeDemucsStage(
 		} else {
 			cleanupErr = fmt.Errorf("acquire GPU daemon for cleanup: %w", err)
 		}
+		if d.gpuDaemonPool != nil {
+			d.gpuDaemonPool.TrimIdle(0)
+		}
 		d.gpuArbiter.Release()
 	} else {
 		cleanupErr = fmt.Errorf("acquire GPU arbiter for cleanup: %w", err)
+		if d.gpuDaemonPool != nil {
+			d.gpuDaemonPool.TrimIdle(0)
+		}
 	}
 
 	if sepErr != nil {

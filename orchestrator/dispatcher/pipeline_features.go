@@ -126,15 +126,26 @@ func (d *Dispatcher) executeFeatureLane(
 }
 
 func (d *Dispatcher) cleanupGPUAfterFeatures() error {
+	// Cleanup must still run when the feature context has timed out or a lane
+	// has canceled its peer. Release the daemon before trimming idle clients.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	arbiterHeld := false
+	defer func() {
+		if d.gpuDaemonPool != nil {
+			d.gpuDaemonPool.TrimIdle(0)
+		}
+		if arbiterHeld {
+			d.gpuArbiter.Release()
+		}
+	}()
 	if d.gpuArbiter == nil {
 		return fmt.Errorf("GPU arbiter is unavailable for cleanup")
 	}
 	if err := d.gpuArbiter.Acquire(ctx); err != nil {
 		return fmt.Errorf("acquire GPU arbiter for cleanup: %w", err)
 	}
-	defer d.gpuArbiter.Release()
+	arbiterHeld = true
 	if d.gpuDaemonPool == nil {
 		return fmt.Errorf("GPU daemon pool is unavailable for cleanup")
 	}
