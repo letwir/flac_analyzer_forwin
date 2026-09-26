@@ -109,6 +109,8 @@
 
 ### 全Phase完了の受入境界
 
+- [ ] Demucs RAM admission の実ホスト受入と条件付き Single レーン設計は [引き継ぎ](docs/demucs_ram_admission_handoff.md) を参照する。ticket 実装自体は `906990c` に含まれる。
+
 - [ ] 代表負荷でCPU/GPUが並行して進み、処理件数が継続的に増加する。
 - [ ] 専用VRAM、共有GPUメモリ、物理RAM、Disk使用量が別々に観測・制限される。
 - [ ] 90% RAMのNOGO状態から資源回復後に自動再開し、park/requeueループや重複claimがない。
