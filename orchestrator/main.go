@@ -239,12 +239,16 @@ func run() (exitCode int) {
 			)
 			tasks = preflight.Eligible
 		}
+		if len(tasks) > 0 {
+			sysinfo.StartGpuCollectorDaemon(ctx, 5*time.Second)
+		}
 		for _, task := range tasks {
 			if err := ctx.Err(); err != nil {
 				failed = true
 				log.Printf("Single-file batch cancelled before track %d: %v", task.TrackNumber, err)
 				break
 			}
+			log.Printf("Starting single-file track: %s track %d", task.FlacPath, task.TrackNumber)
 			executed, runErr := disp.RunSingleTask(ctx, task)
 			if runErr != nil {
 				failed = true

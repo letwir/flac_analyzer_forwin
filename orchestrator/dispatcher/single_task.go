@@ -85,9 +85,11 @@ func (d *Dispatcher) RunSingleTask(ctx context.Context, task TaskPayload) (bool,
 	}
 
 	for {
-		lease, reserveErr := d.reserveTaskAdmission(task)
+		lease, reserveErr := d.tryReserveTaskAdmission(task)
 		if reserveErr == nil {
-			reserveErr = d.recheckTaskAdmissionBeforeDispatch(task, lease)
+			if d.reserveTaskFn == nil {
+				reserveErr = d.recheckTaskAdmissionBeforeDispatch(task, lease)
+			}
 			if reserveErr == nil {
 				break
 			}
@@ -98,6 +100,7 @@ func (d *Dispatcher) RunSingleTask(ctx context.Context, task TaskPayload) (bool,
 			_ = d.db.Flush()
 			return true, reserveErr
 		}
+		d.LogInfo("[SingleTask] Waiting for resources before track %d (%s): %v", task.TrackNumber, task.FlacPath, reserveErr)
 		wait := secondsToDuration(d.GetConfig().GatekeeperRetryDelaySec)
 		timer := time.NewTimer(wait)
 		select {

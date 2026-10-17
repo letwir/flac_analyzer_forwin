@@ -17,7 +17,7 @@ if errorlevel 1 (
     set PYTHON_CMD=py.exe
     !PYTHON_CMD! --version >nul 2>&1
     if errorlevel 1 (
-        echo [ERROR] Python (python.exe / py.exe) が PATH に見つかりませんわ！
+        echo [ERROR] Python python.exe / py.exeが PATH に見つかりませんわ！
         echo Python 3.12 または 3.13 をインストールの上、環境変数 PATH に追加してくださいませ。
         exit /b 1
     )
@@ -29,7 +29,7 @@ rem 2. モデルダウンロード・.pb->.onnx変換・Python環境構築
 rem -------------------------------------------------------------------------
 echo.
 echo [Step 2/3] モデル取得・ONNX自動変換・依存セットアップを実行いたしますわ...
-!PYTHON_CMD! init_dl_model.py
+!PYTHON_CMD! zig/init_dl_model.py
 if errorlevel 1 (
     echo [WARNING] init_dl_model.py の実行中に一部警告/エラーが発生いたしましたわ。
 )
