@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 
 	"flac_analyzer/orchestrator/logger"
 	"github.com/pelletier/go-toml/v2"
@@ -211,6 +212,7 @@ func NormalizeConfig(
 		ShmRetryCount:              raw.Orchestrator.ShmRetryCount,
 		ShmRetryDelaySec:           raw.Orchestrator.ShmRetryDelaySec,
 		QueueDir:                   raw.Orchestrator.QueueDir,
+		MetricsAddr:                strings.TrimSpace(raw.Orchestrator.MetricsAddr),
 		DatabaseURL:                raw.Database.URL,
 		PythonEnv:                  resolvedPythonEnv,
 		LogLevel:                   logLevel,

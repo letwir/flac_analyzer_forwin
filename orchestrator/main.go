@@ -264,21 +264,17 @@ func run() (exitCode int) {
 		return 0
 	}
 
-	// 4. Initialize Metrics Server
-	go func() {
-		log.Println("Starting Prometheus metrics server on :2112/metrics")
-		if err := metrics.InitMetricsServer(":2112"); err != nil {
-			logger.FatalErrorLog(
-				"メトリクスサーバー起動失敗",
-				"Prometheus メトリクスサーバー (:2112) の起動に失敗いたしましたわ！",
-				"ポート 2112 が他プロセスや Orchestrator の二重起動で使用されていないかご確認くださいませ。",
-				"Metrics server failed",
-				"Prometheus metrics server (:2112) failed to start.",
-				"Please check if port 2112 is already bound by another process or an existing Orchestrator instance.",
-				err,
-			)
+	// 4. Initialize Metrics Server (non-fatal if port is blocked by Windows excludedportrange)
+	metricsAddr := dispConfig.MetricsAddr
+	if metricsAddr == "" {
+		metricsAddr = ":2112"
+	}
+	go func(addr string) {
+		log.Printf("Starting Prometheus metrics server on %s/metrics", addr)
+		if err := metrics.InitMetricsServer(addr); err != nil {
+			log.Printf("[WARN] Prometheus metrics server (%s) failed to start; continuing without metrics: %v (Hint: check Windows 'netsh interface ipv4 show excludedportrange protocol=tcp' or set orchestrator.metrics_addr in config.toml)", addr, err)
 		}
-	}()
+	}(metricsAddr)
 
 	// 5. Initialize Dispatcher
 	disp := dispatcher.NewDispatcher(*dispConfig, stateDB)

@@ -2,11 +2,11 @@
 
 <dev_specs id="DEV_SPECS">
 ## 開発マシンスペック (Development Host Machine Specifications) [Auto-Detected by Go Orchestrator]
-- **CPU**: QEMU Virtual CPU version 2.5+
-- **RAM**: 64.0 GB Physical DDR4
-- **GPU**: Virtual Desktop Monitor, NVIDIA GeForce RTX 5070 Ti, Microsoft Remote Display Adapter, Microsoft ���{�f�B�X�v���C �A�_�v�^�[
+- **CPU**: AMD Ryzen 9 5950X 16-Core Processor
+- **RAM**: 128.0 GB Physical DDR4
+- **GPU**: NVIDIA GeForce RTX 5070 Ti
 - **OS**: Microsoft Windows 11 Pro / PowerShell 7
-- **Pagefile**: C:\pagefile.sys (64 GB)
+- **Pagefile**: C:\pagefile.sys (8 GB)
 </dev_specs>
 
 <exec_specs id="EXEC_SPECS">

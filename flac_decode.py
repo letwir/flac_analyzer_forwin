@@ -343,17 +343,12 @@ def decode_flac_range_stream_fallback(
                 break
             read_buf.extend(buf)
 
+        if len(read_buf) != target_bytes:
+            raise RuntimeError(f"PCM short read: expected {target_bytes} bytes, received {len(read_buf)}")
+
         return bytes(read_buf), wFormatTag, numChannels, sampleRate, bitsPerSample
     finally:
-        try:
-            proc.stdout.close()
-            proc.terminate()
-            proc.wait(timeout=2)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+        _cleanup_long_decoder_process(proc)
 
 
 def decode_flac_range_fallback(
@@ -363,39 +358,44 @@ def decode_flac_range_fallback(
     flac CLI が SEEKTABLE 欠落などで FLAC__STREAM_DECODER_SEEK_ERROR を起こした際の
     libsndfile (soundfile) および ストリーミング逐次スキップによる高精度デコード・フォールバックですわ！
     """
+    import soundfile as sf
     try:
-        import soundfile as sf
-        with sf.SoundFile(filepath) as f:
-            total = len(f)
-            actual_start = max(0, min(start_sample, total))
-            actual_end = max(actual_start, min(end_sample if end_sample > 0 else total, total))
-            frames = actual_end - actual_start
-
-            if frames <= 0 or actual_start >= total:
-                raise ValueError(f"デコード対象フレーム数が不正ですわ (frames={frames}, actual_start={actual_start}, total={total})")
-
-            f.seek(actual_start)
-            subtype = getattr(f, "subtype", "")
-            if "PCM_24" in subtype or "PCM_32" in subtype:
-                pcm_data = f.read(frames=frames, dtype="int32")
-                pcm_bytes = pcm_data.tobytes()
-                wFormatTag = 1
-                bitsPerSample = 32
-            elif "PCM_16" in subtype:
-                pcm_data = f.read(frames=frames, dtype="int16")
-                pcm_bytes = pcm_data.tobytes()
-                wFormatTag = 1
-                bitsPerSample = 16
-            else:
-                pcm_data = f.read(frames=frames, dtype="float32")
-                pcm_bytes = pcm_data.tobytes()
-                wFormatTag = 3
-                bitsPerSample = 32
-
-            return pcm_bytes, wFormatTag, f.channels, f.samplerate, bitsPerSample
-    except Exception:
-        # soundfile.seek が psf_fseek でコケた場合は、確実なストリーミング逐次スキップデコードへ移行いたしますわ！
+        return _decode_flac_range_soundfile(sf, filepath, start_sample, end_sample)
+    except sf.LibsndfileError:
+        # Seek/decode failures may still succeed through the sequential CLI fallback.
         return decode_flac_range_stream_fallback(filepath, start_sample, end_sample)
+
+
+def _decode_flac_range_soundfile(sf, filepath, start_sample, end_sample):
+    with sf.SoundFile(filepath) as f:
+        total = len(f)
+        actual_start = max(0, min(start_sample, total))
+        actual_end = max(actual_start, min(end_sample if end_sample > 0 else total, total))
+        frames = actual_end - actual_start
+        if frames <= 0 or actual_start >= total:
+            raise ValueError(f"デコード対象フレーム数が不正ですわ (frames={frames}, actual_start={actual_start}, total={total})")
+
+        f.seek(actual_start)
+        subtype = getattr(f, "subtype", "")
+        if subtype == "PCM_16":
+            bits_per_sample = 16
+            pcm_data = f.read(frames=frames, dtype="int16", always_2d=True)
+            pcm_bytes = pcm_data.astype("<i2", copy=False).tobytes()
+        elif subtype == "PCM_24":
+            bits_per_sample = 24
+            # libsndfile returns 24-bit samples left-aligned in int32.
+            values = (f.read(frames=frames, dtype="int32", always_2d=True) >> 8).astype(np.int32)
+            packed = values.astype("<i4", copy=False).view(np.uint8).reshape(-1, 4)[:, :3]
+            pcm_bytes = packed.tobytes()
+        elif subtype == "PCM_32":
+            bits_per_sample = 32
+            pcm_data = f.read(frames=frames, dtype="int32", always_2d=True)
+            pcm_bytes = pcm_data.astype("<i4", copy=False).tobytes()
+        else:
+            raise ValueError(f"Unsupported FLAC subtype for raw PCM hashing: {subtype}")
+        if len(pcm_bytes) != frames * f.channels * (bits_per_sample // 8):
+            raise RuntimeError(f"PCM short read: expected {frames} frames, received fewer")
+        return pcm_bytes, 1, f.channels, f.samplerate, bits_per_sample
 
 
 def decode_flac_range(
@@ -410,22 +410,17 @@ def decode_flac_range(
 
     # -F (--decode-through-errors): ストリーム境界の軽微な不整合を許容して完走
     # --silent: 進行状況のみ非表示にし、重大なstderrメッセージは温存
-    cmd = [
-        'flac', '-d', '-c',
-        '-F',
-        f'--skip={start_sample}',
-        f'--until={end_sample}',
-        '--silent',
-        filepath
-    ]
+    cmd = ['flac', '-d', '-c', '-F', f'--skip={start_sample}']
+    if end_sample > 0:
+        cmd.append(f'--until={end_sample}')
+    cmd.extend(['--silent', filepath])
     
     last_error_context = ""
     for attempt in range(1, max_retries + 1):
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except FileNotFoundError:
+            return decode_flac_range_fallback(filepath, start_sample, end_sample)
         wav_bytes, stderr_bytes = proc.communicate()
         rc = proc.returncode
         
@@ -498,6 +493,30 @@ def pcm_bytes_to_float32(
         
     return float_audio.reshape(-1, channels)
 
+
+def _cleanup_long_decoder_process(proc):
+    cleanup_errors = []
+    for pipe in (proc.stdout, proc.stderr):
+        if pipe is not None and not pipe.closed:
+            try:
+                pipe.close()
+            except Exception as exc:
+                cleanup_errors.append(exc)
+
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=2)
+    except Exception as exc:
+        cleanup_errors.append(exc)
+
+    if cleanup_errors:
+        raise RuntimeError("長尺flac decoder cleanup failed") from cleanup_errors[0]
+
 def process_slice_with_seq_safety(
     filepath: str, 
     start_sample: int, 
@@ -523,15 +542,12 @@ def process_slice_with_seq_safety(
         return audio_44100, md5_hash
 
     # 10分以上の長尺（DJミックスなど）の場合は、ストリーミングで読み出しながらその場でダウンサンプリング
+    proc = None
     try:
-        cmd = [
-            'flac', '-d', '-c',
-            '-F',
-            f'--skip={start_sample}',
-            f'--until={end_sample}',
-            '--silent',
-            filepath
-        ]
+        cmd = ['flac', '-d', '-c', '-F', f'--skip={start_sample}']
+        if end_sample > 0:
+            cmd.append(f'--until={end_sample}')
+        cmd.extend(['--silent', filepath])
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -584,21 +600,19 @@ def process_slice_with_seq_safety(
         return audio_44100, final_md5
 
     except Exception:
-        # flac CLI ストリーミングがシークエラー等で失敗した場合は soundfile で確実に読み込み
-        import soundfile as sf
-        with sf.SoundFile(filepath) as f:
-            total = len(f)
-            actual_start = max(0, min(start_sample, total))
-            actual_end = max(actual_start, min(end_sample, total))
-            f.seek(actual_start)
-            frames = actual_end - actual_start
-            chunk_float = f.read(frames=frames, dtype="float32", always_2d=True)
-            sr_read = f.samplerate
-
-        # ハッシュ計算用の byte 列
-        final_md5 = hashlib.md5(chunk_float.tobytes()).hexdigest()
+        if proc is not None:
+            _cleanup_long_decoder_process(proc)
+            proc = None
+        raw_pcm, raw_tag, raw_channels, sr_read, raw_bits = decode_flac_range_fallback(
+            filepath, start_sample, end_sample
+        )
+        chunk_float = pcm_bytes_to_float32(raw_pcm, raw_tag, raw_bits, raw_channels)
+        final_md5 = hashlib.md5(raw_pcm).hexdigest()
         if sr_read != 44100:
             audio_44100 = soxr.resample(chunk_float, sr_read, 44100)
         else:
             audio_44100 = chunk_float
         return audio_44100, final_md5
+    finally:
+        if proc is not None:
+            _cleanup_long_decoder_process(proc)

@@ -36,6 +36,7 @@ type OrchestratorConfig struct {
 	ShmRetryCount              int     `toml:"shm_retry_count"`
 	ShmRetryDelaySec           int     `toml:"shm_retry_delay_sec"`
 	QueueDir                   string  `toml:"queue_dir"`
+	MetricsAddr                string  `toml:"metrics_addr"`
 	LogLevel                   string  `toml:"log_level"`
 	SkipDupByHash              *bool   `toml:"skip_dup_by_hash"`
 	EnableVirtualLock          *bool   `toml:"enable_virtual_lock"`
@@ -76,6 +77,7 @@ type Config struct {
 	ShmRetryCount              int
 	ShmRetryDelaySec           int
 	QueueDir                   string
+	MetricsAddr                string
 	DatabaseURL                string
 	PythonEnv                  map[string]string
 	LogLevel                   logger.LogLevel
