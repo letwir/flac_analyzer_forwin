@@ -185,3 +185,46 @@ def vocal_character_morphism(y: np.ndarray, sr: int) -> dict[str, Any]:
         "phrase_decay_db_per_sec": float(decay["decay_db_per_sec"]),
         "vocal_activity_ratio": float(decay["sustain_ratio"]),
     }
+
+
+def bass_character_morphism(y: np.ndarray, sr: int) -> dict[str, Any]:
+    """bass ステム特化射：低域 F0 (E1..E4)・Sub/Mid/倍音3帯域比・サステイン/レガート度を合成しますわ！
+
+    Mor(R^N x SR -> BassProfile)
+    """
+    clean = np.nan_to_num(np.asarray(y, dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
+    if clean.size < 2048 or sr <= 0:
+        return {
+            **_neutral_voiced_f0_metrics(),
+            "sub_bass_ratio": 0.0,
+            "mid_bass_ratio": 0.0,
+            "harmonic_attack_ratio": 0.0,
+            "sustain_ratio": 0.0,
+            "legato_score": 0.0,
+        }
+
+    with LIBROSA_LOCK:
+        frame_rms = librosa.feature.rms(y=clean, frame_length=2048, hop_length=512)[0]
+    f0_info = voiced_f0_contour_morphism(clean, sr, fmin_hz=41.20, fmax_hz=329.63, frame_rms=frame_rms)
+    bands = subband_energy_morphism(
+        clean,
+        sr,
+        {
+            "sub_bass": (20.0, 60.0),
+            "mid_bass": (60.0, 250.0),
+            "harmonic_attack": (250.0, 1500.0),
+        },
+    )
+    decay = decay_slope_morphism(frame_rms, sr=sr, hop_length=512)
+    # 減衰が緩やかでサステインが長いほどレガート（シンセベース/ロングトーン寄り）と判定するわ
+    sustain = float(decay["sustain_ratio"])
+    decay_slope = float(decay["decay_db_per_sec"])
+    legato_score = float(np.clip(sustain * (1.0 / (1.0 + max(0.0, -decay_slope) * 0.05)), 0.0, 1.0))
+    return {
+        **f0_info,
+        "sub_bass_ratio": float(bands["sub_bass_ratio"]),
+        "mid_bass_ratio": float(bands["mid_bass_ratio"]),
+        "harmonic_attack_ratio": float(bands["harmonic_attack_ratio"]),
+        "sustain_ratio": sustain,
+        "legato_score": legato_score,
+    }

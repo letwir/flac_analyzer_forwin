@@ -137,6 +137,10 @@ def extract_stem_plugins_morphism(
         from .common_pitch_harmony import vocal_character_morphism
 
         stem_profiles["vocal_profile"] = vocal_character_morphism(ctx.y, ctx.sr)
+    if ctx.source == "bass":
+        from .common_pitch_harmony import bass_character_morphism
+
+        stem_profiles["bass_profile"] = bass_character_morphism(ctx.y, ctx.sr)
     if stem_profiles:
         results["stem_profiles"] = stem_profiles
     return results
