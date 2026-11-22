@@ -147,3 +147,71 @@ class StructureSsmPlugin(BasePlugin):
         return {
             "structure_ssm_feat": feat,
         }
+
+
+def multistem_structure_ssm_morphism_Large(
+    mix_y: np.ndarray,
+    stems_mono: dict[str, np.ndarray] | Any,
+    sr: int,
+) -> dict[str, Any]:
+    """6ステムの編曲稼働アークと全体エネルギーを統合した SSM 構造解析射ですわ！
+
+    Mor(R^N x Prod_{s}(R^N) x SR -> MultiStemStructure)
+    """
+    duration_sec = float(len(mix_y) / sr) if sr > 0 else 0.0
+    if duration_sec < 1.0 or not stems_mono:
+        return {
+            "chorus_start_sec": 0.0,
+            "chorus_end_sec": 0.0,
+            "drop_position_sec": 0.0,
+            "break_position_sec": 0.0,
+            "structural_complexity": 0.0,
+            "novelty_seq_32": [0.0] * FIXED_SEQ_FRAMES,
+        }
+
+    # 32フレーム空間上で各ステムの包絡エネルギーを行方向へ積み重ねて編曲状態ベクトルを作るわ
+    n_frames = FIXED_SEQ_FRAMES
+    rows: list[np.ndarray] = []
+    for name in ("vocals", "drums", "bass", "guitar", "piano", "other"):
+        wav = stems_mono.get(name)
+        if wav is None or np.asarray(wav).size == 0:
+            rows.append(np.zeros(n_frames, dtype=np.float32))
+            continue
+        arr = np.asarray(wav, dtype=np.float32).ravel()
+        chunk = max(1, arr.size // n_frames)
+        usable = (arr.size // chunk) * chunk
+        blocks = arr[:usable].reshape(-1, chunk)
+        rms = np.sqrt(np.mean(blocks.astype(np.float64) ** 2, axis=1))
+        curve = np.asarray(_resample_to_fixed_frames(rms, n_frames), dtype=np.float32)
+        peak = float(np.max(curve))
+        rows.append(curve / peak if peak > 1e-9 else curve)
+
+    feat_mat = np.vstack(rows)
+    ssm = compute_ssm(feat_mat)
+    novelty = compute_novelty_curve(ssm, kernel_size=4)
+    total_arc = np.sum(feat_mat, axis=0)
+    chorus_s, chorus_e, drop_pos, complexity = detect_chorus_and_drop(novelty, total_arc, duration_sec)
+
+    # ブレイク位置 (10%〜90% の区間で全ステム合算エネルギーが最小の谷)
+    lo_idx = max(0, int(n_frames * 0.1))
+    hi_idx = max(lo_idx + 1, int(n_frames * 0.9))
+    break_idx = lo_idx + int(np.argmin(total_arc[lo_idx:hi_idx]))
+    break_pos_sec = float(break_idx * (duration_sec / n_frames))
+
+    return {
+        "chorus_start_sec": chorus_s,
+        "chorus_end_sec": chorus_e,
+        "drop_position_sec": drop_pos,
+        "break_position_sec": break_pos_sec,
+        "structural_complexity": complexity,
+        "novelty_seq_32": _resample_to_fixed_frames(novelty, FIXED_SEQ_FRAMES),
+    }
+
+
+def multistem_structure_ssm_morphism(
+    mix_y: np.ndarray,
+    stems_mono: dict[str, np.ndarray] | Any,
+    sr: int,
+) -> dict[str, Any]:
+    """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(R^N x Prod_{s}(R^N) x SR -> MultiStemStructure)"""
+    return multistem_structure_ssm_morphism_Large(mix_y, stems_mono, sr)

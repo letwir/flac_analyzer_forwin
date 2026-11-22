@@ -302,7 +302,7 @@
   - [x] `P3-M1-S3`: `tests/test_cross_stem_harmony.py` にて、既知コード進行＋ベースルート＋テンションメロディの合成マルチステム入力に対する推論精度を検証する。
 
 - [ ] **中目標 P3-M2: マルチステム編曲構造 SSM と選択的 Essentia ONNX ステム推論（ドメインシフト検証付き）**
-  - [ ] `P3-M2-S1`: `analyzer/structure_ssm.py` を拡張し、`mix` 単体だけでなく6ステムのエネルギー＋純和声クロマを結合した状態空間上の自己相似行列射 `multistem_structure_ssm_morphism` を実装して、ブレイク・落ちサビ・ラスサビ・ドロップの境界検出精度を高める。
+  - [x] `P3-M2-S1`: `analyzer/structure_ssm.py` を拡張し、`mix` 単体だけでなく6ステムのエネルギー＋純和声クロマを結合した状態空間上の自己相似行列射 `multistem_structure_ssm_morphism` を実装して、ブレイク・落ちサビ・ラスサビ・ドロップの境界検出精度を高める。
   - [ ] `P3-M2-S2`: `worker_cpu_daemon.py` / `analyzer/essentia_dsp.py` に設定駆動の選択的ステム推論射（`vocals` に対する `gender` / `voice_instrumental` 等、デフォルトは `analyzer.toml` で on/off 制御可能）を追加し、`mix` 推論値との乖離（ドメインシフト指標）を併記する。
   - [ ] `P3-M2-S3`: PostgreSQL `raw.library_flac.features` JSONB スキーマ（`analysis_schema_version = 2` または後方互換拡張）および `zig/migrate_features.py` との整合・E2E 回帰テストを完了する。
 

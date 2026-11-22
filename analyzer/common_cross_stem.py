@@ -196,6 +196,10 @@ def cross_stem_foundation_morphism_Large(
         sr,
     )
 
+    from .structure_ssm import multistem_structure_ssm_morphism
+
+    multistem_struct = multistem_structure_ssm_morphism(mix_arr, aligned, sr)
+
     return {
         "residual_snr_db": residual_snr_db,
         "v_to_accomp_db": v_to_accomp_db,
@@ -203,6 +207,7 @@ def cross_stem_foundation_morphism_Large(
         "rhythm_pocket": rhythm_pocket,
         "harmonic_bus": harm_bus_json,
         "harmonic_tension": harm_tension,
+        "multistem_structure": multistem_struct,
         "per_stem": per_stem,
         "arrangement_arc_32": {
             "stems": arc_stems,
