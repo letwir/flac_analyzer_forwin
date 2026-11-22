@@ -145,6 +145,12 @@ def extract_stem_plugins_morphism(
         from .common_signal import drum_band_onset_morphism
 
         stem_profiles["drum_profile"] = drum_band_onset_morphism(ctx.y, ctx.sr)
+    if ctx.source in ("guitar", "piano", "other"):
+        from .common_pitch_harmony import harmonic_instrument_character_morphism
+
+        stem_profiles["instrument_profile"] = harmonic_instrument_character_morphism(
+            ctx.y, ctx.sr, ctx.source, chroma=ctx.chroma
+        )
     if stem_profiles:
         results["stem_profiles"] = stem_profiles
     return results

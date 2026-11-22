@@ -228,3 +228,95 @@ def bass_character_morphism(y: np.ndarray, sr: int) -> dict[str, Any]:
         "sustain_ratio": sustain,
         "legato_score": legato_score,
     }
+
+
+def _normalized_chroma_entropy(chroma: np.ndarray | None, y: np.ndarray, sr: int) -> float:
+    """クロマ行列のフレーム単位正規化エントロピー (0=単音, 1=密集和音) を算出しますわ！"""
+    c_mat = chroma
+    if c_mat is None:
+        with LIBROSA_LOCK:
+            c_mat = librosa.feature.chroma_stft(y=y, sr=sr)
+    if c_mat.size == 0 or c_mat.shape[0] == 0:
+        return 0.0
+    col_sums = np.sum(np.abs(c_mat), axis=0, keepdims=True)
+    active_cols = col_sums.ravel() > _EPS
+    if not np.any(active_cols):
+        return 0.0
+    probs = np.abs(c_mat[:, active_cols]) / (col_sums[:, active_cols] + _EPS)
+    ent = -np.sum(probs * np.log2(probs + _EPS), axis=0) / np.log2(float(c_mat.shape[0]))
+    return float(np.clip(np.mean(ent), 0.0, 1.0))
+
+
+def _guitar_character(clean: np.ndarray, sr: int, chroma: np.ndarray | None) -> dict[str, float]:
+    """guitar ステムの歪み度とストローク対単音リード比を算出しますわ！"""
+    rms = float(np.sqrt(np.mean(clean.astype(np.float64) ** 2)))
+    peak = float(np.max(np.abs(clean)))
+    crest = peak / max(rms, _EPS)
+    # 歪んだギターほど波形クレストファクターが圧縮され、高次倍音 (2-6kHz) 比率が上昇するわ
+    sat_score = float(np.clip(1.0 - (crest - 1.414) / 6.0, 0.0, 1.0)) if rms > _EPS else 0.0
+    bands = subband_energy_morphism(clean, sr, {"harm_hi": (1500.0, 6000.0)})
+    harm_ratio = float(bands["harm_hi_ratio"])
+    distortion_index = float(np.clip(0.55 * sat_score + 0.45 * min(1.0, harm_ratio * 2.0), 0.0, 1.0))
+    strum_ratio = _normalized_chroma_entropy(chroma, clean, sr)
+    return {
+        "distortion_index": distortion_index,
+        "strumming_vs_lead_ratio": strum_ratio,
+    }
+
+
+def _piano_character(clean: np.ndarray, sr: int, chroma: np.ndarray | None) -> dict[str, float]:
+    """piano ステムの和音密度・打鍵ダイナミクス分散・ペダルサステイン比を算出しますわ！"""
+    with LIBROSA_LOCK:
+        frame_rms = librosa.feature.rms(y=clean, frame_length=2048, hop_length=512)[0]
+    mean_rms = float(np.mean(frame_rms)) if frame_rms.size > 0 else 0.0
+    vel_std = float(np.std(frame_rms) / (mean_rms + _EPS)) if mean_rms > _EPS else 0.0
+    decay = decay_slope_morphism(frame_rms, sr=sr, hop_length=512)
+    return {
+        "polyphony_entropy": _normalized_chroma_entropy(chroma, clean, sr),
+        "velocity_dynamics_std": vel_std,
+        "pedal_sustain_ratio": float(decay["sustain_ratio"]),
+    }
+
+
+def _other_character(clean: np.ndarray, sr: int, _chroma: np.ndarray | None) -> dict[str, float]:
+    """other ステムの調波対打撃成分比とパッド持続度を算出しますわ！"""
+    with LIBROSA_LOCK:
+        stft_mag = np.abs(librosa.stft(clean, n_fft=1024, hop_length=512))
+        frame_rms = librosa.feature.rms(y=clean, frame_length=2048, hop_length=512)[0]
+    if stft_mag.shape[0] < 2 or stft_mag.shape[1] < 2:
+        return {"harmonic_percussive_ratio": 0.5, "pad_sustain_score": 0.0}
+    # 周波数方向滑らかさ(打撃) vs 時間方向滑らかさ(持続調波) のエネルギー比で HPSS 傾向を高速近似するわ
+    dt_energy = float(np.mean(np.diff(stft_mag, axis=1) ** 2))
+    df_energy = float(np.mean(np.diff(stft_mag, axis=0) ** 2))
+    hpss_ratio = float(np.clip(df_energy / (dt_energy + df_energy + _EPS), 0.0, 1.0))
+    decay = decay_slope_morphism(frame_rms, sr=sr, hop_length=512)
+    return {
+        "harmonic_percussive_ratio": hpss_ratio,
+        "pad_sustain_score": float(decay["sustain_ratio"]),
+    }
+
+
+_INSTRUMENT_CHARACTER_DISPATCH = {
+    "guitar": _guitar_character,
+    "piano": _piano_character,
+    "other": _other_character,
+}
+
+
+def harmonic_instrument_character_morphism(
+    y: np.ndarray,
+    sr: int,
+    stem_name: str,
+    chroma: np.ndarray | None = None,
+) -> dict[str, float]:
+    """guitar / piano / other ステムの奏法・音色特性を抽出する統一ルーティング純粋射ですわ！
+
+    Mor(R^N x SR x StemName -> InstrumentProfile)
+    """
+    handler = _INSTRUMENT_CHARACTER_DISPATCH.get(stem_name)
+    if handler is None or sr <= 0:
+        return {}
+    clean = np.nan_to_num(np.asarray(y, dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
+    if clean.size < 2048:
+        return {}
+    return handler(clean, sr, chroma)
