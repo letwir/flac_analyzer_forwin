@@ -1,0 +1,24 @@
+# Task Diary: 20261123-v2-gpt-audit-fixes
+
+- **timestamp**: 2026-11-23T01:57:00+09:00
+- **task**: `20261123-v2-gpt-audit-fixes` (`F:\repo\flac_analyzer_forwin`, branch `v2`) — Evaluate external review findings against the live codebase/ETL, fix all 5 verified algorithmic/memory/aliasing/spec/dispatch issues, add regression tests, push to `origin/v2`, and record to `llm-mem`.
+- **request-evidence**:
+  - User shared external GPT review highlighting: (1) $O(N^2)$ `xcorr_lag_morphism`, (2) full-track FFT & `float64` RAM spikes before wavefront publication, (3) `[::step]` decimation aliasing in `_compute_low_band_coherence`, (4) `multistem_structure_ssm_morphism` omitting harmonic chroma, and (5) double plugin execution in `build_stem_extractor_morphism`.
+- **action**:
+  - Verified all 5 issues directly in the codebase (noting `P3-M2-S3` had already completed after the reviewer's `cc2162d` snapshot).
+  - Fixed all 5 issues in `analyzer/common_signal.py`, `analyzer/common_stereo.py`, `analyzer/common_cross_stem.py`, `analyzer/common_pitch_harmony.py`, `analyzer/structure_ssm.py`, and `analyzer/common_dispatch.py`.
+  - Added 4 targeted regression tests (55-min `N=165000` xcorr latency, 30s `N=1323000` 4410Hz alias-trap coherence, flat-RMS harmonic modulation 18D SSM, and single-call spy test on `build_stem_extractor_morphism`).
+- **result**:
+  - 32/32 Python unit/integration tests and Go dispatcher tests PASSED.
+  - Committed and pushed to `origin/v2`.
+- **friction**:
+  - None.
+- **attribution**:
+  - PromptDefect: 0% (clear technical audit criteria).
+  - AgentDefect: 100% (previous `v2` implementation introduced the $O(N^2)$ `np.correlate`, full-track FFT/float64 copies, `[::step]` decimation, missing chroma in `multistem_structure_ssm_morphism`, and redundant wrapper execution).
+- **impact**:
+  - Long-track (55-min) CPU/RAM bottlenecks, low-band aliasing, and spec/test path mismatches are completely eliminated before production batch runs.
+- **feedback**:
+  - External audit caught critical scale/numerical invariants missed by short 2-second synthetic unit tests.
+- **rewritten-request**:
+  - "Evaluate the 5 technical findings from the GPT audit of branch `v2` (complexity, long-track FFT/RAM safety before wavefront publication, decimation aliasing, 18D chroma SSM spec compliance, and double plugin dispatch), fix all valid issues, add long-track/aliasing/spy regression tests, push to `origin/v2`, and log to `llm-memory`."
