@@ -276,9 +276,9 @@
 
 #### 【大目標 Phase 2】ステム別「楽器特化 DSP」純粋射の導入と不要計算の刈り込み (`goal:phase2-instrument-dsp`)
 
-- [ ] **中目標 P2-M1: 不要 Warmup / 不適合特徴量の刈り込みによる計算予算の創出**
+- [x] **中目標 P2-M1: 不要 Warmup / 不適合特徴量の刈り込みによる計算予算の創出**
   - [x] `P2-M1-S1`: `analyzer/common_dispatch.py` と `STEM_CONFIGS` を改修し、`drums` からの `chroma` / `chroma_cqt` / `tonnetz` / `key` / `chord_sequence` 除外、および非低域ステム（`vocals`, `piano`, `guitar`）からの `subbass_env_mean` (20–60Hz) 除外を宣言的に定義する。
-  - [ ] `P2-M1-S2`: スキーマ互換維持のため、除外されたキーには `None` または型安全な単位元（Neutral Element）を返し、`orchestrator/dispatcher/analysis_decision.go` の `completeStemFeatures` 契約を壊さないことをテストで保証する。
+  - [x] `P2-M1-S2`: スキーマ互換維持のため、除外されたキーには `None` または型安全な単位元（Neutral Element）を返し、`orchestrator/dispatcher/analysis_decision.go` の `completeStemFeatures` 契約を壊さないことをテストで保証する。
 
 - [ ] **中目標 P2-M2: パラメータ化 F0・輪郭純粋射 (`analyzer/common_pitch_harmony.py`) と `vocals` / `bass` 特化解析**
   - [ ] `P2-M2-S1`: `analyzer/common_pitch_harmony.py` を新設し、帯域 $(f_{\min}, f_{\max})$ と RMS+HNR 有声ゲートを受け取る汎用ピッチ輪郭射 `voiced_f0_contour_morphism` を実装する（有声率 `voiced_ratio`、音域 `f0_min_hz`/`f0_max_hz`/`f0_median_hz`/`pitch_range_semitones`、音程跳躍度 `melodic_interval_mean`、ピッチ安定度/ケロケロ度 `pitch_quantization_score`、4–8Hz 変調から算出する `vibrato_rate_hz`/`vibrato_extent_cents`）。

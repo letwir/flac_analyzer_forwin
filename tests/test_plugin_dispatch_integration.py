@@ -66,6 +66,32 @@ class TestPluginDispatchIntegration(unittest.TestCase):
             finally:
                 ctx.clear()
 
+    def test_drums_skips_cqt_with_neutral_elements_and_tensor_subbass_skip(self) -> None:
+        sr = 22050
+        t = np.linspace(0.0, 1.5, int(sr * 1.5), endpoint=False, dtype=np.float32)
+        y = (0.3 * np.sin(2.0 * np.pi * 80.0 * t)).astype(np.float32)
+        ctx = AudioContext(y=y, sr=sr, source="drums")
+        try:
+            raw = build_stem_extractor_morphism("drums", librosa_extractor).run(ctx)
+            # chroma_cqt は drums では一切評価されない（CSE キャッシュが None のまま）こと
+            self.assertIsNone(ctx._chroma_cqt)
+            pg = raw.to_postgres_dict("track_drums_neutral")
+            self.assertEqual(pg["scalars"]["key"], "N/A")
+            self.assertEqual(pg["scalars"]["scale"], "none")
+            self.assertEqual(pg["scalars"]["dominant_pitch"], "N/A")
+            self.assertGreater(len(pg["scalars"]), 10)
+        finally:
+            ctx.clear()
+
+        import torch
+        from analyzer.tensor_dsp import extract_tensor_features
+
+        y_t = torch.from_numpy(y)
+        feats_voc = extract_tensor_features(y_t, sr, torch.device("cpu"), stem_name="vocals")
+        self.assertEqual(feats_voc["subbass_env_mean"], 0.0)
+        feats_bass = extract_tensor_features(y_t, sr, torch.device("cpu"), stem_name="bass")
+        self.assertGreater(feats_bass["subbass_env_mean"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

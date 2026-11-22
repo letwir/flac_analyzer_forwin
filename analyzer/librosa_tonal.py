@@ -21,7 +21,17 @@ logger = logging.getLogger("analyzer.librosa_tonal")
 def extract_chroma_obj(ctx: AudioContext) -> ChromaFeatures:
     """Chroma STFT から ChromaFeatures オブジェクトを構築しますわ！"""
     if ctx.source == "drums":
-        return ChromaFeatures()
+        return ChromaFeatures(
+            mean=[0.0] * 12,
+            std=[0.0] * 12,
+            entropy=[0.0] * 12,
+            seq=[],
+            peak=[0.0] * 12,
+            entropy_mean=0.0,
+            entropy_std=0.0,
+            entropy_entropy=0.0,
+            entropy_seq=[],
+        )
     chroma = ctx.chroma
     safe_chroma = np.nan_to_num(chroma, nan=0.0, posinf=0.0, neginf=0.0)
 
@@ -71,7 +81,12 @@ def extract_chroma_obj(ctx: AudioContext) -> ChromaFeatures:
 def extract_tonnetz(ctx: AudioContext) -> TonnetzFeatures:
     """Tonnetz 6次元和声特徴量を算出しますわ！"""
     if ctx.source == "drums":
-        return TonnetzFeatures()
+        return TonnetzFeatures(
+            mean=[0.0] * 6,
+            std=[0.0] * 6,
+            delta_mean=[0.0] * 6,
+            seq=[],
+        )
     with LIBROSA_LOCK:
         raw_tonnetz = librosa.feature.tonnetz(chroma=ctx.chroma_cqt)
     safe_tonnetz = np.nan_to_num(raw_tonnetz, nan=0.0, posinf=0.0, neginf=0.0)
