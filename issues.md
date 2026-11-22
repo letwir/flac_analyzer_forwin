@@ -193,28 +193,28 @@
 - [x]DONE [#16 [Feat] CLI リアルタイム進捗ダッシュボード（処理速度/残り時間/ディスク残量/ワーカー稼働状況）](https://github.com/letwir/flac_analyzer_forwin/issues/16)
 
 ### 9. 音響解析パイプラインのプラグインアーキテクチャ化 & 密結合分離 (`goal:pipeline`)
-- [ ] [#18 [Arch] 音響解析パイプラインのプラグインアーキテクチャ化 & analyze-pre/ 分離 & 不要スクリプト整理](https://github.com/letwir/flac_analyzer_forwin/issues/18)
+- [x] [#18 [Arch] 音響解析パイプラインのプラグインアーキテクチャ化 & analyze-pre/ 分離 & 不要スクリプト整理](https://github.com/letwir/flac_analyzer_forwin/issues/18)
   - [x] 1-1. 旧世代スクリプト (`worker_analyzer.py`, `functor_precache.py` 等) の整理・廃止とGo連携ワーカーへの一本化
-  - [ ] 1-2. `analyze-pre/` ディレクトリ新設（Demucs分離後SHM・Pre-warm密結合レイヤーの隔離）
-  - [ ] 1-3. `analyzer/` の純粋関数プラグイン化（`librosa_[なにやるの].py` / `scipy_stats.py` 等への分割・命名統一）
-  - [ ] 1-4. プラグイン自己登録と動的ディスパッチ基盤（`registry_plugins.py` 「あるものを回す」機構）の実装
-  - [ ] 1-5. 既存テストおよび Go オーケストレーター連携の動作確認
+  - [x] 1-2. `analyze-pre/` ディレクトリ新設（Demucs分離後SHM・Pre-warm密結合レイヤーの隔離）
+  - [x] 1-3. `analyzer/` の純粋関数プラグイン化（`librosa_[なにやるの].py` / `scipy_stats.py` 等への分割・命名統一）
+  - [x] 1-4. プラグイン自己登録と動的ディスパッチ基盤（`registry_plugins.py` 「あるものを回す」機構）の実装
+  - [x] 1-5. 既存テストおよび Go オーケストレーター連携の動作確認
 
 ### 10. 新規音響解析モジュールの導入 (`goal:features`)
-- [ ] [#19 [Feat] 新規音響解析モジュールの導入 (心理音響・楽曲構造・ボーカル声質・偽ハイレゾ/TruePeak)](https://github.com/letwir/flac_analyzer_forwin/issues/19)
-  - [ ] 2-1. 心理音響指標プラグイン `analyzer/psychoacoustics_din45692.py` (Sharpness DIN 45692, Roughness, Tonality) の実装
-  - [ ] 2-2. 楽曲構造・サビ/ドロップ検出プラグイン `analyzer/structure_ssm.py` (SSM, Chorus, Drop, Complexity) の実装
-  - [ ] 2-3. ボーカル声質指標プラグイン `analyzer/voice_cpp.py` (CPP / CPPS ケプストラム突出度, Breathiness) の実装
-  - [ ] 2-4. オーディオ品質検証プラグイン `analyzer/audio_cutoff_lufs.py` (偽ハイレゾ遮断周波数, 4x True Peak, EBU R128 LUFS/LRA) の実装
-  - [ ] 2-5. 将来の音楽基盤モデル (CLAP/MERT) 連携用プラグインスロットの設計
-  - [ ] 2-6. 新モジュール群の単体テスト（`tests/test_*.py`）整備
+- [x] [#19 [Feat] 新規音響解析モジュールの導入 (心理音響・楽曲構造・ボーカル声質・偽ハイレゾ/TruePeak)](https://github.com/letwir/flac_analyzer_forwin/issues/19)
+  - [x] 2-1. 心理音響指標プラグイン `analyzer/psychoacoustics_din45692.py` (Sharpness DIN 45692, Roughness, Tonality) の実装
+  - [x] 2-2. 楽曲構造・サビ/ドロップ検出プラグイン `analyzer/structure_ssm.py` (SSM, Chorus, Drop, Complexity) の実装
+  - [x] 2-3. ボーカル声質指標プラグイン `analyzer/voice_cpp.py` (CPP / CPPS ケプストラム突出度, Breathiness) の実装
+  - [x] 2-4. オーディオ品質検証プラグイン `analyzer/audio_cutoff_lufs.py` (偽ハイレゾ遮断周波数, 4x True Peak, EBU R128 LUFS/LRA) の実装
+  - [x] 2-5. 将来の音楽基盤モデル (CLAP/MERT) 連携用プラグインスロットの設計
+  - [x] 2-6. 新モジュール群の単体テスト（`tests/test_*.py`）整備
 
 ### 11. 外だし設定 analyzer.toml 自動生成・エディタ連携・安全弁 (`goal:pipeline`)
-- [ ] [#20 [Feat] 外だし設定 analyzer.toml 自動生成・エディタ連携・安全弁 (execute=false)](https://github.com/letwir/flac_analyzer_forwin/issues/20)
-  - [ ] 3-1. プラグイン定義からの `analyzer.toml` 自動生成機構の実装
-  - [ ] 3-2. 誤実行防止のための安全弁 (`execute = false` 初期値ガード) の導入
-  - [ ] 3-3. 設定ファイル（`config.toml` の `editor = "notepad"` / `"sakura"`）に基づくエディタ自動起動機能の実装
-  - [ ] 3-4. `execute = true` 確認後のパイプライン実行テスト
+- [x] [#20 [Feat] 外だし設定 analyzer.toml 自動生成・エディタ連携・安全弁 (execute=false)](https://github.com/letwir/flac_analyzer_forwin/issues/20)
+  - [x] 3-1. プラグイン定義からの `analyzer.toml` 自動生成機構の実装
+  - [x] 3-2. 誤実行防止のための安全弁 (`execute = false` 初期値ガード) の導入
+  - [x] 3-3. 設定ファイル（`config.toml` の `editor = "notepad"` / `"sakura"`）に基づくエディタ自動起動機能の実装
+  - [x] 3-4. `execute = true` 確認後のパイプライン実行テスト
 
 ### 12. Go非介在・治具マイグレーションスクリプトの実装 (`goal:pipeline`)
 - [ ] [#21 [Tool] Go非介在・治具マイグレーションスクリプト (zig/migrate_features.py) の実装](https://github.com/letwir/flac_analyzer_forwin/issues/21)
@@ -265,7 +265,7 @@
 
 - [ ] **中目標 P1-M3: ステム別ルーティング関手 (`analyzer/common_dispatch.py`) と未接続4プラグインの本番パイプライン統合**
   - [x] `P1-M3-S1`: `analyzer/common_dispatch.py` を新設し、`analyzer.toml` の有効設定と `ctx.source`（ステム名）を受け取って適用対象プラグインを合成する純粋ディスパッチ関手 `build_stem_extractor_morphism` を実装する。
-  - [ ] `P1-M3-S2`: 未接続だった4プラグインを適材適所で本番接続する：
+  - [x] `P1-M3-S2`: 未接続だった4プラグインを適材適所で本番接続する：
     - `voice_cpp.py` (CPP / Breathiness) $\to$ `vocals`（および `mix`）
     - `audio_cutoff_lufs.py` $\to$ `mix`（カットオフ・偽ハイレゾ・TruePeak・LUFS/LRA）＋全6ステム（LUFS/LRA のみ高速算出）
     - `psychoacoustics_din45692.py` (Sharpness / Roughness / Tonality) $\to$ `mix`, `vocals`, `guitar`, `drums`

@@ -279,6 +279,12 @@ def _build_raw_features(
     nap_val = ctx.nap if ctx is not None else 0.0
     hnr_db_val = ctx.hnr_db if ctx is not None else 0.0
 
+    plugin_feats: dict[str, Any] = {}
+    if ctx is not None:
+        from .common_dispatch import extract_stem_plugins_morphism
+
+        plugin_feats = extract_stem_plugins_morphism(ctx)
+
     return RawFeatures(
         energy=energy,
         bpm=bpm,
@@ -333,6 +339,10 @@ def _build_raw_features(
         scipy_stats_feat=scipy_stats_feat,
         hilbert_feat=hilbert_feat,
         peak_feat=peak_feat,
+        psychoacoustics_feat=plugin_feats.get("psychoacoustics_feat"),
+        structure_ssm_feat=plugin_feats.get("structure_ssm_feat"),
+        voice_cpp_feat=plugin_feats.get("voice_cpp_feat"),
+        audio_cutoff_lufs_feat=plugin_feats.get("audio_cutoff_lufs_feat"),
         stereo_meta=ctx.stereo_meta if ctx is not None else None,
         cross_stem_meta=ctx.cross_stem_meta if ctx is not None else None,
     )
