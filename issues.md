@@ -264,7 +264,7 @@
   - [x] `P1-M2-S4`: `tests/test_common_stereo_and_cross_stem.py` を作成し、センターモノラル信号・ハードパン信号・逆位相信号・既知ステム合成信号に対する不変条件（$W\in[0,1]$, $\rho_{LR}\in[-1,1]$, $\sum \text{energy\_share}\approx 1$）を検証する。
 
 - [ ] **中目標 P1-M3: ステム別ルーティング関手 (`analyzer/common_dispatch.py`) と未接続4プラグインの本番パイプライン統合**
-  - [ ] `P1-M3-S1`: `analyzer/common_dispatch.py` を新設し、`analyzer.toml` の有効設定と `ctx.source`（ステム名）を受け取って適用対象プラグインを合成する純粋ディスパッチ関手 `build_stem_extractor_morphism` を実装する。
+  - [x] `P1-M3-S1`: `analyzer/common_dispatch.py` を新設し、`analyzer.toml` の有効設定と `ctx.source`（ステム名）を受け取って適用対象プラグインを合成する純粋ディスパッチ関手 `build_stem_extractor_morphism` を実装する。
   - [ ] `P1-M3-S2`: 未接続だった4プラグインを適材適所で本番接続する：
     - `voice_cpp.py` (CPP / Breathiness) $\to$ `vocals`（および `mix`）
     - `audio_cutoff_lufs.py` $\to$ `mix`（カットオフ・偽ハイレゾ・TruePeak・LUFS/LRA）＋全6ステム（LUFS/LRA のみ高速算出）
