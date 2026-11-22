@@ -257,11 +257,11 @@
   - [x] `P1-M1-S3`: `analyzer/essentia_dsp.py:21` の `_calc_chord_sequence` における `"vocal"`（単数形）タイポを `"vocals"` に修正し、`vocals` ステムでコード列が `["C"]*32` 固定になるバグを解消する。
   - [x] `P1-M1-S4`: `tests/test_common_signal.py` を作成し、純粋射の参照透過性・境界入力（空配列・無音・NaN/Inf 防御）および `"vocals"` コード列回帰テストを検証する。
 
-- [ ] **中目標 P1-M2: ステレオ空間純粋射 (`analyzer/common_stereo.py`) とクロスステム基礎純粋射 (`analyzer/common_cross_stem.py`) の分離＆ `demucs_daemon` モノラル化直前フック**
+- [x] **中目標 P1-M2: ステレオ空間純粋射 (`analyzer/common_stereo.py`) とクロスステム基礎純粋射 (`analyzer/common_cross_stem.py`) の分離＆ `demucs_daemon` モノラル化直前フック**
   - [x] `P1-M2-S1`: `analyzer/common_stereo.py` を新設し、`(2, N)` 波形から `pan_mean`, `pan_std`, `stereo_width`, `lr_correlation`, `low_band_phase_coherence`, `pan_seq_32`, `width_seq_32` を算出する純粋射 `stereo_field_morphism` とモノラル化射 `mono_downmix_morphism` を実装する。
   - [x] `P1-M2-S2`: `analyzer/common_cross_stem.py` を新設し、`mix` と6ステム波形群から各ステムの `energy_share`, `active_ratio`, `v_to_accomp_db`, `vocal_band_masking` (300Hz–4kHz)、分離品質 `residual_snr_db` ($\mathrm{mix}-\sum y_s$)、および32フレーム編曲稼働マトリクス `arrangement_arc_32` を算出する純粋射 `cross_stem_foundation_morphism` を実装する。
   - [x] `P1-M2-S3`: `models.py` (`HTDemucsSeparator.separate`) および `demucs_daemon.py` にて、ステレオ波形をモノラル化して SHM へ書き出す直前に `stereo_field_morphism` と `cross_stem_foundation_morphism` を適用し、**SHM 容量を1バイトも増やさず**メタデータ/特徴量へ渡すパイプラインを接続する（各ステムの `snr` にもステム対残差比または有効 SNR を供給）。
-  - [ ] `P1-M2-S4`: `tests/test_common_stereo_and_cross_stem.py` を作成し、センターモノラル信号・ハードパン信号・逆位相信号・既知ステム合成信号に対する不変条件（$W\in[0,1]$, $\rho_{LR}\in[-1,1]$, $\sum \text{energy\_share}\approx 1$）を検証する。
+  - [x] `P1-M2-S4`: `tests/test_common_stereo_and_cross_stem.py` を作成し、センターモノラル信号・ハードパン信号・逆位相信号・既知ステム合成信号に対する不変条件（$W\in[0,1]$, $\rho_{LR}\in[-1,1]$, $\sum \text{energy\_share}\approx 1$）を検証する。
 
 - [ ] **中目標 P1-M3: ステム別ルーティング関手 (`analyzer/common_dispatch.py`) と未接続4プラグインの本番パイプライン統合**
   - [ ] `P1-M3-S1`: `analyzer/common_dispatch.py` を新設し、`analyzer.toml` の有効設定と `ctx.source`（ステム名）を受け取って適用対象プラグインを合成する純粋ディスパッチ関手 `build_stem_extractor_morphism` を実装する。
