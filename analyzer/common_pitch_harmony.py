@@ -82,9 +82,13 @@ def voiced_f0_contour_morphism_Large(
     Mor(R^N x SR x (fmin, fmax) -> VoicedF0Metrics)
     """
     clean = np.nan_to_num(np.asarray(y, dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
-    frame_length = 2048
+    if sr <= 0 or fmin_hz <= 0.0 or fmax_hz <= fmin_hz:
+        return _neutral_voiced_f0_metrics()
+    # 低域 (E1=41.2Hz @ 44.1kHz 等) で最低2周期を収めるため、必要長に応じて frame_length を 4096 へ引き上げるわ
+    min_req = int(np.ceil(2.2 * float(sr) / float(fmin_hz)))
+    frame_length = 2048 if min_req <= 2048 else 4096
     hop_length = 512
-    if clean.size < frame_length or sr <= 0 or fmin_hz <= 0.0 or fmax_hz <= fmin_hz:
+    if clean.size < frame_length:
         return _neutral_voiced_f0_metrics()
 
     with LIBROSA_LOCK:
