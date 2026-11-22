@@ -5,6 +5,12 @@ Reader Applicative 抽象化を用いた特徴量抽出器およびデータ構�
 後方互換性を 100% 保証するための統合エントリーポイントですわ！
 """
 
+from .common_dispatch import (
+    build_stem_extractor_morphism,
+    extract_stem_plugins_morphism,
+    resolve_stem_plugins_pure,
+    resolve_stem_warmup_pure,
+)
 from .core import (
     FIXED_SEQ_FRAMES,
     LIBROSA_LOCK,
@@ -190,6 +196,10 @@ __all__ = [
     "librosa_extractor",
     "librosa_extractor_v4",
     "stem_extractor",
+    "build_stem_extractor_morphism",
+    "extract_stem_plugins_morphism",
+    "resolve_stem_plugins_pure",
+    "resolve_stem_warmup_pure",
     "STEM_CONFIGS",
     "_safe_int",
     "_safe_float_str",

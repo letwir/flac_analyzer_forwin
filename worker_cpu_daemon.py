@@ -15,7 +15,13 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import numpy as np
 
 import shm_interop
-from analyzer import AudioContext, extract_mel_patches, librosa_extractor, run_essentia_serialized
+from analyzer import (
+    AudioContext,
+    build_stem_extractor_morphism,
+    extract_mel_patches,
+    librosa_extractor,
+    run_essentia_serialized,
+)
 from analyzer.config_generator import load_analyzer_toml
 
 
@@ -74,7 +80,8 @@ def handle_extract_cpu(payload: dict[str, Any], essentia_models: dict) -> dict[s
             )
             try:
                 step = time.perf_counter()
-                extracted_librosa[stem_name] = _serialize_librosa_features(librosa_extractor.run(ctx), track_hash)
+                stem_ext = build_stem_extractor_morphism(stem_name, librosa_extractor)
+                extracted_librosa[stem_name] = _serialize_librosa_features(stem_ext.run(ctx), track_hash)
                 librosa_sec += time.perf_counter() - step
                 if stem_name == "mix":
                     if not essentia_models:
