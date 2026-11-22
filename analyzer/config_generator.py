@@ -74,6 +74,10 @@ def generate_default_analyzer_toml_content(execute: bool = False) -> str:
         "calc_true_peak = true",
         "calc_ebur128 = true",
         "",
+        "[plugins.stem_essentia]",
+        "enabled = false",
+        'vocals_classifiers = ["gender", "voice_instrumental"]',
+        "",
     ]
     return "\n".join(lines)
 

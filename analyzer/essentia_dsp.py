@@ -249,3 +249,37 @@ def run_essentia_serialized(
         )
 
     return predictions
+
+
+def run_selective_stem_essentia_pure(
+    stem_y: np.ndarray,
+    sr: int,
+    essentia_models: dict,
+    mix_predictions: dict[str, float] | None = None,
+    target_keys: tuple[str, ...] = ("gender", "voice_instrumental"),
+    sessions: dict | None = None,
+    lock: Any = None,
+) -> dict[str, Any]:
+    """特定ステム (例: vocals) に対して指定分類器のみ選択推論し、mix とのドメインシフト L1 乖離を算出しますわ！
+
+    Mor(R^N x SR x Models -> StemEssentiaPredictions)
+    """
+    if stem_y is None or np.asarray(stem_y).size == 0 or not essentia_models:
+        return {}
+    filtered_models = {k: v for k, v in essentia_models.items() if k in target_keys}
+    if not filtered_models:
+        return {}
+
+    patches = extract_mel_patches(np.asarray(stem_y, dtype=np.float32), sr, n_patches=32)
+    stem_preds = run_essentia_serialized(patches, filtered_models, sessions=sessions, lock=lock)
+
+    domain_shift_l1 = 0.0
+    if mix_predictions:
+        shared_diffs = [abs(float(v) - float(mix_predictions[k])) for k, v in stem_preds.items() if k in mix_predictions]
+        if shared_diffs:
+            domain_shift_l1 = float(np.mean(shared_diffs))
+
+    return {
+        "predictions": stem_preds,
+        "domain_shift_l1": domain_shift_l1,
+    }

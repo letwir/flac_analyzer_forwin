@@ -22,6 +22,8 @@ from analyzer import (
     librosa_extractor,
     run_essentia_serialized,
 )
+from analyzer.common_dispatch import _get_cached_analyzer_toml
+from analyzer.essentia_dsp import run_selective_stem_essentia_pure
 from analyzer.config_generator import load_analyzer_toml
 
 
@@ -80,9 +82,17 @@ def handle_extract_cpu(payload: dict[str, Any], essentia_models: dict) -> dict[s
             )
             try:
                 step = time.perf_counter()
-                stem_ext = build_stem_extractor_morphism(stem_name, librosa_extractor)
-                extracted_librosa[stem_name] = _serialize_librosa_features(stem_ext.run(ctx), track_hash)
+                extracted_librosa[stem_name] = _serialize_librosa_features(librosa_extractor.run(ctx), track_hash)
                 librosa_sec += time.perf_counter() - step
+                if stem_name == "vocals" and essentia_models:
+                    stem_ess_cfg = _get_cached_analyzer_toml().get("plugins", {}).get("stem_essentia", {})
+                    if stem_ess_cfg.get("enabled", False):
+                        t_keys = tuple(stem_ess_cfg.get("vocals_classifiers", ["gender", "voice_instrumental"]))
+                        stem_ess = run_selective_stem_essentia_pure(
+                            y_np, sr, essentia_models, mix_predictions=extracted_essentia or None, target_keys=t_keys
+                        )
+                        if stem_ess:
+                            extracted_librosa[stem_name]["scalars"]["stem_essentia"] = stem_ess
                 if stem_name == "mix":
                     if not essentia_models:
                         raise RuntimeError("Essentia models are not loaded; cannot extract mix predictions")

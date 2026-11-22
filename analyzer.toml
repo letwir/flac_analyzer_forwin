@@ -50,3 +50,7 @@ enabled = true
 detect_cutoff = true
 calc_true_peak = true
 calc_ebur128 = true
+
+[plugins.stem_essentia]
+enabled = false
+vocals_classifiers = ["gender", "voice_instrumental"]
