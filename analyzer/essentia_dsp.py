@@ -82,9 +82,12 @@ def _calc_vocal_f0_seq(ctx: AudioContext) -> list[float] | None:
         return None
 
     try:
+        from analyzer.common_pitch_harmony import _bound_long_signal_windows
+
+        y_bounded = _bound_long_signal_windows(ctx.y, max_samples=524288)
         with LIBROSA_LOCK:
             f0 = librosa.yin(
-                ctx.y,
+                y_bounded,
                 sr=ctx.sr,
                 fmin=float(librosa.note_to_hz("C2")),
                 fmax=float(librosa.note_to_hz("C7")),

@@ -376,14 +376,18 @@ class HTDemucsSeparator:
                 )
 
             logging.info(f"[HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。")
+            del audio_in
 
-            # 3. 各ステムもモノラル化直前にステレオ射を適用してからモノラル化し、44.1kHz のまま保持するわ
+            # 3. 各ステムもモノラル化直前にステレオ射を適用してからモノラル化し、順次ステレオ配列を解放して 44.1kHz のまま保持するわ
             mono_stems: dict[str, np.ndarray] = {}
-            for name, stem_y in separated_stems.items():
+            for name in list(separated_stems.keys()):
+                stem_y = separated_stems.pop(name)
                 stem_stereo = stereo_field_morphism(stem_y, 44100)
                 stem_mono = mono_downmix_morphism(stem_y)
+                del stem_y
                 mono_stems[name] = stem_mono
                 stems[name] = AudioContext(stem_mono, 44100, name, stereo_meta=stem_stereo)
+            del separated_stems
 
             # 4. モノラル化後の全ステム揃い踏みでクロスステム基礎特徴量・SNR を算出するわ
             cross_stem = cross_stem_foundation_morphism(mix_mono, mono_stems, 44100)

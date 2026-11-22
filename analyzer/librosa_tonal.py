@@ -53,17 +53,13 @@ def extract_chroma_obj(ctx: AudioContext) -> ChromaFeatures:
     for row in safe_chroma:
         seqs.append(_resample_to_fixed_frames(row, FIXED_SEQ_FRAMES))
 
-    # フレームごとの和声エントロピー時系列
-    frame_entropies = []
-    for t in range(safe_chroma.shape[1]):
-        col = safe_chroma[:, t]
-        s = float(np.sum(col))
-        if s < 1e-10:
-            frame_entropies.append(0.0)
-        else:
-            p = col / s
-            frame_entropies.append(float(-np.sum(p * np.log2(p + 1e-10))))
-    frame_entropies_arr = np.array(frame_entropies)
+    # フレームごとの和声エントロピー時系列 (ベクトル化)
+    col_sums = np.sum(safe_chroma, axis=0, keepdims=True)
+    valid_cols = col_sums[0] >= 1e-10
+    frame_entropies_arr = np.zeros(safe_chroma.shape[1], dtype=np.float32)
+    if np.any(valid_cols):
+        p = safe_chroma[:, valid_cols] / col_sums[:, valid_cols]
+        frame_entropies_arr[valid_cols] = -np.sum(p * np.log2(p + 1e-10), axis=0)
 
     return ChromaFeatures(
         mean=means,

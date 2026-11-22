@@ -151,6 +151,8 @@ class AudioContext:
                 self._mel = librosa.feature.melspectrogram(
                     S=self.power, sr=self.sr, n_mels=128
                 )
+            if self.spectro.shape[1] > 16384:
+                self._power = None
         else:
             logging.debug(f"    [CSE Cache Hit] mel 再利用 (source: {self.source})")
         return self._mel
@@ -174,8 +176,11 @@ class AudioContext:
                 f"    [CSE Cache Miss] chroma_cqt 計算開始 (source: {self.source})"
             )
             try:
+                from analyzer.common_pitch_harmony import _bound_long_signal_windows
+
+                y_cqt = _bound_long_signal_windows(self.y, max_samples=524288)
                 with LIBROSA_LOCK:
-                    self._chroma_cqt = librosa.feature.chroma_cqt(y=self.y, sr=self.sr)
+                    self._chroma_cqt = librosa.feature.chroma_cqt(y=y_cqt, sr=self.sr)
             except librosa.util.exceptions.ParameterError as e:
                 logging.warning(
                     f"chroma_cqt 計算をスキップし chroma_stft へフォールバックしますわ (source: {self.source}, len={len(self.y)}): {e}"
@@ -194,8 +199,15 @@ class AudioContext:
                 f"    [CSE Cache Miss] beat_track 計算開始 (source: {self.source})"
             )
             try:
+                from analyzer.common_pitch_harmony import _bound_long_signal_windows
+
+                onset_in = (
+                    _bound_long_signal_windows(self.onset_env, max_samples=16384, win_len=1024)
+                    if self.onset_env.size > 16384
+                    else self.onset_env
+                )
                 with LIBROSA_LOCK:
-                    bpm, beats = librosa.beat.beat_track(onset_envelope=self.onset_env, sr=self.sr)
+                    bpm, beats = librosa.beat.beat_track(onset_envelope=onset_in, sr=self.sr)
                 bpm_val = float(bpm[0] if isinstance(bpm, np.ndarray) else bpm)
 
                 if math.isnan(bpm_val) or math.isinf(bpm_val):
@@ -260,9 +272,16 @@ class AudioContext:
             logging.debug(
                 f"    [CSE Cache Miss] tempogram 計算開始 (source: {self.source})"
             )
+            from analyzer.common_pitch_harmony import _bound_long_signal_windows
+
+            onset_in = (
+                _bound_long_signal_windows(self.onset_env, max_samples=16384, win_len=1024)
+                if self.onset_env.size > 16384
+                else self.onset_env
+            )
             with LIBROSA_LOCK:
                 raw_tempogram = librosa.feature.tempogram(
-                    onset_envelope=self.onset_env, sr=self.sr, hop_length=512
+                    onset_envelope=onset_in, sr=self.sr, hop_length=512
                 )
             self._tempogram = np.nan_to_num(
                 raw_tempogram, nan=0.0, posinf=0.0, neginf=0.0

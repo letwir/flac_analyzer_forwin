@@ -24,8 +24,24 @@ from .types import TensorFeatures
 # ─────────────────────────────────────────────
 # 1. 瞬時位相 & Hilbert 変換 (Pure Tensor Morphism)
 # ─────────────────────────────────────────────
+def _bound_tensor_windows(
+    x: torch.Tensor, max_samples: int = 1048576, win_len: int = 65536
+) -> torch.Tensor:
+    """長尺テンソル (..., N) から均等間隔の代表窓群を抽出し、FFT メモリ上限を一定化いたしますわ！"""
+    n_samples = x.shape[-1]
+    if n_samples <= max_samples or win_len <= 0:
+        return x
+    n_wins = max(1, max_samples // win_len)
+    if n_wins == 1 or n_samples <= win_len:
+        return x[..., :win_len]
+    starts = torch.linspace(0, n_samples - win_len, steps=n_wins, dtype=torch.long)
+    slices = [x[..., int(s.item()) : int(s.item()) + win_len] for s in starts]
+    return torch.cat(slices, dim=-1)
+
+
 def hilbert_envelope_phase(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """1Dまたはバッチテンソルに対するHilbert変換を行い、エンベロープと瞬時位相を返しますの。"""
+    x = _bound_tensor_windows(x, max_samples=1048576, win_len=65536)
     n_samples = x.shape[-1]
     if n_samples == 0:
         empty = torch.empty_like(x)
@@ -74,13 +90,22 @@ def calc_hnr_nap_tensor(y: torch.Tensor, sr: int) -> tuple[float, float]:
     if n_samples == 0:
         return 0.0, -40.0
 
-    # 1. 2N 以上の最小の 2 の累乗点へゼロパディング (FFT 高速化 & 線形自己相関の数学的等価性)
-    n_fft = 1 << (2 * n_samples - 1).bit_length()
+    if n_samples > 1048576:
+        win_len = 65536
+        n_fft = 131072
+        starts = torch.linspace(0, n_samples - win_len, steps=16, dtype=torch.long)
+        wins = torch.stack([y[..., int(s.item()) : int(s.item()) + win_len] for s in starts], dim=-2)
+        yf = torch.fft.rfft(wins.float(), n=n_fft, dim=-1)
+        psd = yf.abs().square().mean(dim=-2)
+        r = torch.fft.irfft(psd, n=n_fft, dim=-1)[..., :win_len]
+    else:
+        # 1. 2N 以上の最小の 2 の累乗点へゼロパディング (FFT 高速化 & 線形自己相関の数学的等価性)
+        n_fft = 1 << (2 * n_samples - 1).bit_length()
 
-    y_f = y.float()
-    yf = torch.fft.rfft(y_f, n=n_fft)
-    psd = yf.abs().square()
-    r = torch.fft.irfft(psd, n=n_fft)[..., :n_samples]
+        y_f = y.float()
+        yf = torch.fft.rfft(y_f, n=n_fft)
+        psd = yf.abs().square()
+        r = torch.fft.irfft(psd, n=n_fft)[..., :n_samples]
     if r.ndim > 1:
         r = r.mean(dim=list(range(r.ndim - 1)))
 
@@ -142,6 +167,7 @@ def fft_bandpass_envelope(
     x: torch.Tensor, sr: int, f_lo: float, f_hi: float
 ) -> torch.Tensor:
     """FFTベースの理想バンドパスフィルタリング後のエンベロープ抽出ですわ。"""
+    x = _bound_tensor_windows(x, max_samples=1048576, win_len=65536)
     n_samples = x.shape[-1]
     if n_samples == 0:
         return torch.empty(0, device=x.device, dtype=x.dtype)
@@ -300,7 +326,7 @@ def extract_tensor_features(
     stem_name: str | None = None,
 ) -> dict[str, Any]:
     """1つの波形テンソルに対する Spectral Flux, Welch PSD Peak, Subbass Envelope, HNR/NAP 計測射ですわ！"""
-    y = y.to(device)
+    y = _bound_tensor_windows(y, max_samples=1048576, win_len=65536).to(device)
     features: dict[str, Any] = {}
 
     # 1. HNR / NAP の cuFFT Wiener-Khinchin 計算 (Advisory 1)
@@ -310,7 +336,9 @@ def extract_tensor_features(
 
     # 2. Spectral Flux and Welch PSD Peaks
     if spectro_path and os.path.exists(spectro_path):
-        stft_mag = torch.from_numpy(np.load(spectro_path, mmap_mode="r")).to(device)
+        arr = np.load(spectro_path, mmap_mode="r")
+        stride = max(1, arr.shape[-1] // 16384)
+        stft_mag = torch.from_numpy(np.ascontiguousarray(arr[..., ::stride])).to(device)
         flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
         psd = stft_mag.pow(2).mean(dim=-1)
         freqs = torch.linspace(0, sr / 2, psd.shape[-1], device=device)

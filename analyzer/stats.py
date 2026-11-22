@@ -35,15 +35,19 @@ def _calc_scipy_stats_features(ctx: AudioContext) -> ScipyStatsFeatures | None:
         if n_bins < 2 or n_frames == 0:
             return None
 
-        m1 = np.mean(spectro, axis=0, dtype=np.float32)
-        diff = spectro - m1[np.newaxis, :]
+        stride = max(1, n_frames // 8192)
+        spectro_sub = spectro[:, ::stride]
+        n_sub_frames = spectro_sub.shape[1]
+
+        m1 = np.mean(spectro_sub, axis=0, dtype=np.float32)
+        diff = spectro_sub - m1[np.newaxis, :]
 
         m2 = np.mean(diff**2, axis=0, dtype=np.float32)
         std = np.sqrt(m2, dtype=np.float32)
         valid_mask = std > 1e-8
 
-        skew_vals = np.zeros(n_frames, dtype=np.float32)
-        kurt_vals = np.zeros(n_frames, dtype=np.float32)
+        skew_vals = np.zeros(n_sub_frames, dtype=np.float32)
+        kurt_vals = np.zeros(n_sub_frames, dtype=np.float32)
 
         if np.any(valid_mask):
             diff_valid = diff[:, valid_mask]
@@ -86,7 +90,11 @@ def _calc_hilbert_features(ctx: AudioContext) -> HilbertFeatures | None:
     if ctx.y is None or ctx.y.size == 0:
         return None
     try:
+        from analyzer.common_pitch_harmony import _bound_long_signal_windows
+
         y_dec = ctx.y[::10]
+        if y_dec.size > 262144:
+            y_dec = _bound_long_signal_windows(y_dec, max_samples=262144)
         sr_dec = ctx.sr / 10.0
 
         analytic_signal = scipy.signal.hilbert(y_dec)
@@ -129,10 +137,20 @@ def _calc_peak_features(ctx: AudioContext) -> PeakFeatures | None:
     try:
         spectro = ctx.spectro
         t_frames = spectro.shape[1]
-        spectral_peaks_count = np.zeros(t_frames)
-        for t in range(t_frames):
-            peaks, _ = scipy.signal.find_peaks(spectro[:, t], height=0.01)
-            spectral_peaks_count[t] = len(peaks)
+        if t_frames == 0:
+            spectral_peaks_count = np.zeros(1, dtype=np.float32)
+        else:
+            stride = max(1, t_frames // 8192)
+            s = spectro[:, ::stride]
+            if s.shape[0] >= 3:
+                is_peak = (
+                    (s[1:-1, :] > s[:-2, :])
+                    & (s[1:-1, :] > s[2:, :])
+                    & (s[1:-1, :] >= 0.01)
+                )
+                spectral_peaks_count = np.sum(is_peak, axis=0).astype(np.float32)
+            else:
+                spectral_peaks_count = np.zeros(s.shape[1], dtype=np.float32)
 
         onset_env = ctx.onset_env
         if onset_env is not None and onset_env.size > 0:

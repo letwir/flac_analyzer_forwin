@@ -82,6 +82,9 @@ def voiced_f0_contour_morphism_Large(
     Mor(R^N x SR x (fmin, fmax) -> VoicedF0Metrics)
     """
     clean = np.nan_to_num(np.asarray(y, dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
+    if clean.size > 524288:
+        clean = _bound_long_signal_windows(clean, max_samples=524288)
+        frame_rms = None
     if sr <= 0 or fmin_hz <= 0.0 or fmax_hz <= fmin_hz:
         return _neutral_voiced_f0_metrics()
     # 低域 (E1=41.2Hz @ 44.1kHz 等) で最低2周期を収めるため、必要長に応じて frame_length を 4096 へ引き上げるわ
