@@ -296,10 +296,10 @@
 
 #### 【大目標 Phase 3】クロスステム和声統合・編曲構造 SSM・選択的 Essentia ステム推論 (`goal:phase3-cross-harmonic-semantic`)
 
-- [ ] **中目標 P3-M1: 純和声ステム合成クロマによる高精度キー/コード進行 & クロスステム和声テンション解析**
+- [x] **中目標 P3-M1: 純和声ステム合成クロマによる高精度キー/コード進行 & クロスステム和声テンション解析**
   - [x] `P3-M1-S1`: `analyzer/common_pitch_harmony.py` と `common_cross_stem.py` に、`drums` と `vocals` を除いた和声ステム群（`bass + piano + guitar + other`）から純和声 CQT クロマを合成する射 `harmonic_bus_chroma_morphism` を実装し、`mix` クロマとのキー/コード一致度および確信度向上を算出する。
   - [x] `P3-M1-S2`: `bass` の F0 ルート音 × 和声ステムのコード構成音 × `vocals` の F0 メロディ音を照合する積射 `cross_stem_harmonic_tension_morphism` を実装し、**ベース・ルート整合率（オンコード率）**、**ボーカル・コードトーン整合率 vs テンション/ブルーノート率**を算出する。
-  - [ ] `P3-M1-S3`: `tests/test_cross_stem_harmony.py` にて、既知コード進行＋ベースルート＋テンションメロディの合成マルチステム入力に対する推論精度を検証する。
+  - [x] `P3-M1-S3`: `tests/test_cross_stem_harmony.py` にて、既知コード進行＋ベースルート＋テンションメロディの合成マルチステム入力に対する推論精度を検証する。
 
 - [ ] **中目標 P3-M2: マルチステム編曲構造 SSM と選択的 Essentia ONNX ステム推論（ドメインシフト検証付き）**
   - [ ] `P3-M2-S1`: `analyzer/structure_ssm.py` を拡張し、`mix` 単体だけでなく6ステムのエネルギー＋純和声クロマを結合した状態空間上の自己相似行列射 `multistem_structure_ssm_morphism` を実装して、ブレイク・落ちサビ・ラスサビ・ドロップの境界検出精度を高める。
