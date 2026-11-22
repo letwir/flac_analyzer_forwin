@@ -473,6 +473,8 @@ class RawFeatures:
     structure_ssm_feat: StructureSsmFeatures | None = None
     voice_cpp_feat: VoiceCppFeatures | None = None
     audio_cutoff_lufs_feat: AudioCutoffLufsFeatures | None = None
+    stereo_meta: dict[str, Any] | None = None
+    cross_stem_meta: dict[str, Any] | None = None
 
     def to_postgres_dict(self, track_id: str) -> dict[str, Any]:
         return {
@@ -794,6 +796,23 @@ def _stem_filter_scalars(raw: RawFeatures, track_id: str) -> dict[str, Any]:
             "integrated_lufs": float(raw.audio_cutoff_lufs_feat.integrated_lufs),
             "loudness_range_lra": float(raw.audio_cutoff_lufs_feat.loudness_range_lra),
         }
+    if raw.stereo_meta is not None:
+        scalars["stereo"] = {
+            "pan_mean": float(raw.stereo_meta.get("pan_mean", 0.0)),
+            "pan_std": float(raw.stereo_meta.get("pan_std", 0.0)),
+            "stereo_width": float(raw.stereo_meta.get("stereo_width", 0.0)),
+            "lr_correlation": float(raw.stereo_meta.get("lr_correlation", 1.0)),
+            "low_band_phase_coherence": float(
+                raw.stereo_meta.get("low_band_phase_coherence", 1.0)
+            ),
+        }
+    if raw.cross_stem_meta is not None:
+        cs_scalars = {
+            k: v
+            for k, v in raw.cross_stem_meta.items()
+            if k not in ("arrangement_arc_32",)
+        }
+        scalars["cross_stem"] = cs_scalars
     return scalars
 
 
@@ -848,5 +867,12 @@ def _stem_filter_sequences(raw: RawFeatures, track_id: str) -> dict[str, Any]:
         sequences["structure_novelty"] = raw.structure_ssm_feat.novelty_seq
     if raw.voice_cpp_feat and raw.voice_cpp_feat.cpp_seq:
         sequences["voice_cpp_seq"] = raw.voice_cpp_feat.cpp_seq
+    if raw.stereo_meta is not None:
+        if raw.stereo_meta.get("pan_seq_32"):
+            sequences["pan_seq_32"] = raw.stereo_meta["pan_seq_32"]
+        if raw.stereo_meta.get("width_seq_32"):
+            sequences["width_seq_32"] = raw.stereo_meta["width_seq_32"]
+    if raw.cross_stem_meta and raw.cross_stem_meta.get("arrangement_arc_32"):
+        sequences["arrangement_arc_32"] = raw.cross_stem_meta["arrangement_arc_32"]
 
     return sequences

@@ -333,6 +333,8 @@ def _build_raw_features(
         scipy_stats_feat=scipy_stats_feat,
         hilbert_feat=hilbert_feat,
         peak_feat=peak_feat,
+        stereo_meta=ctx.stereo_meta if ctx is not None else None,
+        cross_stem_meta=ctx.cross_stem_meta if ctx is not None else None,
     )
 
 

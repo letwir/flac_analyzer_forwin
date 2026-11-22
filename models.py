@@ -356,9 +356,13 @@ class HTDemucsSeparator:
 
             audio_in = np.ascontiguousarray(audio_in, dtype=np.float32)
 
-            # 混合ソース (mix) は 44.1kHz モノラルとして stems に登録 (アップサンプリングによるメモリ爆発の完全防止)
-            mix_mono = np.mean(audio_in, axis=0)
-            stems = {"mix": AudioContext(mix_mono, 44100, "mix")}
+            from analyzer.common_cross_stem import cross_stem_foundation_morphism
+            from analyzer.common_stereo import mono_downmix_morphism, stereo_field_morphism
+
+            # 混合ソース (mix) はモノラル化直前にステレオ空間特徴量を捕捉し、SHM 肥大をゼロに保つわ
+            mix_stereo = stereo_field_morphism(audio_in, 44100)
+            mix_mono = mono_downmix_morphism(audio_in)
+            stems = {"mix": AudioContext(mix_mono, 44100, "mix", stereo_meta=mix_stereo)}
 
             logging.info(f"[HTDemucs ONNX Memory] 推論処理を開始しますわ... (ONNX_LOCK 同期)")
             with ONNX_LOCK:
@@ -373,14 +377,23 @@ class HTDemucsSeparator:
 
             logging.info(f"[HTDemucs ONNX Memory] 分離完了いたしましたわ！ 整合化を開始しますの。")
 
-            # 3. 得られた各ステムの波形データを整合化 (モノラル化、44.1kHz のまま保持)
+            # 3. 各ステムもモノラル化直前にステレオ射を適用してからモノラル化し、44.1kHz のまま保持するわ
+            mono_stems: dict[str, np.ndarray] = {}
             for name, stem_y in separated_stems.items():
-                # ステレオ (2, N) からモノラルへの平均化
-                if stem_y.ndim > 1:
-                    stem_y = np.mean(stem_y, axis=0)
-                
-                # 逆リサンプリング(44100Hz -> sr)は廃止し、44.1kHzのまま保持
-                stems[name] = AudioContext(stem_y, 44100, name)
+                stem_stereo = stereo_field_morphism(stem_y, 44100)
+                stem_mono = mono_downmix_morphism(stem_y)
+                mono_stems[name] = stem_mono
+                stems[name] = AudioContext(stem_mono, 44100, name, stereo_meta=stem_stereo)
+
+            # 4. モノラル化後の全ステム揃い踏みでクロスステム基礎特徴量・SNR を算出するわ
+            cross_stem = cross_stem_foundation_morphism(mix_mono, mono_stems, 44100)
+            stems["mix"].cross_stem_meta = cross_stem
+            stems["mix"]._snr_val = float(cross_stem.get("residual_snr_db", 0.0))
+            per_stem_cs = cross_stem.get("per_stem", {})
+            for name, cs_vals in per_stem_cs.items():
+                if name in stems:
+                    stems[name].cross_stem_meta = cs_vals
+                    stems[name]._snr_val = float(cs_vals.get("snr_db", 0.0))
 
         except Exception as e:
             logging.error(f"[ERROR] [HTDemucs ONNX Memory] 分離実行中に深刻なエラーが発生いたしましたわ (OOM/Type等): {e}", exc_info=True)

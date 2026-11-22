@@ -62,13 +62,16 @@ func (r WorkerDaemonRole) validReadyDevice(device string) bool {
 
 // StemInfo represents shared memory or disk file location & dimensions for a single stem
 type StemInfo struct {
-	ShmTag      string  `json:"shm_tag,omitempty"`
-	StorageType string  `json:"storage_type,omitempty"`
-	FilePath    string  `json:"file_path,omitempty"`
-	Shape       []int64 `json:"shape"`
-	Dtype       string  `json:"dtype"`
-	FileSize    int64   `json:"file_size,omitempty"`
-	SpectroPath string  `json:"spectro_path,omitempty"`
+	ShmTag      string         `json:"shm_tag,omitempty"`
+	StorageType string         `json:"storage_type,omitempty"`
+	FilePath    string         `json:"file_path,omitempty"`
+	Shape       []int64        `json:"shape"`
+	Dtype       string         `json:"dtype"`
+	FileSize    int64          `json:"file_size,omitempty"`
+	SpectroPath string         `json:"spectro_path,omitempty"`
+	Stereo      map[string]any `json:"stereo,omitempty"`
+	CrossStem   map[string]any `json:"cross_stem,omitempty"`
+	SNR         *float64       `json:"snr,omitempty"`
 }
 
 // ExtractAllPayload represents the payload sent for extract_all action

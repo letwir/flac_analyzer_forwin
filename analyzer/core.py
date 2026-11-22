@@ -56,6 +56,8 @@ class AudioContext:
         snr: float | None = None,
         audio_hash: str | None = None,
         spectro_path: str | None = None,
+        stereo_meta: dict[str, Any] | None = None,
+        cross_stem_meta: dict[str, Any] | None = None,
     ):
         # 多次元波形（ステレオ等）の場合は、チャンネル次元を平均化してモノラル（1次元）にするの
         if y.ndim > 1:
@@ -71,6 +73,8 @@ class AudioContext:
         self.source = source
         self._snr_val = snr
         self._spectro_path = spectro_path
+        self.stereo_meta = stereo_meta
+        self.cross_stem_meta = cross_stem_meta
         # キャッシュバッファ
         self._stft: np.ndarray | None = None
         self._spectro: np.ndarray | None = None

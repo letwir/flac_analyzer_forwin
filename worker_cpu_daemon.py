@@ -63,7 +63,15 @@ def handle_extract_cpu(payload: dict[str, Any], essentia_models: dict) -> dict[s
     for stem_name, info in stems_info.items():
         shm, y_np = _open_stem_samples(info)
         try:
-            ctx = AudioContext(y=y_np, sr=sr, source=stem_name, spectro_path=info.get("spectro_path"))
+            ctx = AudioContext(
+                y=y_np,
+                sr=sr,
+                source=stem_name,
+                snr=info.get("snr"),
+                spectro_path=info.get("spectro_path"),
+                stereo_meta=info.get("stereo"),
+                cross_stem_meta=info.get("cross_stem"),
+            )
             try:
                 step = time.perf_counter()
                 extracted_librosa[stem_name] = _serialize_librosa_features(librosa_extractor.run(ctx), track_hash)

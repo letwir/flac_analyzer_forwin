@@ -98,6 +98,9 @@ def handle_decode_mix(payload: dict[str, Any]) -> dict[str, Any]:
         shm.close()
         info = {"storage_type": "shm", "shm_tag": tag}
     info.update({"shape": list(data.shape), "dtype": str(data.dtype), "file_size": file_size})
+    if y.ndim > 1:
+        from analyzer.common_stereo import stereo_field_morphism
+        info["stereo"] = stereo_field_morphism(y.T, handle.sample_rate)
     return {
         "status": "success", "audio_hash": md5_hash, "sr": handle.sample_rate,
         "stems": {"mix": info}, "profile": {"decode": time.perf_counter() - started},
@@ -184,6 +187,12 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any, emit_stem_r
                 "dtype": str(data.dtype),
                 "file_size": file_size
             }
+            if getattr(audio_ctx, "stereo_meta", None) is not None:
+                stems_meta[stem_name]["stereo"] = audio_ctx.stereo_meta
+            if getattr(audio_ctx, "cross_stem_meta", None) is not None:
+                stems_meta[stem_name]["cross_stem"] = audio_ctx.cross_stem_meta
+            if getattr(audio_ctx, "_snr_val", None) is not None:
+                stems_meta[stem_name]["snr"] = audio_ctx._snr_val
             publish(stem_name, stems_meta[stem_name])
     else:
         # ステム波形の共有メモリ書き込み (SHM Mode)
@@ -209,6 +218,12 @@ def handleSeparateTaskHeavy(payload: dict[str, Any], separator: Any, emit_stem_r
                 "dtype": str(data.dtype),
                 "file_size": file_size
             }
+            if getattr(audio_ctx, "stereo_meta", None) is not None:
+                stems_meta[stem_name]["stereo"] = audio_ctx.stereo_meta
+            if getattr(audio_ctx, "cross_stem_meta", None) is not None:
+                stems_meta[stem_name]["cross_stem"] = audio_ctx.cross_stem_meta
+            if getattr(audio_ctx, "_snr_val", None) is not None:
+                stems_meta[stem_name]["snr"] = audio_ctx._snr_val
             publish(stem_name, stems_meta[stem_name])
 
     storage_duration = time.perf_counter() - t_storage_start
