@@ -277,7 +277,7 @@
 #### 【大目標 Phase 2】ステム別「楽器特化 DSP」純粋射の導入と不要計算の刈り込み (`goal:phase2-instrument-dsp`)
 
 - [ ] **中目標 P2-M1: 不要 Warmup / 不適合特徴量の刈り込みによる計算予算の創出**
-  - [ ] `P2-M1-S1`: `analyzer/common_dispatch.py` と `STEM_CONFIGS` を改修し、`drums` からの `chroma` / `chroma_cqt` / `tonnetz` / `key` / `chord_sequence` 除外、および非低域ステム（`vocals`, `piano`, `guitar`）からの `subbass_env_mean` (20–60Hz) 除外を宣言的に定義する。
+  - [x] `P2-M1-S1`: `analyzer/common_dispatch.py` と `STEM_CONFIGS` を改修し、`drums` からの `chroma` / `chroma_cqt` / `tonnetz` / `key` / `chord_sequence` 除外、および非低域ステム（`vocals`, `piano`, `guitar`）からの `subbass_env_mean` (20–60Hz) 除外を宣言的に定義する。
   - [ ] `P2-M1-S2`: スキーマ互換維持のため、除外されたキーには `None` または型安全な単位元（Neutral Element）を返し、`orchestrator/dispatcher/analysis_decision.go` の `completeStemFeatures` 契約を壊さないことをテストで保証する。
 
 - [ ] **中目標 P2-M2: パラメータ化 F0・輪郭純粋射 (`analyzer/common_pitch_harmony.py`) と `vocals` / `bass` 特化解析**

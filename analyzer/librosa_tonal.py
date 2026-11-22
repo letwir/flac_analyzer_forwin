@@ -20,6 +20,8 @@ logger = logging.getLogger("analyzer.librosa_tonal")
 
 def extract_chroma_obj(ctx: AudioContext) -> ChromaFeatures:
     """Chroma STFT から ChromaFeatures オブジェクトを構築しますわ！"""
+    if ctx.source == "drums":
+        return ChromaFeatures()
     chroma = ctx.chroma
     safe_chroma = np.nan_to_num(chroma, nan=0.0, posinf=0.0, neginf=0.0)
 
@@ -68,6 +70,8 @@ def extract_chroma_obj(ctx: AudioContext) -> ChromaFeatures:
 
 def extract_tonnetz(ctx: AudioContext) -> TonnetzFeatures:
     """Tonnetz 6次元和声特徴量を算出しますわ！"""
+    if ctx.source == "drums":
+        return TonnetzFeatures()
     with LIBROSA_LOCK:
         raw_tonnetz = librosa.feature.tonnetz(chroma=ctx.chroma_cqt)
     safe_tonnetz = np.nan_to_num(raw_tonnetz, nan=0.0, posinf=0.0, neginf=0.0)
@@ -93,6 +97,15 @@ def extract_tonnetz(ctx: AudioContext) -> TonnetzFeatures:
 
 def extract_key(ctx: AudioContext) -> KeyFeatures:
     """Krumhansl-Schmuckler アルゴリズムによる Key / Scale 推定ですわ！"""
+    if ctx.source == "drums":
+        return KeyFeatures(
+            key="N/A",
+            scale="none",
+            key_strength=0.0,
+            key_strength_mean=0.0,
+            key_strength_std=0.0,
+            key_strength_seq=[],
+        )
     chroma_avg = np.mean(ctx.chroma_cqt, axis=1)
     norm = np.linalg.norm(chroma_avg)
     if norm > 1e-9:
@@ -153,11 +166,13 @@ class LibrosaTonalPlugin(BasePlugin):
         key_feat = extract_key(ctx)
         chord_seq = _calc_chord_sequence(ctx)
 
-        # 6次元 tonnetz リスト
-        with LIBROSA_LOCK:
-            raw_tonnetz = librosa.feature.tonnetz(chroma=ctx.chroma_cqt)
-        safe_tonnetz = np.nan_to_num(raw_tonnetz, nan=0.0, posinf=0.0, neginf=0.0)
-        tonnetz_seqs = [_resample_to_fixed_frames(row, FIXED_SEQ_FRAMES) for row in safe_tonnetz]
+        # 6次元 tonnetz リスト (drums は和声非対象のためスキップいたしますわ)
+        tonnetz_seqs: list[list[float]] = []
+        if ctx.source != "drums":
+            with LIBROSA_LOCK:
+                raw_tonnetz = librosa.feature.tonnetz(chroma=ctx.chroma_cqt)
+            safe_tonnetz = np.nan_to_num(raw_tonnetz, nan=0.0, posinf=0.0, neginf=0.0)
+            tonnetz_seqs = [_resample_to_fixed_frames(row, FIXED_SEQ_FRAMES) for row in safe_tonnetz]
 
         return {
             "chroma_entropy_mean": chroma_feat.entropy_mean,

@@ -19,6 +19,8 @@ logger = logging.getLogger("analyzer.librosa_vocalpitch")
 
 def extract_dominant_pitch(ctx: AudioContext) -> str:
     """最も支配的な音名 (Note name) を推定しますわ！"""
+    if ctx.source == "drums":
+        return "N/A"
     chroma_mean = np.mean(ctx.chroma, axis=1)
     max_idx = int(np.argmax(chroma_mean))
     if 0 <= max_idx < len(NOTES):

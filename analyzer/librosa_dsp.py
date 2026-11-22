@@ -267,14 +267,13 @@ def _build_raw_features(
     chord_seq = _calc_chord_sequence(ctx) if ctx is not None else []
     vocal_f0 = _calc_vocal_f0_seq(ctx) if ctx is not None else None
 
-    # 6次元 tonnetz リスト
-    if ctx is not None:
+    # 6次元 tonnetz リスト (drums は非和声ステムのため CQT 計算を除外いたしますわ)
+    tonnetz_seqs: list[list[float]] = []
+    if ctx is not None and ctx.source != "drums":
         with LIBROSA_LOCK:
             raw_tonnetz = librosa.feature.tonnetz(chroma=ctx.chroma_cqt)
         safe_tonnetz = np.nan_to_num(raw_tonnetz, nan=0.0, posinf=0.0, neginf=0.0)
         tonnetz_seqs = [_resample_to_fixed_frames(row, FIXED_SEQ_FRAMES) for row in safe_tonnetz]
-    else:
-        tonnetz_seqs = []
 
     nap_val = ctx.nap if ctx is not None else 0.0
     hnr_db_val = ctx.hnr_db if ctx is not None else 0.0
@@ -358,126 +357,14 @@ stem_extractor: FeatureExtractor[RawFeatures] = librosa_extractor
 
 
 # ─────────────────────────────────────────────
-# STEM_CONFIGS
+# STEM_CONFIGS (common_dispatch の純粋関手から宣言的に生成)
 # ─────────────────────────────────────────────
+from .common_dispatch import resolve_stem_warmup_pure as _resolve_stem_warmup_pure
+
 STEM_CONFIGS: dict[str, dict[str, Any]] = {
-    "mix": {
-        "warmup": [
-            "stft",
-            "spectro",
-            "power",
-            "chroma",
-            "mel",
-            "nap",
-            "hnr_db",
-            "hnr",
-            "chroma_cqt",
-            "tempobeat",
-            "onset_env",
-            "tempogram",
-        ],
+    stem_name: {
+        "warmup": _resolve_stem_warmup_pure(stem_name),
         "extractor": "librosa_extractor",
-    },
-    "drums": {
-        "warmup": [
-            "stft",
-            "spectro",
-            "power",
-            "chroma",
-            "mel",
-            "nap",
-            "hnr_db",
-            "hnr",
-            "chroma_cqt",
-            "tempobeat",
-            "onset_env",
-            "tempogram",
-        ],
-        "extractor": "librosa_extractor",
-    },
-    "bass": {
-        "warmup": [
-            "stft",
-            "spectro",
-            "power",
-            "chroma",
-            "mel",
-            "nap",
-            "hnr_db",
-            "hnr",
-            "chroma_cqt",
-            "tempobeat",
-            "onset_env",
-            "tempogram",
-        ],
-        "extractor": "librosa_extractor",
-    },
-    "vocals": {
-        "warmup": [
-            "stft",
-            "spectro",
-            "power",
-            "chroma",
-            "mel",
-            "nap",
-            "hnr_db",
-            "hnr",
-            "chroma_cqt",
-            "tempobeat",
-            "onset_env",
-            "tempogram",
-        ],
-        "extractor": "librosa_extractor",
-    },
-    "other": {
-        "warmup": [
-            "stft",
-            "spectro",
-            "power",
-            "chroma",
-            "mel",
-            "nap",
-            "hnr_db",
-            "hnr",
-            "chroma_cqt",
-            "tempobeat",
-            "onset_env",
-            "tempogram",
-        ],
-        "extractor": "librosa_extractor",
-    },
-    "guitar": {
-        "warmup": [
-            "stft",
-            "spectro",
-            "power",
-            "chroma",
-            "mel",
-            "nap",
-            "hnr_db",
-            "hnr",
-            "chroma_cqt",
-            "tempobeat",
-            "onset_env",
-            "tempogram",
-        ],
-        "extractor": "librosa_extractor",
-    },
-    "piano": {
-        "warmup": [
-            "stft",
-            "spectro",
-            "power",
-            "chroma",
-            "mel",
-            "nap",
-            "hnr_db",
-            "hnr",
-            "chroma_cqt",
-            "tempobeat",
-            "onset_env",
-            "tempogram",
-        ],
-        "extractor": "librosa_extractor",
-    },
+    }
+    for stem_name in ("mix", "drums", "bass", "vocals", "other", "guitar", "piano")
 }

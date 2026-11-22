@@ -52,7 +52,13 @@ def handle_extract_gpu(payload: dict[str, Any], device: torch.device) -> dict[st
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", UserWarning)
                     y_tensor = torch.from_numpy(y_contig)
-                extracted[stem_name] = extract_tensor_features(y_tensor, payload["sr"], device, spectro_path=info.get("spectro_path"))
+                extracted[stem_name] = extract_tensor_features(
+                    y_tensor,
+                    payload["sr"],
+                    device,
+                    spectro_path=info.get("spectro_path"),
+                    stem_name=stem_name,
+                )
             tensor_sec += time.perf_counter() - step
         finally:
             del y_tensor

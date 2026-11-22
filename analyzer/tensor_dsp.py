@@ -289,8 +289,15 @@ def estimate_key_tensor(chroma_cqt_avg: torch.Tensor) -> tuple[str, str, float]:
 # ─────────────────────────────────────────────
 # 6. 統合テンソル特徴量抽出射 (extract_tensor_features)
 # ─────────────────────────────────────────────
+_SUBBASS_SKIP_STEMS = frozenset({"vocals", "piano", "guitar"})
+
+
 def extract_tensor_features(
-    y: torch.Tensor, sr: int, device: torch.device, spectro_path: str | None = None
+    y: torch.Tensor,
+    sr: int,
+    device: torch.device,
+    spectro_path: str | None = None,
+    stem_name: str | None = None,
 ) -> dict[str, Any]:
     """1つの波形テンソルに対する Spectral Flux, Welch PSD Peak, Subbass Envelope, HNR/NAP 計測射ですわ！"""
     y = y.to(device)
@@ -324,7 +331,10 @@ def extract_tensor_features(
     features["psd_peak_freq"] = float(freqs[peak_idx].item()) if peak_idx < len(freqs) else 0.0
     features["psd_peak_val"] = float(psd_1d[peak_idx].item()) if peak_idx < len(psd_1d) else 0.0
 
-    # 4. Phase Envelope (Sub-bass: 20-60Hz などの帯域別)
+    # 4. Phase Envelope (Sub-bass: 20-60Hz — 非低域ステムでは計算を省略し単位元 0.0 とするわ)
+    if stem_name in _SUBBASS_SKIP_STEMS:
+        features["subbass_env_mean"] = 0.0
+        return features
     sub_env = fft_bandpass_envelope(y, sr, 20.0, 60.0)
     features["subbass_env_mean"] = float(sub_env.mean().item()) if sub_env.numel() > 0 else 0.0
 
