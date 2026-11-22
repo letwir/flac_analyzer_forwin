@@ -40,17 +40,22 @@ def _align_stems_length_Batch(
 
 
 def _frame_rms_curve(y: np.ndarray, n_frames: int = FIXED_SEQ_FRAMES) -> np.ndarray:
-    """波形から固定フレーム数の RMS 包絡曲線を算出しますわ！ Mor(R^N -> R^T)"""
+    """波形全体 [0, N) を1サンプルも捨てず n_frames 区間へ均等分割し RMS 包絡曲線を算出しますわ！ Mor(R^N -> R^T)"""
     if y.size == 0:
         return np.zeros(n_frames, dtype=np.float32)
-    chunk = max(1, y.size // n_frames)
-    usable = (y.size // chunk) * chunk
-    if usable < chunk:
-        val = float(np.sqrt(np.mean(y * y)))
-        return np.full(n_frames, val, dtype=np.float32)
-    blocks = y[:usable].reshape(-1, chunk)
-    rms = np.sqrt(np.mean(blocks.astype(np.float64) ** 2, axis=1))
-    return np.asarray(_resample_to_fixed_frames(rms, n_frames), dtype=np.float32)
+    if y.size < n_frames:
+        rms_vals = np.sqrt(y.astype(np.float64) ** 2)
+        return np.asarray(_resample_to_fixed_frames(rms_vals, n_frames), dtype=np.float32)
+    edges = np.linspace(0, y.size, n_frames + 1, dtype=np.int64)
+    curve = np.zeros(n_frames, dtype=np.float32)
+    for i in range(n_frames):
+        seg = y[int(edges[i]) : int(edges[i + 1])]
+        acc = 0.0
+        for off in range(0, seg.size, 1048576):
+            blk = seg[off : min(seg.size, off + 1048576)].astype(np.float64)
+            acc += float(np.dot(blk, blk))
+        curve[i] = float(np.sqrt(acc / float(seg.size)))
+    return curve
 
 
 def _bandpass_rms_envelope(y: np.ndarray, sr: int, f_lo: float, f_hi: float, hop_sec: float = 0.02) -> np.ndarray:

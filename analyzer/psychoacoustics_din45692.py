@@ -37,9 +37,9 @@ def calc_specific_loudness_bark(spectro: np.ndarray, sr: int) -> np.ndarray:
     t_len = spectro.shape[1]
     if t_len == 0:
         return np.zeros((24, 0), dtype=np.float32)
-    # 長尺曲で (1025, 250000+) の二乗一時配列を作らないよう最大 4096 フレームへ間引くかチャンク計算するわ
-    stride = max(1, t_len // 4096)
-    spec_sub = spectro[:, ::stride]
+    from .structure_ssm import _pool_features_max_frames
+
+    spec_sub = _pool_features_max_frames(spectro, max_frames=4096)
     fft_freqs = np.linspace(0, sr / 2, spec_sub.shape[0], dtype=np.float32)
     barks = hz_to_bark(fft_freqs)
 

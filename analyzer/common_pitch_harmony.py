@@ -70,6 +70,69 @@ def _estimate_vibrato_metrics(midi_voiced: np.ndarray, frame_rate_hz: float) -> 
     return float(band_freqs[peak_idx]), extent_cents
 
 
+def _estimate_vibrato_adaptive(
+    clean: np.ndarray,
+    sr: int,
+    fmin_hz: float,
+    fmax_hz: float,
+    frame_length: int,
+    hop_length: int,
+    rms_n: np.ndarray,
+    voiced_mask: np.ndarray,
+    midi_voiced: np.ndarray,
+) -> tuple[float, float]:
+    """通常ホップ時は直接算出、長尺アダプティブホップ時は最高RMS有声区間最大8窓からビブラートを抽出いたしますわ！"""
+    if hop_length <= max(512, int(sr // 20)):
+        return _estimate_vibrato_metrics(midi_voiced, float(sr) / float(hop_length))
+
+    win_samples = 32768
+    if clean.size < win_samples:
+        return 0.0, 0.0
+    voiced_idx = np.flatnonzero(voiced_mask)
+    if voiced_idx.size == 0:
+        return 0.0, 0.0
+
+    order = voiced_idx[np.argsort(rms_n[voiced_idx])[::-1]]
+    min_sep_frames = max(1, win_samples // max(1, hop_length))
+    chosen: list[int] = []
+    for idx in order:
+        if all(abs(int(idx) - c) >= min_sep_frames for c in chosen):
+            chosen.append(int(idx))
+            if len(chosen) >= 8:
+                break
+
+    rates: list[float] = []
+    extents: list[float] = []
+    half_win = win_samples // 2
+    for idx in chosen:
+        center = idx * hop_length
+        start = max(0, min(clean.size - win_samples, center - half_win))
+        seg = clean[start : start + win_samples]
+        with LIBROSA_LOCK:
+            seg_f0 = librosa.yin(
+                seg, fmin=float(fmin_hz), fmax=float(fmax_hz), sr=sr, frame_length=frame_length, hop_length=512
+            )
+            seg_rms = librosa.feature.rms(y=seg, frame_length=frame_length, hop_length=512)[0]
+        m = min(seg_f0.size, seg_rms.size)
+        if m < 16:
+            continue
+        seg_rms_m = seg_rms[:m]
+        seg_f0_m = seg_f0[:m]
+        seg_mask = (seg_rms_m >= float(np.max(seg_rms_m)) * 0.05) & (seg_f0_m >= fmin_hz * 0.98) & (seg_f0_m <= fmax_hz * 0.98)
+        seg_voiced = seg_f0_m[seg_mask]
+        if seg_voiced.size < 16:
+            continue
+        seg_midi = 69.0 + 12.0 * np.log2(np.maximum(seg_voiced, _EPS) / 440.0)
+        r, c = _estimate_vibrato_metrics(seg_midi, float(sr) / 512.0)
+        if c > 0.0:
+            rates.append(r)
+            extents.append(c)
+
+    if not extents:
+        return 0.0, 0.0
+    return float(np.mean(rates)), float(np.mean(extents))
+
+
 def voiced_f0_contour_morphism_Large(
     y: np.ndarray,
     sr: int,
@@ -77,20 +140,17 @@ def voiced_f0_contour_morphism_Large(
     fmax_hz: float,
     frame_rms: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """有声ゲート付き YIN ピッチ追跡により音域・跳躍度・12平均律安定度・ビブラートを抽出する純粋射ですわ！
+    """全タイムラインを網羅するアダプティブホップ YIN ピッチ追跡により音域・跳躍度・12平均律安定度・ビブラートを抽出する純粋射ですわ！
 
     Mor(R^N x SR x (fmin, fmax) -> VoicedF0Metrics)
     """
     clean = np.nan_to_num(np.asarray(y, dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
-    if clean.size > 524288:
-        clean = _bound_long_signal_windows(clean, max_samples=524288)
-        frame_rms = None
     if sr <= 0 or fmin_hz <= 0.0 or fmax_hz <= fmin_hz:
         return _neutral_voiced_f0_metrics()
     # 低域 (E1=41.2Hz @ 44.1kHz 等) で最低2周期を収めるため、必要長に応じて frame_length を 4096 へ引き上げるわ
     min_req = int(np.ceil(2.2 * float(sr) / float(fmin_hz)))
     frame_length = 2048 if min_req <= 2048 else 4096
-    hop_length = 512
+    hop_length = 512 if clean.size <= 2097152 else max(512, clean.size // 4096)
     if clean.size < frame_length:
         return _neutral_voiced_f0_metrics()
 
@@ -105,7 +165,7 @@ def voiced_f0_contour_morphism_Large(
         )
         rms = (
             np.asarray(frame_rms, dtype=np.float32).ravel()
-            if frame_rms is not None
+            if (frame_rms is not None and hop_length == 512)
             else librosa.feature.rms(y=clean, frame_length=frame_length, hop_length=hop_length)[0]
         )
 
@@ -136,7 +196,9 @@ def voiced_f0_contour_morphism_Large(
     quant_dev = float(np.mean(np.abs(midi_voiced - np.round(midi_voiced))))
     quant_score = float(np.clip(1.0 - 2.0 * quant_dev, 0.0, 1.0))
 
-    vib_rate, vib_cents = _estimate_vibrato_metrics(midi_voiced, float(sr) / float(hop_length))
+    vib_rate, vib_cents = _estimate_vibrato_adaptive(
+        clean, sr, fmin_hz, fmax_hz, frame_length, hop_length, rms_n, voiced_mask, midi_voiced
+    )
     gated_seq = np.where(voiced_mask, f0_n, 0.0)
 
     return {
@@ -373,8 +435,8 @@ def _estimate_chord_seq32_from_chroma(chroma: np.ndarray) -> list[str]:
     return [chord_names[int(round(float(v))) % len(chord_names)] for v in resampled]
 
 
-def _bound_long_signal_windows(y: np.ndarray, max_samples: int = 262144, win_len: int = 4096) -> np.ndarray:
-    """長尺トラックでの CQT/YIN 計算量・メモリ爆発を防ぐため、原 sr のまま均等配置窓を連結いたしますわ！"""
+def _bound_long_signal_windows(y: np.ndarray, max_samples: int = 524288, win_len: int = 16384) -> np.ndarray:
+    """長尺トラックでの CQT 等高コスト処理のため、原 sr のまま 32 セクション対応の均等配置窓を連結いたしますわ！"""
     arr = np.nan_to_num(np.asarray(y, dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
     if arr.size <= max_samples:
         return arr
@@ -469,18 +531,22 @@ def cross_stem_harmonic_tension_morphism_Large(
     if harmonic_chroma.size == 0 or harmonic_chroma.shape[0] != 12 or harmonic_chroma.shape[1] == 0 or sr <= 0:
         return {"bass_root_agreement_ratio": 0.0, "vocal_chord_tone_ratio": 0.0, "vocal_tension_ratio": 0.0}
 
-    # 32フレームへリサンプリングした各時点の上位3音(コードトーン候補)と最有力ルート音を特定するわ
+    # 32フレームへ均等区間プーリングした各時点の上位3音(コードトーン候補)と最有力ルート音を特定するわ
     t_len = harmonic_chroma.shape[1]
-    idx_map = np.linspace(0, t_len - 1, FIXED_SEQ_FRAMES).astype(int)
-    chroma_32 = harmonic_chroma[:, idx_map]
+    if t_len > FIXED_SEQ_FRAMES:
+        from .structure_ssm import _pool_features_max_frames
+
+        chroma_32 = _pool_features_max_frames(harmonic_chroma, max_frames=FIXED_SEQ_FRAMES)
+    else:
+        idx_map = np.linspace(0, t_len - 1, FIXED_SEQ_FRAMES).astype(int)
+        chroma_32 = harmonic_chroma[:, idx_map]
     top3_per_frame = [set(int(x) for x in np.argsort(chroma_32[:, i])[-3:]) for i in range(FIXED_SEQ_FRAMES)]
     avg_chroma = np.mean(harmonic_chroma, axis=1)
     dominant_root_pc = int(np.argmax(avg_chroma))
 
     bass_agree = 0.0
     if bass_y is not None and np.asarray(bass_y).size >= 2048:
-        bass_bounded = _bound_long_signal_windows(bass_y)
-        bass_f0 = voiced_f0_contour_morphism(bass_bounded, sr, fmin_hz=41.20, fmax_hz=329.63)
+        bass_f0 = voiced_f0_contour_morphism(bass_y, sr, fmin_hz=41.20, fmax_hz=329.63)
         bass_pcs = _hz_seq_to_pitch_classes(bass_f0["f0_seq_32"])
         valid_bass = [pc for pc in bass_pcs if pc is not None]
         if valid_bass:
@@ -495,8 +561,7 @@ def cross_stem_harmonic_tension_morphism_Large(
     vocal_chord_ratio = 0.0
     vocal_tension_ratio = 0.0
     if vocals_y is not None and np.asarray(vocals_y).size >= 2048:
-        vocals_bounded = _bound_long_signal_windows(vocals_y)
-        voc_f0 = voiced_f0_contour_morphism(vocals_bounded, sr, fmin_hz=65.41, fmax_hz=2093.0)
+        voc_f0 = voiced_f0_contour_morphism(vocals_y, sr, fmin_hz=65.41, fmax_hz=2093.0)
         voc_pcs = _hz_seq_to_pitch_classes(voc_f0["f0_seq_32"])
         voiced_hits = [1.0 if pc in top3_per_frame[i] else 0.0 for i, pc in enumerate(voc_pcs) if pc is not None]
         if voiced_hits:

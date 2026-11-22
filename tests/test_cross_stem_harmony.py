@@ -96,6 +96,29 @@ class TestCrossStemHarmony(unittest.TestCase):
         nov = compute_novelty_curve(ssm)
         self.assertEqual(len(nov), 512)
 
+    def test_pool_features_and_ssm_preserve_second_half_structure(self) -> None:
+        from analyzer.structure_ssm import (
+            _pool_features_max_frames,
+            compute_novelty_curve,
+            compute_ssm,
+        )
+
+        # t_len=1000, max_frames=512 で前半 [0..511] は定常、後半 [600..900) のみに構造変化を与えるわ
+        feat = np.zeros((12, 1000), dtype=np.float32)
+        feat[0, :600] = 1.0
+        feat[0, 600:900] = 0.0
+        feat[7, 600:900] = 1.0
+        feat[0, 900:] = 1.0
+
+        pooled = _pool_features_max_frames(feat, max_frames=512)
+        self.assertEqual(pooled.shape, (12, 512))
+        # 後半区間が切り捨てられずに転調成分 feat[7] が後半フレームに残っていること
+        self.assertGreater(float(np.max(pooled[7, 256:])), 0.9)
+
+        ssm = compute_ssm(feat, max_frames=512)
+        nov = compute_novelty_curve(ssm, kernel_size=16)
+        self.assertGreater(float(np.max(nov[256:])), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

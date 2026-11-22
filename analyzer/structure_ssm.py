@@ -20,14 +20,14 @@ logger = logging.getLogger("analyzer.structure_ssm")
 
 
 def _pool_features_max_frames(features: np.ndarray, max_frames: int = 512) -> np.ndarray:
-    """長尺トラックでの O(T^2) SSM メモリ爆発を防ぐため、時間軸を最大 max_frames へブロック平均プーリングいたしますわ！"""
+    """時間軸全体 [0, T) を1フレームも捨てることなく max_frames 区間へ均等分割平均プーリングいたしますわ！"""
     t_len = features.shape[1]
     if t_len <= max_frames or max_frames <= 0:
         return features
-    step = t_len // max_frames
-    usable = step * max_frames
-    d_dim = features.shape[0]
-    return features[:, :usable].reshape(d_dim, max_frames, step).mean(axis=2)
+    edges = np.linspace(0, t_len, max_frames + 1, dtype=np.int64)
+    counts = np.maximum(1, np.diff(edges)).astype(np.float32)
+    sums = np.add.reduceat(np.asarray(features, dtype=np.float32), edges[:-1], axis=1)
+    return sums / counts[np.newaxis, :]
 
 
 def compute_ssm(features: np.ndarray, max_frames: int = 512) -> np.ndarray:
@@ -103,8 +103,9 @@ def detect_chorus_and_drop(
 
     if start_search < end_search and len(energy_env) >= n_frames:
         chorus_mid = start_search + int(np.argmax(energy_env[start_search:end_search]))
-        chorus_start_frame = max(0, chorus_mid - int(15.0 / time_per_frame))
-        chorus_end_frame = min(n_frames, chorus_mid + int(15.0 / time_per_frame))
+        half_span = max(1, int(round(15.0 / time_per_frame)))
+        chorus_start_frame = max(0, chorus_mid - half_span)
+        chorus_end_frame = min(n_frames, chorus_mid + half_span)
     else:
         chorus_start_frame = int(n_frames * 0.35)
         chorus_end_frame = int(n_frames * 0.55)
@@ -169,8 +170,11 @@ def _resample_chroma_to_32(chroma: np.ndarray, n_frames: int = FIXED_SEQ_FRAMES)
     c_mat = np.nan_to_num(np.asarray(chroma, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
     if c_mat.ndim != 2 or c_mat.shape[0] != 12 or c_mat.shape[1] == 0:
         return np.zeros((12, n_frames), dtype=np.float32)
-    rows_32 = [np.asarray(_resample_to_fixed_frames(c_mat[i], n_frames), dtype=np.float32) for i in range(12)]
-    out = np.vstack(rows_32)
+    if c_mat.shape[1] > n_frames:
+        out = _pool_features_max_frames(c_mat, max_frames=n_frames)
+    else:
+        rows_32 = [np.asarray(_resample_to_fixed_frames(c_mat[i], n_frames), dtype=np.float32) for i in range(12)]
+        out = np.vstack(rows_32)
     col_norms = np.linalg.norm(out, axis=0, keepdims=True)
     return np.where(col_norms > 1e-9, out / np.maximum(col_norms, 1e-9), 0.0).astype(np.float32)
 
@@ -207,11 +211,19 @@ def multistem_structure_ssm_morphism_Large(
             rows.append(np.zeros(n_frames, dtype=np.float32))
             continue
         arr = np.asarray(wav, dtype=np.float32).ravel()
-        chunk = max(1, arr.size // n_frames)
-        usable = (arr.size // chunk) * chunk
-        blocks = arr[:usable].reshape(-1, chunk)
-        rms = np.sqrt(np.mean(blocks.astype(np.float64) ** 2, axis=1))
-        curve = np.asarray(_resample_to_fixed_frames(rms, n_frames), dtype=np.float32)
+        if arr.size < n_frames:
+            rms_vals = np.sqrt(arr.astype(np.float64) ** 2)
+            curve = np.asarray(_resample_to_fixed_frames(rms_vals, n_frames), dtype=np.float32)
+        else:
+            edges = np.linspace(0, arr.size, n_frames + 1, dtype=np.int64)
+            curve = np.zeros(n_frames, dtype=np.float32)
+            for i in range(n_frames):
+                seg = arr[int(edges[i]) : int(edges[i + 1])]
+                acc = 0.0
+                for off in range(0, seg.size, 1048576):
+                    blk = seg[off : min(seg.size, off + 1048576)].astype(np.float64)
+                    acc += float(np.dot(blk, blk))
+                curve[i] = float(np.sqrt(acc / float(seg.size)))
         peak = float(np.max(curve))
         rows.append(curve / peak if peak > 1e-9 else curve)
 

@@ -390,6 +390,20 @@ func (d *Dispatcher) UpsertTrackDirectly(ctx context.Context, payload IngestPayl
 			}
 			d.LogWarn("[DirectIngest] PostgreSQL guarded UPDATE error/timeout (%v): %v", ctx.Err(), execErr)
 		} else {
+			if task.Force {
+				query = `
+					INSERT INTO raw.library_flac (
+						audio_hash, filepath, filename, track_number, album_artist, album, artist, title, meta, features, predictions, analyzed_at
+					) VALUES (
+						$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP
+					)
+					ON CONFLICT (audio_hash) DO UPDATE SET
+						meta = raw.library_flac.meta || EXCLUDED.meta,
+						features = EXCLUDED.features,
+						predictions = EXCLUDED.predictions,
+						analyzed_at = CURRENT_TIMESTAMP;
+				`
+			}
 			result, execErr := d.pgDB.ExecContext(
 				ctx,
 				query,

@@ -176,11 +176,16 @@ class AudioContext:
                 f"    [CSE Cache Miss] chroma_cqt 計算開始 (source: {self.source})"
             )
             try:
-                from analyzer.common_pitch_harmony import _bound_long_signal_windows
-
-                y_cqt = _bound_long_signal_windows(self.y, max_samples=524288)
-                with LIBROSA_LOCK:
-                    self._chroma_cqt = librosa.feature.chroma_cqt(y=y_cqt, sr=self.sr)
+                if len(self.y) <= 44100 * 120:
+                    with LIBROSA_LOCK:
+                        self._chroma_cqt = librosa.feature.chroma_cqt(y=self.y, sr=self.sr)
+                else:
+                    ratio = max(1, len(self.y) // (44100 * 90))
+                    hop_cqt = min(4096, 512 * (1 << (ratio - 1).bit_length()))
+                    with LIBROSA_LOCK:
+                        self._chroma_cqt = librosa.feature.chroma_cqt(
+                            y=self.y, sr=self.sr, hop_length=hop_cqt
+                        )
             except librosa.util.exceptions.ParameterError as e:
                 logging.warning(
                     f"chroma_cqt 計算をスキップし chroma_stft へフォールバックしますわ (source: {self.source}, len={len(self.y)}): {e}"
@@ -199,15 +204,8 @@ class AudioContext:
                 f"    [CSE Cache Miss] beat_track 計算開始 (source: {self.source})"
             )
             try:
-                from analyzer.common_pitch_harmony import _bound_long_signal_windows
-
-                onset_in = (
-                    _bound_long_signal_windows(self.onset_env, max_samples=16384, win_len=1024)
-                    if self.onset_env.size > 16384
-                    else self.onset_env
-                )
                 with LIBROSA_LOCK:
-                    bpm, beats = librosa.beat.beat_track(onset_envelope=onset_in, sr=self.sr)
+                    bpm, beats = librosa.beat.beat_track(onset_envelope=self.onset_env, sr=self.sr)
                 bpm_val = float(bpm[0] if isinstance(bpm, np.ndarray) else bpm)
 
                 if math.isnan(bpm_val) or math.isinf(bpm_val):
@@ -272,17 +270,25 @@ class AudioContext:
             logging.debug(
                 f"    [CSE Cache Miss] tempogram 計算開始 (source: {self.source})"
             )
-            from analyzer.common_pitch_harmony import _bound_long_signal_windows
+            onset_full = self.onset_env
+            if onset_full.size <= 32768:
+                with LIBROSA_LOCK:
+                    raw_tempogram = librosa.feature.tempogram(
+                        onset_envelope=onset_full, sr=self.sr, hop_length=512
+                    )
+            else:
+                from .structure_ssm import _pool_features_max_frames
 
-            onset_in = (
-                _bound_long_signal_windows(self.onset_env, max_samples=16384, win_len=1024)
-                if self.onset_env.size > 16384
-                else self.onset_env
-            )
-            with LIBROSA_LOCK:
-                raw_tempogram = librosa.feature.tempogram(
-                    onset_envelope=onset_in, sr=self.sr, hop_length=512
-                )
+                chunks: list[np.ndarray] = []
+                chunk_len = 32768
+                for start in range(0, onset_full.size, chunk_len):
+                    seg = onset_full[start : min(onset_full.size, start + chunk_len)]
+                    with LIBROSA_LOCK:
+                        seg_tg = librosa.feature.tempogram(
+                            onset_envelope=seg, sr=self.sr, hop_length=512
+                        )
+                    chunks.append(_pool_features_max_frames(seg_tg, max_frames=512))
+                raw_tempogram = np.concatenate(chunks, axis=1)
             self._tempogram = np.nan_to_num(
                 raw_tempogram, nan=0.0, posinf=0.0, neginf=0.0
             )

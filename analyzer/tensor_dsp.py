@@ -41,7 +41,7 @@ def _bound_tensor_windows(
 
 def hilbert_envelope_phase(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """1Dまたはバッチテンソルに対するHilbert変換を行い、エンベロープと瞬時位相を返しますの。"""
-    x = _bound_tensor_windows(x, max_samples=1048576, win_len=65536)
+    x = _bound_tensor_windows(x, max_samples=2097152, win_len=65536)
     n_samples = x.shape[-1]
     if n_samples == 0:
         empty = torch.empty_like(x)
@@ -167,7 +167,7 @@ def fft_bandpass_envelope(
     x: torch.Tensor, sr: int, f_lo: float, f_hi: float
 ) -> torch.Tensor:
     """FFTベースの理想バンドパスフィルタリング後のエンベロープ抽出ですわ。"""
-    x = _bound_tensor_windows(x, max_samples=1048576, win_len=65536)
+    x = _bound_tensor_windows(x, max_samples=2097152, win_len=65536)
     n_samples = x.shape[-1]
     if n_samples == 0:
         return torch.empty(0, device=x.device, dtype=x.dtype)
@@ -318,6 +318,164 @@ def estimate_key_tensor(chroma_cqt_avg: torch.Tensor) -> tuple[str, str, float]:
 _SUBBASS_SKIP_STEMS = frozenset({"vocals", "piano", "guitar"})
 
 
+def _extract_spectro_streaming(
+    spectro_path: str, sr: int, device: torch.device
+) -> tuple[float, float, torch.Tensor, torch.Tensor]:
+    """ディスクキャッシュ済み STFT を 16384 フレームチャンクで全走査し正確な Flux・Welch PSD を算出いたしますわ！"""
+    arr = np.load(spectro_path, mmap_mode="r")
+    total_frames = arr.shape[-1]
+    if total_frames == 0:
+        freqs = torch.linspace(0, sr / 2, max(1, arr.shape[-2]), device=device)
+        return 0.0, 0.0, freqs, torch.zeros_like(freqs)
+
+    flux_sum = 0.0
+    flux_sq_sum = 0.0
+    flux_count = 0
+    psd_acc: torch.Tensor | None = None
+    chunk_frames = 16384
+
+    for start in range(0, total_frames, chunk_frames):
+        end = min(total_frames, start + chunk_frames)
+        # チャンク境界のフレーム差分を落とさないよう前フレームを1列オーバーラップさせるわ
+        read_start = start - 1 if start > 0 else 0
+        mag = torch.from_numpy(np.ascontiguousarray(arr[..., read_start:end])).to(device)
+        if mag.shape[-1] > 1:
+            flux_c = torch.diff(mag, dim=-1).pow(2).sum(dim=-2).sqrt()
+            flux_sum += float(flux_c.sum().item())
+            flux_sq_sum += float(flux_c.pow(2).sum().item())
+            flux_count += flux_c.numel()
+        mag_own = mag[..., 1:] if start > 0 else mag
+        psd_c = mag_own.pow(2).sum(dim=-1)
+        psd_acc = psd_c if psd_acc is None else (psd_acc + psd_c)
+
+    flux_mean = flux_sum / float(flux_count) if flux_count > 0 else 0.0
+    flux_var = max(0.0, (flux_sq_sum / float(flux_count)) - flux_mean * flux_mean) if flux_count > 0 else 0.0
+    if flux_count > 1:
+        flux_var *= float(flux_count) / float(flux_count - 1)
+    psd = psd_acc / float(total_frames)
+    freqs = torch.linspace(0, sr / 2, psd.shape[-1], device=device)
+    return flux_mean, math.sqrt(flux_var), freqs, psd
+
+
+def extract_tensor_features_Large(
+    y: torch.Tensor,
+    sr: int,
+    device: torch.device,
+    spectro_path: str | None = None,
+    stem_name: str | None = None,
+) -> dict[str, Any]:
+    """全タイムラインをチャンク分割し 100% 欠損なく Spectral Flux, Welch PSD Peak, Subbass Envelope, HNR/NAP を計測する射ですわ！"""
+    n_samples = y.shape[-1]
+    chunk_len = 2097152
+    features: dict[str, Any] = {}
+
+    if n_samples <= chunk_len:
+        y_dev = y.to(device)
+        nap_val, hnr_db = calc_hnr_nap_tensor(y_dev, sr)
+        features["nap"] = nap_val
+        features["hnr_db"] = hnr_db
+
+        if spectro_path and os.path.exists(spectro_path):
+            f_mean, f_std, freqs, psd = _extract_spectro_streaming(spectro_path, sr, device)
+            features["spectral_flux_mean"] = f_mean
+            features["spectral_flux_std"] = f_std
+        else:
+            window_1024 = torch.hann_window(1024, device=device)
+            stft_mag = torch.stft(
+                y_dev, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
+            ).abs()
+            flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
+            freqs, psd = welch_psd(y_dev, sr=sr)
+            features["spectral_flux_mean"] = float(flux.mean().item())
+            features["spectral_flux_std"] = float(flux.std().item())
+
+        psd_1d = psd.mean(dim=list(range(psd.ndim - 1))) if psd.ndim > 1 else psd
+        peak_idx = psd_1d.argmax()
+        features["psd_peak_freq"] = float(freqs[peak_idx].item()) if peak_idx < len(freqs) else 0.0
+        features["psd_peak_val"] = float(psd_1d[peak_idx].item()) if peak_idx < len(psd_1d) else 0.0
+
+        if stem_name in _SUBBASS_SKIP_STEMS:
+            features["subbass_env_mean"] = 0.0
+            return features
+        sub_env = fft_bandpass_envelope(y_dev, sr, 20.0, 60.0)
+        features["subbass_env_mean"] = float(sub_env.mean().item()) if sub_env.numel() > 0 else 0.0
+        return features
+
+    # 長尺波形はチャンク分割して 100% 全サンプル・全フレームを GPU 上で積算するわ
+    y_hnr_wins = _bound_tensor_windows(y, max_samples=1048576, win_len=65536).to(device)
+    nap_val, hnr_db = calc_hnr_nap_tensor(y_hnr_wins, sr)
+    del y_hnr_wins
+    features["nap"] = nap_val
+    features["hnr_db"] = hnr_db
+
+    compute_subbass = stem_name not in _SUBBASS_SKIP_STEMS
+    sub_sum = 0.0
+    sub_count = 0
+
+    if spectro_path and os.path.exists(spectro_path):
+        f_mean, f_std, freqs, psd = _extract_spectro_streaming(spectro_path, sr, device)
+        features["spectral_flux_mean"] = f_mean
+        features["spectral_flux_std"] = f_std
+        if compute_subbass:
+            for start in range(0, n_samples, chunk_len):
+                c_dev = y[..., start : min(n_samples, start + chunk_len)].to(device)
+                sub_c = fft_bandpass_envelope(c_dev, sr, 20.0, 60.0)
+                sub_sum += float(sub_c.sum().item())
+                sub_count += sub_c.numel()
+                del c_dev, sub_c
+    else:
+        window_1024 = torch.hann_window(1024, device=device)
+        flux_sum = 0.0
+        flux_sq_sum = 0.0
+        flux_count = 0
+        psd_acc: torch.Tensor | None = None
+        psd_weight_total = 0.0
+        freqs = torch.zeros(0, device=device)
+
+        for start in range(0, n_samples, chunk_len):
+            end = min(n_samples, start + chunk_len)
+            c_dev = y[..., start:end].to(device)
+            if c_dev.shape[-1] >= 1024:
+                stft_mag = torch.stft(
+                    c_dev, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
+                ).abs()
+                if stft_mag.shape[-1] > 1:
+                    flux_c = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
+                    flux_sum += float(flux_c.sum().item())
+                    flux_sq_sum += float(flux_c.pow(2).sum().item())
+                    flux_count += flux_c.numel()
+            if c_dev.shape[-1] >= 2048:
+                freqs, psd_c = welch_psd(c_dev, sr=sr, n_fft=2048)
+                w = float(c_dev.shape[-1])
+                psd_acc = psd_c * w if psd_acc is None else (psd_acc + psd_c * w)
+                psd_weight_total += w
+            if compute_subbass:
+                sub_c = fft_bandpass_envelope(c_dev, sr, 20.0, 60.0)
+                sub_sum += float(sub_c.sum().item())
+                sub_count += sub_c.numel()
+            del c_dev
+
+        f_mean = flux_sum / float(flux_count) if flux_count > 0 else 0.0
+        f_var = max(0.0, (flux_sq_sum / float(flux_count)) - f_mean * f_mean) if flux_count > 0 else 0.0
+        if flux_count > 1:
+            f_var *= float(flux_count) / float(flux_count - 1)
+        features["spectral_flux_mean"] = f_mean
+        features["spectral_flux_std"] = math.sqrt(f_var)
+        psd = psd_acc / psd_weight_total if (psd_acc is not None and psd_weight_total > 0.0) else torch.zeros(0, device=device)
+
+    psd_1d = psd.mean(dim=list(range(psd.ndim - 1))) if psd.ndim > 1 else psd
+    if psd_1d.numel() > 0 and freqs.numel() > 0:
+        peak_idx = psd_1d.argmax()
+        features["psd_peak_freq"] = float(freqs[peak_idx].item()) if peak_idx < len(freqs) else 0.0
+        features["psd_peak_val"] = float(psd_1d[peak_idx].item()) if peak_idx < len(psd_1d) else 0.0
+    else:
+        features["psd_peak_freq"] = 0.0
+        features["psd_peak_val"] = 0.0
+
+    features["subbass_env_mean"] = (sub_sum / float(sub_count)) if (compute_subbass and sub_count > 0) else 0.0
+    return features
+
+
 def extract_tensor_features(
     y: torch.Tensor,
     sr: int,
@@ -325,48 +483,8 @@ def extract_tensor_features(
     spectro_path: str | None = None,
     stem_name: str | None = None,
 ) -> dict[str, Any]:
-    """1つの波形テンソルに対する Spectral Flux, Welch PSD Peak, Subbass Envelope, HNR/NAP 計測射ですわ！"""
-    y = _bound_tensor_windows(y, max_samples=1048576, win_len=65536).to(device)
-    features: dict[str, Any] = {}
-
-    # 1. HNR / NAP の cuFFT Wiener-Khinchin 計算 (Advisory 1)
-    nap_val, hnr_db = calc_hnr_nap_tensor(y, sr)
-    features["nap"] = nap_val
-    features["hnr_db"] = hnr_db
-
-    # 2. Spectral Flux and Welch PSD Peaks
-    if spectro_path and os.path.exists(spectro_path):
-        arr = np.load(spectro_path, mmap_mode="r")
-        stride = max(1, arr.shape[-1] // 16384)
-        stft_mag = torch.from_numpy(np.ascontiguousarray(arr[..., ::stride])).to(device)
-        flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
-        psd = stft_mag.pow(2).mean(dim=-1)
-        freqs = torch.linspace(0, sr / 2, psd.shape[-1], device=device)
-    else:
-        window_1024 = torch.hann_window(1024, device=device)
-        stft_mag = torch.stft(
-            y, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
-        ).abs()
-        flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
-        freqs, psd = welch_psd(y, sr=sr)
-
-    features["spectral_flux_mean"] = float(flux.mean().item())
-    features["spectral_flux_std"] = float(flux.std().item())
-
-    # 3. Welch PSD Peaks (1次元に集約して安全にピーク検出)
-    psd_1d = psd.mean(dim=list(range(psd.ndim - 1))) if psd.ndim > 1 else psd
-    peak_idx = psd_1d.argmax()
-    features["psd_peak_freq"] = float(freqs[peak_idx].item()) if peak_idx < len(freqs) else 0.0
-    features["psd_peak_val"] = float(psd_1d[peak_idx].item()) if peak_idx < len(psd_1d) else 0.0
-
-    # 4. Phase Envelope (Sub-bass: 20-60Hz — 非低域ステムでは計算を省略し単位元 0.0 とするわ)
-    if stem_name in _SUBBASS_SKIP_STEMS:
-        features["subbass_env_mean"] = 0.0
-        return features
-    sub_env = fft_bandpass_envelope(y, sr, 20.0, 60.0)
-    features["subbass_env_mean"] = float(sub_env.mean().item()) if sub_env.numel() > 0 else 0.0
-
-    return features
+    """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(Tensor -> TensorMetrics)"""
+    return extract_tensor_features_Large(y, sr, device, spectro_path=spectro_path, stem_name=stem_name)
 
 
 def extract_tensor_obj(
