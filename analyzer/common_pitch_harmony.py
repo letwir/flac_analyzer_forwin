@@ -8,14 +8,17 @@ vocals (C2..C7) と bass (E1..E4) で同一の幾何・変調解析ロジック�
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import Any, Mapping
 
 import librosa
 import numpy as np
 
+from constants import CHORDS_DIC, KEY_PROFILES, NOTES
 from .common_signal import decay_slope_morphism, subband_energy_morphism
 from .core import FIXED_SEQ_FRAMES, LIBROSA_LOCK, _resample_to_fixed_frames
 
+logger = logging.getLogger("analyzer.common_pitch_harmony")
 _EPS = 1e-10
 
 
@@ -320,3 +323,103 @@ def harmonic_instrument_character_morphism(
     if clean.size < 2048:
         return {}
     return handler(clean, sr, chroma)
+
+
+def _estimate_key_from_chroma(chroma: np.ndarray) -> tuple[str, str, float]:
+    """12D クロマ行列から Krumhansl-Schmuckler 法で Key/Scale/Strength を推定しますわ！"""
+    if chroma.size == 0:
+        return "Unknown", "Unknown", 0.0
+    chroma_avg = np.mean(chroma, axis=1)
+    norm = float(np.linalg.norm(chroma_avg))
+    if norm <= _EPS:
+        return "Unknown", "Unknown", 0.0
+    chroma_unit = chroma_avg / norm
+    best_key, best_scale, best_corr = "Unknown", "Unknown", -1.0
+    for mode in ("major", "minor"):
+        profile = np.asarray(KEY_PROFILES[mode], dtype=np.float64)
+        p_norm = profile / max(float(np.linalg.norm(profile)), _EPS)
+        for shift in range(12):
+            corr = float(np.dot(np.roll(chroma_unit, -shift), p_norm))
+            if corr > best_corr:
+                best_corr = corr
+                best_key = NOTES[shift]
+                best_scale = mode
+    return best_key, best_scale, float(best_corr)
+
+
+def _estimate_chord_seq32_from_chroma(chroma: np.ndarray) -> list[str]:
+    """12xT クロマから 32 フレームのコード進行文字列リストを算出しますわ！"""
+    if chroma.size == 0 or chroma.shape[1] == 0:
+        return ["C"] * FIXED_SEQ_FRAMES
+    chords_dic: dict[str, list[str]] = dict(CHORDS_DIC["chords_dic"])  # type: ignore[arg-type]
+    chord_names = sorted(chords_dic.keys())
+    templates = np.zeros((len(chord_names), 12), dtype=np.float64)
+    for idx, cname in enumerate(chord_names):
+        for note in chords_dic[cname]:
+            templates[idx, NOTES.index(note)] = 1.0
+        templates[idx] /= max(float(np.linalg.norm(templates[idx])), _EPS)
+
+    col_norms = np.linalg.norm(chroma, axis=0, keepdims=True) + _EPS
+    scores = templates @ (chroma / col_norms)
+    best_indices = np.argmax(scores, axis=0)
+    resampled = _resample_to_fixed_frames(best_indices.astype(np.float64), FIXED_SEQ_FRAMES)
+    return [chord_names[int(round(float(v))) % len(chord_names)] for v in resampled]
+
+
+def harmonic_bus_chroma_morphism_Large(
+    stems_mono: Mapping[str, np.ndarray],
+    sr: int,
+) -> dict[str, Any]:
+    """drums と vocals を除いた和声バス (bass+piano+guitar+other) から純和声クロマ・キー・コード列を合成する純粋射ですわ！
+
+    Mor(Prod_{harm}(R^N) x SR -> HarmonicBusMetrics)
+    """
+    harm_arrays = [
+        np.nan_to_num(np.asarray(stems_mono[name], dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
+        for name in ("bass", "piano", "guitar", "other")
+        if name in stems_mono and np.asarray(stems_mono[name]).size > 0
+    ]
+    if not harm_arrays or sr <= 0:
+        return {
+            "harmonic_bus_key": "Unknown",
+            "harmonic_bus_scale": "Unknown",
+            "harmonic_bus_key_strength": 0.0,
+            "harmonic_bus_chord_seq_32": ["C"] * FIXED_SEQ_FRAMES,
+            "harmonic_chroma": np.zeros((12, 0), dtype=np.float32),
+        }
+
+    min_len = min(a.size for a in harm_arrays)
+    if min_len < 512:
+        return {
+            "harmonic_bus_key": "Unknown",
+            "harmonic_bus_scale": "Unknown",
+            "harmonic_bus_key_strength": 0.0,
+            "harmonic_bus_chord_seq_32": ["C"] * FIXED_SEQ_FRAMES,
+            "harmonic_chroma": np.zeros((12, 0), dtype=np.float32),
+        }
+
+    bus = np.sum([a[:min_len] for a in harm_arrays], axis=0).astype(np.float32)
+    with LIBROSA_LOCK:
+        try:
+            chroma = librosa.feature.chroma_cqt(y=bus, sr=sr)
+        except Exception as exc:
+            logger.debug(f"[harmonic_bus] chroma_cqt フォールバックのため chroma_stft を使用いたしますわ: {exc}")
+            chroma = librosa.feature.chroma_stft(y=bus, sr=sr)
+    chroma = np.nan_to_num(chroma, nan=0.0, posinf=0.0, neginf=0.0)
+    key, scale, strength = _estimate_key_from_chroma(chroma)
+    chords = _estimate_chord_seq32_from_chroma(chroma)
+    return {
+        "harmonic_bus_key": key,
+        "harmonic_bus_scale": scale,
+        "harmonic_bus_key_strength": strength,
+        "harmonic_bus_chord_seq_32": chords,
+        "harmonic_chroma": chroma,
+    }
+
+
+def harmonic_bus_chroma_morphism(
+    stems_mono: Mapping[str, np.ndarray],
+    sr: int,
+) -> dict[str, Any]:
+    """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(Prod_{harm}(R^N) x SR -> HarmonicBusMetrics)"""
+    return harmonic_bus_chroma_morphism_Large(stems_mono, sr)

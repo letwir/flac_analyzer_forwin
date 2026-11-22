@@ -182,11 +182,17 @@ def cross_stem_foundation_morphism_Large(
         else {"kick_bass_lag_ms": 0.0, "pocket_sync_score": 0.0, "sidechain_ducking_score": 0.0}
     )
 
+    from .common_pitch_harmony import harmonic_bus_chroma_morphism
+
+    harm_bus_full = harmonic_bus_chroma_morphism(aligned, sr)
+    harm_bus_json = {k: v for k, v in harm_bus_full.items() if k != "harmonic_chroma"}
+
     return {
         "residual_snr_db": residual_snr_db,
         "v_to_accomp_db": v_to_accomp_db,
         "vocal_band_masking": masking,
         "rhythm_pocket": rhythm_pocket,
+        "harmonic_bus": harm_bus_json,
         "per_stem": per_stem,
         "arrangement_arc_32": {
             "stems": arc_stems,
