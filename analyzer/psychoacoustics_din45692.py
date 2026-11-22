@@ -34,16 +34,21 @@ def hz_to_bark(f: np.ndarray | float) -> np.ndarray | float:
 
 def calc_specific_loudness_bark(spectro: np.ndarray, sr: int) -> np.ndarray:
     """STFT振幅スペクトルから 24 Bark 帯域の特異ラウドネス N'(z) (Sone/Bark) を算出しますわ！"""
-    n_fft = 2048
-    fft_freqs = np.linspace(0, sr / 2, spectro.shape[0], dtype=np.float32)
+    t_len = spectro.shape[1]
+    if t_len == 0:
+        return np.zeros((24, 0), dtype=np.float32)
+    # 長尺曲で (1025, 250000+) の二乗一時配列を作らないよう最大 4096 フレームへ間引くかチャンク計算するわ
+    stride = max(1, t_len // 4096)
+    spec_sub = spectro[:, ::stride]
+    fft_freqs = np.linspace(0, sr / 2, spec_sub.shape[0], dtype=np.float32)
     barks = hz_to_bark(fft_freqs)
 
     # 24 Bark 帯域ごとのパワー積算 (Bark filterbank)
-    bark_power = np.zeros((24, spectro.shape[1]), dtype=np.float32)
+    bark_power = np.zeros((24, spec_sub.shape[1]), dtype=np.float32)
     for b in range(24):
         mask = (barks >= b) & (barks < (b + 1))
         if np.any(mask):
-            bark_power[b, :] = np.sum(spectro[mask, :] ** 2, axis=0)
+            bark_power[b, :] = np.sum(spec_sub[mask, :] ** 2, axis=0)
 
     # Zwicker の特異ラウドネスモデル N'(z) = 0.08 * (E(z) / E0)^0.23
     e0 = 1e-12

@@ -26,7 +26,8 @@ def detect_cutoff_and_fake_hires(ctx: AudioContext) -> tuple[float, float, bool]
         return float(sr / 2), 0.0, False
 
     freqs = np.linspace(0, sr / 2, spectro.shape[0], dtype=np.float32)
-    power_spectrum = np.mean(spectro**2, axis=1) + 1e-12
+    stride = max(1, spectro.shape[1] // 4096)
+    power_spectrum = np.mean(spectro[:, ::stride] ** 2, axis=1) + 1e-12
     db_spectrum = 10.0 * np.log10(power_spectrum)
 
     # 10kHz 以上の高域領域を探索

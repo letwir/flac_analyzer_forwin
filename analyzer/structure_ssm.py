@@ -19,15 +19,27 @@ from .types_features import StructureSsmFeatures
 logger = logging.getLogger("analyzer.structure_ssm")
 
 
-def compute_ssm(features: np.ndarray) -> np.ndarray:
-    """特徴量シーケンス (d x T) から自己類似度行列 (T x T) をコサイン類似度で算出しますわ！"""
+def _pool_features_max_frames(features: np.ndarray, max_frames: int = 512) -> np.ndarray:
+    """長尺トラックでの O(T^2) SSM メモリ爆発を防ぐため、時間軸を最大 max_frames へブロック平均プーリングいたしますわ！"""
+    t_len = features.shape[1]
+    if t_len <= max_frames or max_frames <= 0:
+        return features
+    step = t_len // max_frames
+    usable = step * max_frames
+    d_dim = features.shape[0]
+    return features[:, :usable].reshape(d_dim, max_frames, step).mean(axis=2)
+
+
+def compute_ssm(features: np.ndarray, max_frames: int = 512) -> np.ndarray:
+    """特徴量シーケンス (d x T) から自己類似度行列をコサイン類似度で算出しますわ（長尺は最大 max_frames へ安全縮約）！"""
     if features.shape[1] == 0:
         return np.zeros((1, 1), dtype=np.float32)
+    bounded = _pool_features_max_frames(features, max_frames=max_frames)
     # L2 正規化
-    norms = np.linalg.norm(features, axis=0, keepdims=True)
+    norms = np.linalg.norm(bounded, axis=0, keepdims=True)
     norms = np.where(norms < 1e-9, 1.0, norms)
-    norm_feat = features / norms
-    # Dot product
+    norm_feat = bounded / norms
+    # Dot product (最大 512x512 = 1MB に収まるわ)
     ssm = np.dot(norm_feat.T, norm_feat)
     return np.clip(ssm, 0.0, 1.0)
 
@@ -112,15 +124,16 @@ def extract_structure_ssm(ctx: AudioContext) -> StructureSsmFeatures:
     if duration_sec < 1.0:
         return StructureSsmFeatures()
 
-    # Chroma + MFCC 複合特徴量による SSM 構築
+    # Chroma + Centroid 複合特徴量を最大 512 フレームへ安全縮約してから SSM を構築するわ (48分超でも <1MB)
     chroma = ctx.chroma
     with_mfcc = np.vstack([chroma, ctx.centroid[np.newaxis, :]])
-    ssm = compute_ssm(with_mfcc)
+    ssm = compute_ssm(with_mfcc, max_frames=512)
     novelty = compute_novelty_curve(ssm)
 
     rms_curve = librosa.feature.rms(S=ctx.spectro)[0]
+    rms_pooled = _pool_features_max_frames(rms_curve[np.newaxis, :], max_frames=ssm.shape[0])[0]
     chorus_s, chorus_e, drop_pos, complexity = detect_chorus_and_drop(
-        novelty, rms_curve, duration_sec
+        novelty, rms_pooled, duration_sec
     )
 
     novelty_seq = _resample_to_fixed_frames(novelty, FIXED_SEQ_FRAMES)

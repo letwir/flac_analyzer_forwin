@@ -86,6 +86,16 @@ class TestCrossStemHarmony(unittest.TestCase):
         nov = ssm_res["novelty_seq_32"]
         self.assertGreater(max(nov[10:22]), min(nov) + 0.05)
 
+    def test_compute_ssm_48min_251k_frames_no_oom(self) -> None:
+        from analyzer.structure_ssm import compute_ssm, compute_novelty_curve
+
+        # 48.6分相当の (13, 251221) 特徴行列で 235GiB OOM にならず 512x512 (1MB) へ縮約されること
+        huge_feat = np.ones((13, 251221), dtype=np.float32)
+        ssm = compute_ssm(huge_feat)
+        self.assertEqual(ssm.shape, (512, 512))
+        nov = compute_novelty_curve(ssm)
+        self.assertEqual(len(nov), 512)
+
 
 if __name__ == "__main__":
     unittest.main()
