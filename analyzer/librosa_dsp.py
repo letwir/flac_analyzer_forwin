@@ -344,6 +344,7 @@ def _build_raw_features(
         audio_cutoff_lufs_feat=plugin_feats.get("audio_cutoff_lufs_feat"),
         stereo_meta=ctx.stereo_meta if ctx is not None else None,
         cross_stem_meta=ctx.cross_stem_meta if ctx is not None else None,
+        stem_profiles=plugin_feats.get("stem_profiles"),
     )
 
 

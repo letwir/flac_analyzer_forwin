@@ -282,7 +282,7 @@
 
 - [ ] **中目標 P2-M2: パラメータ化 F0・輪郭純粋射 (`analyzer/common_pitch_harmony.py`) と `vocals` / `bass` 特化解析**
   - [x] `P2-M2-S1`: `analyzer/common_pitch_harmony.py` を新設し、帯域 $(f_{\min}, f_{\max})$ と RMS+HNR 有声ゲートを受け取る汎用ピッチ輪郭射 `voiced_f0_contour_morphism` を実装する（有声率 `voiced_ratio`、音域 `f0_min_hz`/`f0_max_hz`/`f0_median_hz`/`pitch_range_semitones`、音程跳躍度 `melodic_interval_mean`、ピッチ安定度/ケロケロ度 `pitch_quantization_score`、4–8Hz 変調から算出する `vibrato_rate_hz`/`vibrato_extent_cents`）。
-  - [ ] `P2-M2-S2`: `vocals` ステムに `voiced_f0_contour_morphism(C2..C7)` と `common_signal.subband_energy_morphism` を適用し、**シンガーズフォルマント比 (2.5–3.5kHz)**、**歯擦音比 (Sibilance: 5–10kHz)**、**フレーズ長・残響減衰指標** を抽出する。
+  - [x] `P2-M2-S2`: `vocals` ステムに `voiced_f0_contour_morphism(C2..C7)` と `common_signal.subband_energy_morphism` を適用し、**シンガーズフォルマント比 (2.5–3.5kHz)**、**歯擦音比 (Sibilance: 5–10kHz)**、**フレーズ長・残響減衰指標** を抽出する。
   - [ ] `P2-M2-S3`: `bass` ステムに `voiced_f0_contour_morphism(E1..E4)` と3帯域エネルギー分割射（**Sub-bass 20–60Hz / Mid-bass 60–250Hz / Harmonics-Attack 250–1500Hz 比**）および `decay_slope_morphism`（**サステイン/レガート vs スタッカート度**）を適用する。
   - [ ] `P2-M2-S4`: 合成サイン波・FM ビブラート信号・矩形波ベース信号を用いた単体テスト `tests/test_vocal_and_bass_morphisms.py` を作成し、ビブラート周波数/深さと帯域比の理論値一致を検証する。
 

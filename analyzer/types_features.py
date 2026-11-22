@@ -475,6 +475,7 @@ class RawFeatures:
     audio_cutoff_lufs_feat: AudioCutoffLufsFeatures | None = None
     stereo_meta: dict[str, Any] | None = None
     cross_stem_meta: dict[str, Any] | None = None
+    stem_profiles: dict[str, Any] | None = None
 
     def to_postgres_dict(self, track_id: str) -> dict[str, Any]:
         return {
@@ -813,6 +814,14 @@ def _stem_filter_scalars(raw: RawFeatures, track_id: str) -> dict[str, Any]:
             if k not in ("arrangement_arc_32",)
         }
         scalars["cross_stem"] = cs_scalars
+    if raw.stem_profiles is not None:
+        for prof_key, prof_val in raw.stem_profiles.items():
+            if isinstance(prof_val, dict):
+                scalars[prof_key] = {
+                    k: v for k, v in prof_val.items() if k != "f0_seq_32"
+                }
+            else:
+                scalars[prof_key] = prof_val
     return scalars
 
 

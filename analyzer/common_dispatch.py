@@ -131,6 +131,14 @@ def extract_stem_plugins_morphism(
         results["psychoacoustics_feat"] = extract_psychoacoustics(ctx)
     if "structure" in active:
         results["structure_ssm_feat"] = extract_structure_ssm(ctx)
+
+    stem_profiles: dict[str, Any] = {}
+    if ctx.source == "vocals":
+        from .common_pitch_harmony import vocal_character_morphism
+
+        stem_profiles["vocal_profile"] = vocal_character_morphism(ctx.y, ctx.sr)
+    if stem_profiles:
+        results["stem_profiles"] = stem_profiles
     return results
 
 
@@ -154,6 +162,8 @@ def build_stem_extractor_morphism(
             raw.psychoacoustics_feat = plugin_feats["psychoacoustics_feat"]
         if "structure_ssm_feat" in plugin_feats:
             raw.structure_ssm_feat = plugin_feats["structure_ssm_feat"]
+        if "stem_profiles" in plugin_feats:
+            raw.stem_profiles = plugin_feats["stem_profiles"]
         return raw
 
     return FeatureExtractor(_run_composed, f"stem_dispatch[{stem_name}]")

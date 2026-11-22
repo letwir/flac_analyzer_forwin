@@ -13,6 +13,7 @@ from typing import Any
 import librosa
 import numpy as np
 
+from .common_signal import decay_slope_morphism, subband_energy_morphism
 from .core import FIXED_SEQ_FRAMES, LIBROSA_LOCK, _resample_to_fixed_frames
 
 _EPS = 1e-10
@@ -151,3 +152,36 @@ def voiced_f0_contour_morphism(
 ) -> dict[str, Any]:
     """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(R^N x SR x (fmin, fmax) -> VoicedF0Metrics)"""
     return voiced_f0_contour_morphism_Large(y, sr, fmin_hz, fmax_hz, frame_rms=frame_rms)
+
+
+def vocal_character_morphism(y: np.ndarray, sr: int) -> dict[str, Any]:
+    """vocals ステム特化射：有声 F0 輪郭 (C2..C7)・シンガーズフォルマント・歯擦音比・フレーズ減衰を合成しますわ！
+
+    Mor(R^N x SR -> VocalProfile)
+    """
+    clean = np.nan_to_num(np.asarray(y, dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
+    if clean.size < 2048 or sr <= 0:
+        return {
+            **_neutral_voiced_f0_metrics(),
+            "singers_formant_ratio": 0.0,
+            "sibilance_ratio": 0.0,
+            "phrase_decay_db_per_sec": 0.0,
+            "vocal_activity_ratio": 0.0,
+        }
+
+    with LIBROSA_LOCK:
+        frame_rms = librosa.feature.rms(y=clean, frame_length=2048, hop_length=512)[0]
+    f0_info = voiced_f0_contour_morphism(clean, sr, fmin_hz=65.41, fmax_hz=2093.0, frame_rms=frame_rms)
+    bands = subband_energy_morphism(
+        clean,
+        sr,
+        {"singers_formant": (2500.0, 3500.0), "sibilance": (5000.0, 10000.0)},
+    )
+    decay = decay_slope_morphism(frame_rms, sr=sr, hop_length=512)
+    return {
+        **f0_info,
+        "singers_formant_ratio": float(bands["singers_formant_ratio"]),
+        "sibilance_ratio": float(bands["sibilance_ratio"]),
+        "phrase_decay_db_per_sec": float(decay["decay_db_per_sec"]),
+        "vocal_activity_ratio": float(decay["sustain_ratio"]),
+    }
