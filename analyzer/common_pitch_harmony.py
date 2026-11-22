@@ -423,3 +423,77 @@ def harmonic_bus_chroma_morphism(
 ) -> dict[str, Any]:
     """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(Prod_{harm}(R^N) x SR -> HarmonicBusMetrics)"""
     return harmonic_bus_chroma_morphism_Large(stems_mono, sr)
+
+
+def _hz_seq_to_pitch_classes(f0_seq: list[float]) -> list[int | None]:
+    """Hz 時系列を有声ピッチクラス (0..11, 無声=None) へ写像しますわ！"""
+    pcs: list[int | None] = []
+    for hz in f0_seq:
+        if hz <= 0.0:
+            pcs.append(None)
+            continue
+        midi = int(round(69.0 + 12.0 * float(np.log2(hz / 440.0))))
+        pcs.append(midi % 12)
+    return pcs
+
+
+def cross_stem_harmonic_tension_morphism_Large(
+    bass_y: np.ndarray | None,
+    vocals_y: np.ndarray | None,
+    harmonic_chroma: np.ndarray,
+    sr: int,
+) -> dict[str, float]:
+    """bass F0 ルート音 × 和声クロマ × vocals F0 メロディの整合率・テンション率を算出する純粋射ですわ！
+
+    Mor(R^N? x R^N? x Chroma12xT x SR -> HarmonicTensionMetrics)
+    """
+    if harmonic_chroma.size == 0 or harmonic_chroma.shape[0] != 12 or harmonic_chroma.shape[1] == 0 or sr <= 0:
+        return {"bass_root_agreement_ratio": 0.0, "vocal_chord_tone_ratio": 0.0, "vocal_tension_ratio": 0.0}
+
+    # 32フレームへリサンプリングした各時点の上位3音(コードトーン候補)と最有力ルート音を特定するわ
+    t_len = harmonic_chroma.shape[1]
+    idx_map = np.linspace(0, t_len - 1, FIXED_SEQ_FRAMES).astype(int)
+    chroma_32 = harmonic_chroma[:, idx_map]
+    top3_per_frame = [set(int(x) for x in np.argsort(chroma_32[:, i])[-3:]) for i in range(FIXED_SEQ_FRAMES)]
+    avg_chroma = np.mean(harmonic_chroma, axis=1)
+    dominant_root_pc = int(np.argmax(avg_chroma))
+
+    bass_agree = 0.0
+    if bass_y is not None and np.asarray(bass_y).size >= 2048:
+        bass_f0 = voiced_f0_contour_morphism(bass_y, sr, fmin_hz=41.20, fmax_hz=329.63)
+        bass_pcs = _hz_seq_to_pitch_classes(bass_f0["f0_seq_32"])
+        valid_bass = [pc for pc in bass_pcs if pc is not None]
+        if valid_bass:
+            # ベース音が和声クロマの各フレーム最有力ルートまたは全曲最有力ルートと一致する割合
+            matches = [
+                1.0 if (pc == int(np.argmax(chroma_32[:, i])) or pc == dominant_root_pc) else 0.0
+                for i, pc in enumerate(bass_pcs)
+                if pc is not None
+            ]
+            bass_agree = float(np.mean(matches))
+
+    vocal_chord_ratio = 0.0
+    vocal_tension_ratio = 0.0
+    if vocals_y is not None and np.asarray(vocals_y).size >= 2048:
+        voc_f0 = voiced_f0_contour_morphism(vocals_y, sr, fmin_hz=65.41, fmax_hz=2093.0)
+        voc_pcs = _hz_seq_to_pitch_classes(voc_f0["f0_seq_32"])
+        voiced_hits = [1.0 if pc in top3_per_frame[i] else 0.0 for i, pc in enumerate(voc_pcs) if pc is not None]
+        if voiced_hits:
+            vocal_chord_ratio = float(np.mean(voiced_hits))
+            vocal_tension_ratio = float(1.0 - vocal_chord_ratio)
+
+    return {
+        "bass_root_agreement_ratio": bass_agree,
+        "vocal_chord_tone_ratio": vocal_chord_ratio,
+        "vocal_tension_ratio": vocal_tension_ratio,
+    }
+
+
+def cross_stem_harmonic_tension_morphism(
+    bass_y: np.ndarray | None,
+    vocals_y: np.ndarray | None,
+    harmonic_chroma: np.ndarray,
+    sr: int,
+) -> dict[str, float]:
+    """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(R^N? x R^N? x Chroma12xT x SR -> HarmonicTensionMetrics)"""
+    return cross_stem_harmonic_tension_morphism_Large(bass_y, vocals_y, harmonic_chroma, sr)

@@ -298,7 +298,7 @@
 
 - [ ] **中目標 P3-M1: 純和声ステム合成クロマによる高精度キー/コード進行 & クロスステム和声テンション解析**
   - [x] `P3-M1-S1`: `analyzer/common_pitch_harmony.py` と `common_cross_stem.py` に、`drums` と `vocals` を除いた和声ステム群（`bass + piano + guitar + other`）から純和声 CQT クロマを合成する射 `harmonic_bus_chroma_morphism` を実装し、`mix` クロマとのキー/コード一致度および確信度向上を算出する。
-  - [ ] `P3-M1-S2`: `bass` の F0 ルート音 × 和声ステムのコード構成音 × `vocals` の F0 メロディ音を照合する積射 `cross_stem_harmonic_tension_morphism` を実装し、**ベース・ルート整合率（オンコード率）**、**ボーカル・コードトーン整合率 vs テンション/ブルーノート率**を算出する。
+  - [x] `P3-M1-S2`: `bass` の F0 ルート音 × 和声ステムのコード構成音 × `vocals` の F0 メロディ音を照合する積射 `cross_stem_harmonic_tension_morphism` を実装し、**ベース・ルート整合率（オンコード率）**、**ボーカル・コードトーン整合率 vs テンション/ブルーノート率**を算出する。
   - [ ] `P3-M1-S3`: `tests/test_cross_stem_harmony.py` にて、既知コード進行＋ベースルート＋テンションメロディの合成マルチステム入力に対する推論精度を検証する。
 
 - [ ] **中目標 P3-M2: マルチステム編曲構造 SSM と選択的 Essentia ONNX ステム推論（ドメインシフト検証付き）**
