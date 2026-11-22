@@ -42,8 +42,8 @@ func TestGetCPUConsumerCount(t *testing.T) {
 	stemCount := 6
 
 	taskMulti := TaskPayload{FileTrackCount: 5}
-	if got := GetCPUConsumerCount(taskMulti, poolMax, stemCount); got != 1 {
-		t.Errorf("GetCPUConsumerCount(multi) = %d, want 1", got)
+	if got := GetCPUConsumerCount(taskMulti, poolMax, stemCount); got != poolMax {
+		t.Errorf("GetCPUConsumerCount(multi) = %d, want %d", got, poolMax)
 	}
 
 	taskLong := TaskPayload{FileTrackCount: 1, StartSample: 0, EndSample: 44100 * 60 * 35, SampleRate: 44100}

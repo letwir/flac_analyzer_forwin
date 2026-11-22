@@ -99,10 +99,14 @@ def handle_extract_cpu(payload: dict[str, Any], essentia_models: dict) -> dict[s
                 extracted_librosa[stem_name] = _serialize_librosa_features(raw_features, track_hash)
                 librosa_total_sec += time.perf_counter() - t_lib_start
 
-                if stem_name == "mix" and essentia_models:
+                if stem_name == "mix":
+                    if not essentia_models:
+                        raise RuntimeError("Essentia models are not loaded; cannot extract mix predictions")
                     t_ess_start = time.perf_counter()
                     patches = extract_mel_patches(y_np, sr, n_patches=64)
                     extracted_essentia = run_essentia_serialized(patches, essentia_models)
+                    if not extracted_essentia:
+                        raise RuntimeError("Essentia returned empty predictions for mix stem")
                     essentia_total_sec += time.perf_counter() - t_ess_start
             finally:
                 ctx.clear()

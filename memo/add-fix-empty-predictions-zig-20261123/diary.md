@@ -1,0 +1,29 @@
+# Task Diary: add-fix-empty-predictions-zig-20261123
+
+- **timestamp**: 2026-11-23T00:39:00+09:00
+- **task**: `add-fix-empty-predictions-zig-20261123` (`F:\repo\flac_analyzer_forwin`) — Create a dedicated backfill jig `zig/fix_empty_predictions.py` to decode affected tracks and backfill only the `predictions` column via Essentia ONNX.
+- **request-evidence**:
+  - User asked: `今回、predictionだけがないレコードが大量発生してるから、そこだけ追記できるzigは作れる？`
+- **action**:
+  - Created `F:\repo\flac_analyzer_forwin\zig\fix_empty_predictions.py`:
+    - `build_select_query`: parameterized SQL selecting `predictions` empty/NULL rows with non-empty `features` by default, ordered by `filepath, track_number, id`, supporting `--id`, `--file`, `--include-empty-features`, and `--limit`.
+    - `select_track_slice` & `extract_track_predictions`: handles both single-track FLAC and embedded-CUE multi-track FLAC images via `flac_decode`, caches `FlacHandle` per `filepath`, runs only `extract_mel_patches` + `run_essentia_serialized` (skipping Demucs/Librosa/Tensor), and fails fast on empty audio/predictions.
+    - `GUARDED_UPDATE_SQL`: mutates only `predictions` and guards on `id`, `audio_hash`, and empty/NULL `predictions`.
+    - Supports `--dry-run`, `--batch-size`, `--cpu`, and `--config`.
+  - Created `F:\repo\flac_analyzer_forwin\test_fix_empty_predictions.py` covering query construction, CUE track slice selection, handle caching/empty rejection, and guarded SQL invariants.
+- **result**:
+  - `.\.venv\Scripts\python.exe -m py_compile zig\fix_empty_predictions.py test_fix_empty_predictions.py`: exit 0.
+  - `.\.venv\Scripts\python.exe -m unittest test_fix_empty_predictions.py -v`: 4 tests OK (exit 0).
+  - `.\.venv\Scripts\python.exe zig\fix_empty_predictions.py --help`: exit 0.
+  - Note: Verified by main agent only (no independent subagent verifier). Live PostgreSQL execution (`LIVE_WRITE`) was intentionally not run without explicit approval.
+- **friction**:
+  - None.
+- **attribution**:
+  - PromptDefect: 0% (clear requirement referencing repository-local `zig` convention and exact problem scope).
+  - AgentDefect: 0% (reused existing `flac_decode`, `models`, and `analyzer.essentia_dsp` patterns cleanly).
+- **impact**:
+  - Clean implementation and immediate passing checks.
+- **feedback**:
+  - None.
+- **rewritten-request**:
+  - "Create a `zig/` script in `F:\repo\flac_analyzer_forwin` that finds records missing only `predictions`, runs Essentia ONNX inference on the corresponding single or CUE track, and updates only the `predictions` column safely."

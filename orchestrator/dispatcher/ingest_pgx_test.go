@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"flac_analyzer/orchestrator/state"
@@ -296,4 +297,51 @@ func TestIngestWorker_DecoupledPipeline(t *testing.T) {
 	if !shouldRun {
 		t.Errorf("expected shouldRun to be true, got false")
 	}
+}
+
+func TestPrepareIngestPredictionsValidation(t *testing.T) {
+	mixLib := json.RawMessage(`{"mix":{"bpm":128}}`)
+	demucsLib := json.RawMessage(`{"demucs":{"vocals":{"rms":0.4}}}`)
+
+	for _, tc := range []struct {
+		name string
+		task TaskPayload
+		lib  json.RawMessage
+		ess  json.RawMessage
+	}{
+		{"full empty object", TaskPayload{AnalysisDecision: FullAnalysis}, mixLib, json.RawMessage(`{}`)},
+		{"full nil essentia", TaskPayload{AnalysisDecision: FullAnalysis}, mixLib, nil},
+		{"mix_only empty wrapped", TaskPayload{AnalysisDecision: MixOnly}, mixLib, json.RawMessage(`{"predictions":{}}`)},
+		{"empty decision empty object", TaskPayload{}, mixLib, json.RawMessage(`{}`)},
+		{"repair empty object", TaskPayload{RepairRecordID: 83484}, mixLib, json.RawMessage(`{}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := IngestPayload{
+				Task:         tc.task,
+				LibrosaJSON:  tc.lib,
+				TensorJSON:   json.RawMessage(`{}`),
+				EssentiaJSON: tc.ess,
+			}
+			_, _, _, err := prepareIngestJSON(payload)
+			if err == nil || !strings.Contains(err.Error(), "empty predictions") {
+				t.Fatalf("expected empty predictions error, got: %v", err)
+			}
+		})
+	}
+
+	t.Run("stems_only allows empty predictions", func(t *testing.T) {
+		payload := IngestPayload{
+			Task:         TaskPayload{AnalysisDecision: StemsOnly},
+			LibrosaJSON:  demucsLib,
+			TensorJSON:   json.RawMessage(`{}`),
+			EssentiaJSON: json.RawMessage(`{}`),
+		}
+		_, _, predictions, err := prepareIngestJSON(payload)
+		if err != nil {
+			t.Fatalf("expected stems_only to allow empty predictions, got: %v", err)
+		}
+		if string(predictions) != `{}` {
+			t.Fatalf("expected {}, got %s", predictions)
+		}
+	})
 }

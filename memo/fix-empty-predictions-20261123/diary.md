@@ -1,0 +1,31 @@
+# Task Diary: fix-empty-predictions-20261123
+
+- **timestamp**: 2026-11-23T00:25:00+09:00
+- **task**: `fix-empty-predictions-20261123` (`F:\repo\flac_analyzer_forwin`) — Investigate why `id = 83484` had `predictions = {}` with `analyzed_at` updated, and prevent silent success on empty Essentia predictions.
+- **request-evidence**:
+  - User pasted DB record `id = 83484` (`predictions | {}`, `analyzed_at | 2026-11-22 20:44:37.732256+09`) and stated: `predisctionが空っぽになっても正常判定になってるのが気になる`.
+  - User selected workspace `F:\repo\flac_analyzer_forwin`, harness `C:\Users\letwir\.harness`, and option `3` (root-cause investigation + fix).
+- **action**:
+  - Verified `F:\repo\flac_analyzer_forwin\models\` lacks `discogs-effnet-bs64-1.onnx` (only `.pb` and `.json` exist), causing `models.py` to leave `effnet = None`, `essentia_dsp.py` to return `{}`, daemons to report `"status": "success"`, and Go `prepareIngestJSON` to ingest `{}` with `analyzed_at = CURRENT_TIMESTAMP`.
+  - Updated `orchestrator/dispatcher/ingest_pgx.go` (`prepareIngestJSON` rejects empty `predictions` when `Task.AnalysisDecision != StemsOnly`).
+  - Updated `models.py` (`init_global_onnx_sessions` records `init_error` and logs error without breaking `ping`/`stems_only` daemon startup) and `analyzer/essentia_dsp.py` (`run_essentia_serialized` raises `RuntimeError` with `init_error`, on backbone failure, or when all classifiers yield empty predictions).
+  - Updated `worker_cpu_daemon.py`, `worker_daemon.py`, and `worker_essentia.py` to fail fast if Essentia models are missing or return `{}` for `mix`.
+  - Added tests in `orchestrator/dispatcher/ingest_pgx_test.go` (`TestPrepareIngestPredictionsValidation`) and `test_essentia_failfast.py`.
+- **result**:
+  - `.\.venv\Scripts\python.exe -m unittest test_worker_daemon_lanes.py test_essentia_failfast.py -v`: 8 tests OK (exit 0).
+  - `go test ./dispatcher/...`: `ok flac_analyzer/orchestrator/dispatcher 7.216s` (exit 0).
+  - `.\.venv\Scripts\python.exe -m py_compile ...`: exit 0.
+  - Note: Verified by main agent only (no independent subagent verifier). `discogs-effnet-bs64-1.onnx` not downloaded and `orchestrator.exe` not rebuilt (not requested).
+- **friction**:
+  - First design raised `FileNotFoundError` at `init_global_onnx_sessions` startup, which broke `daemon_test.go` (`TestDaemonPingPong`, etc.) in an environment lacking `discogs-effnet-bs64-1.onnx` and would also block `stems_only` / `ping` daemon operations. Revised to defer the failure to actual `mix` inference (`run_essentia_serialized` / `handle_extract_cpu`) while keeping startup intact.
+  - `edit_file` saved modified files with LF (`w/lf`) while working tree previously had CRLF (`w/crlf`, index `i/lf`).
+- **attribution**:
+  - PromptDefect: 5% (initial turn provided only the DB record without question, workspace path, or harness path; resolved cleanly over 3 follow-up messages).
+  - AgentDefect: 25% (initial plan overlooked that `daemon_test.go` runs `worker_cpu_daemon.py` against the local `models/` directory for `ping` tests and that `stems_only` shares the CPU daemon, causing a re-plan cycle).
+- **impact**:
+  - Required one extra plan/execute roundtrip to adjust startup vs inference-time fail-fast behavior. Final tests all pass.
+- **feedback**:
+  - Include target repository path and desired action (diagnose vs fix) in the opening message when pasting DB rows to reduce clarification roundtrips.
+  - Agent side: inspect live integration/lifecycle test preconditions (`daemon_test.go` spawning real Python workers) before putting hard model checks in process startup.
+- **rewritten-request**:
+  - "In `F:\repo\flac_analyzer_forwin` (using harness `~/.harness`), investigate why record `id = 83484` has `predictions = {}` despite `analyzed_at` being set, and fix the pipeline so empty `predictions` fail fast instead of being marked complete, without breaking `ping` or `stems_only`."

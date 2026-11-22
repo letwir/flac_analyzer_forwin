@@ -66,6 +66,8 @@ def main():
         # Essentia の実行
         patches = extract_mel_patches(y, sr, n_patches=64)
         predictions = run_essentia_serialized(patches, essentia_models)
+        if not predictions:
+            raise RuntimeError("Essentia returned empty predictions")
     except Exception as e:
         logger.exception("Essentia 特徴量抽出中にエラーが発生いたしましたわ！")
         shm.close()

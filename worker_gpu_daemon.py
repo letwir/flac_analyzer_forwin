@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import traceback
+import warnings
 from typing import Any
 
 import gc
@@ -47,7 +48,10 @@ def handle_extract_gpu(payload: dict[str, Any], device: torch.device) -> dict[st
         try:
             step = time.perf_counter()
             with torch.no_grad():
-                y_tensor = torch.from_numpy(np.require(y_np, requirements=["C", "W"]))
+                y_contig = y_np if y_np.flags.c_contiguous else np.ascontiguousarray(y_np)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    y_tensor = torch.from_numpy(y_contig)
                 extracted[stem_name] = extract_tensor_features(y_tensor, payload["sr"], device, spectro_path=info.get("spectro_path"))
             tensor_sec += time.perf_counter() - step
         finally:
@@ -68,6 +72,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] [WorkerGPU] %(message)s", handlers=[logging.StreamHandler(sys.stderr)])
     if not torch.cuda.is_available():
         raise RuntimeError("feature GPU daemon requires CUDA; refusing CPU fallback")
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    if hasattr(torch, "set_float32_matmul_precision"):
+        torch.set_float32_matmul_precision("high")
     device = torch.device("cuda")
     sys.stdout.write(json.dumps({"status": "ready", "role": "feature-gpu", "device": device.type}) + "\n")
     sys.stdout.flush()

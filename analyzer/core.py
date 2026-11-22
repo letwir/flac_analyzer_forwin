@@ -169,8 +169,14 @@ class AudioContext:
             logging.debug(
                 f"    [CSE Cache Miss] chroma_cqt 計算開始 (source: {self.source})"
             )
-            with LIBROSA_LOCK:
-                self._chroma_cqt = librosa.feature.chroma_cqt(y=self.y, sr=self.sr)
+            try:
+                with LIBROSA_LOCK:
+                    self._chroma_cqt = librosa.feature.chroma_cqt(y=self.y, sr=self.sr)
+            except librosa.util.exceptions.ParameterError as e:
+                logging.warning(
+                    f"chroma_cqt 計算をスキップし chroma_stft へフォールバックしますわ (source: {self.source}, len={len(self.y)}): {e}"
+                )
+                self._chroma_cqt = self.chroma
         else:
             logging.debug(
                 f"    [CSE Cache Hit] chroma_cqt 再利用 (source: {self.source})"

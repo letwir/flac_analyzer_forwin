@@ -78,7 +78,7 @@ def _custom_make_session(onnx_path, providers):
     sess_opts.log_severity_level = 3
     sess_opts.intra_op_num_threads = CONFIG.get("models", {}).get("intra_op_num_threads", 1)
     sess_opts.inter_op_num_threads = CONFIG.get("models", {}).get("inter_op_num_threads", 1)
-    sess_opts.enable_cpu_mem_arena = False
+    sess_opts.enable_cpu_mem_arena = True
     sess_opts.enable_mem_pattern = True
     sess_opts.graph_optimization_level = _get_onnx_opt_level()
     configured_providers = _get_provider_configs(list(providers))
@@ -180,7 +180,7 @@ def init_global_onnx_sessions(
     opts.log_severity_level = 3
     opts.intra_op_num_threads = CONFIG.get("models", {}).get("intra_op_num_threads", 1)  # セグフォ防止
     opts.inter_op_num_threads = CONFIG.get("models", {}).get("inter_op_num_threads", 1)
-    opts.enable_cpu_mem_arena = False  # OOM防止
+    opts.enable_cpu_mem_arena = True  # 128GB RAM + ワーカー定期リサイクル環境向け高速化
     opts.enable_mem_pattern = True
     opts.graph_optimization_level = _get_onnx_opt_level()
 
@@ -188,22 +188,30 @@ def init_global_onnx_sessions(
 
     effnet_path = os.path.join(models_dir, "discogs-effnet-bs64-1.onnx")
     effnet_sess = eff_in = eff_out = None
+    init_error: str | None = None
     if os.path.exists(effnet_path):
         effnet_sess = ort.InferenceSession(effnet_path, opts, providers=configured_providers)
         eff_in = effnet_sess.get_inputs()[0].name
         eff_out = effnet_sess.get_outputs()[0].name
+    else:
+        init_error = f"Essentia backbone ONNX model not found: {effnet_path}"
+        logging.error(init_error)
 
     classifiers: dict[str, ort.InferenceSession] = {}
     for key, info in essentia_models.items():
         m_path = os.path.join(models_dir, info["file"])
         if os.path.exists(m_path):
             classifiers[key] = ort.InferenceSession(m_path, opts, providers=configured_providers)
+    if not classifiers and init_error is None:
+        init_error = f"No Essentia classifier ONNX sessions loaded from: {models_dir}"
+        logging.error(init_error)
 
     GLOBAL_ONNX_SESSIONS = {
         "effnet": effnet_sess,
         "eff_in": eff_in,
         "eff_out": eff_out,
         "classifiers": classifiers,
+        "init_error": init_error,
     }
     logging.info(f"ONNXセッション直列化ロード完了！ (分類器数: {len(classifiers)})")
 

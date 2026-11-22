@@ -174,8 +174,12 @@ def run_essentia_serialized(
     predictions: dict[str, float] = {}
     effnet = sess_dict.get("effnet")
     if effnet is None:
-        return predictions
+        init_error = sess_dict.get("init_error")
+        if init_error:
+            raise RuntimeError(f"Essentia effnet ONNX session is not initialized: {init_error}")
+        raise RuntimeError("Essentia effnet ONNX session is not initialized")
 
+    failed_classifiers: list[str] = []
     with sync_lock:
         try:
             embeddings = effnet.run(
@@ -187,7 +191,7 @@ def run_essentia_serialized(
             emb_2d = emb_mean.reshape(1, -1)
         except Exception as e:
             logging.error(f"effnet backbone エラー: {e}", exc_info=True)
-            return predictions
+            raise RuntimeError(f"Essentia effnet backbone inference failed: {e}") from e
 
         for key, clf_sess in sess_dict.get("classifiers", {}).items():
             if key not in essentia_models:
@@ -235,5 +239,11 @@ def run_essentia_serialized(
 
             except Exception as e:
                 logging.error(f"分類器 [{key}] エラー: {e}", exc_info=True)
+                failed_classifiers.append(key)
+
+    if not predictions:
+        raise RuntimeError(
+            f"Essentia produced empty predictions (failed_classifiers={failed_classifiers})"
+        )
 
     return predictions

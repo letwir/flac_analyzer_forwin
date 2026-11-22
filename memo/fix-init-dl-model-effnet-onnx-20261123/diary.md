@@ -1,0 +1,29 @@
+# Task Diary: fix-init-dl-model-effnet-onnx-20261123
+
+- **timestamp**: 2026-11-23T00:32:45+09:00
+- **task**: `fix-init-dl-model-effnet-onnx-20261123` (`F:\repo\flac_analyzer_forwin`) — Fix `zig/init_dl_model.py` Blackwell requirements branching & `.pb` conversion coverage, and convert `models/discogs-effnet-bs64-1.pb` to ONNX.
+- **request-evidence**:
+  - User suspected `init_dl_model.py` lacked Blackwell `requirements.txt` branching causing `.pb` -> `.onnx` conversion failure, and then instructed: `修正を頼む。そしてdiscogs-effnet-bs64-1.pbは変換しといてくれ`.
+- **action**:
+  - Updated `zig/init_dl_model.py`:
+    - Added `is_blackwell_gpu()` (`nvidia-smi` GPU name check with safe fallback to `False`) and `select_requirements_file()` so Blackwell GPUs select `requirements-blackwell.txt` when present instead of only printing a notice.
+    - Generalized `transform_pb_to_onnx()` via `PB_CONVERSIONS` to convert both `discogs-effnet-bs64-1.pb` (`serving_default_melspectrogram:0` -> `PartitionedCall:1`) and `genre_discogs400-discogs-effnet-1.pb` (`serving_default_model_Placeholder:0` -> `PartitionedCall:0`), check existing `tensorflow`/`tf2onnx` before installing/uninstalling, and fail fast if conversion output is missing/empty.
+  - Converted `F:\repo\flac_analyzer_forwin\models\discogs-effnet-bs64-1.pb` -> `F:\repo\flac_analyzer_forwin\models\discogs-effnet-bs64-1.onnx` (`16011151` bytes) with `tf2onnx.convert --opset 15`.
+  - Added focused unit tests in `test_init_dl_model.py`.
+- **result**:
+  - `tf2onnx.convert`: exit 0, created `models/discogs-effnet-bs64-1.onnx` (16,011,151 bytes).
+  - Real Essentia smoke test against `F:\repo\flac_analyzer_forwin\models`: `init_error=None effnet_loaded=True num_classifiers=17 num_predictions=453` (exit 0).
+  - `py_compile` + `unittest` (`test_init_dl_model.py`, `test_essentia_failfast.py`, `test_worker_daemon_lanes.py`): 11 tests OK (exit 0).
+  - `go test ./dispatcher/...` and uncached `TestDaemonPingPong`: exit 0.
+  - Note: Verified by main agent only (no independent subagent verifier). Live `setup_environment()` pip install was not run against PyPI (`essentia.upf.edu` DNS also unresolvable in this offline/restricted check), so pip resolution on a fresh venv relies on unit-tested helper logic and `.venv` already having `tensorflow`/`tf2onnx`.
+- **friction**:
+  - Initial `Invoke-WebRequest` check to `essentia.upf.edu` failed name resolution; local `.pb` + installed `.venv` (`tensorflow==2.21.0`, `tf2onnx==1.17.0`, `onnx==1.22.0`) enabled local conversion without network access.
+- **attribution**:
+  - PromptDefect: 0% (clear target file, hypothesis, and direct instruction).
+  - AgentDefect: 0% (inspected actual script, JSON schema, and installed packages before planning and executing cleanly).
+- **impact**:
+  - Smooth single-pass implementation and verification.
+- **feedback**:
+  - None; prompt clearly stated both the fix target and the conversion action.
+- **rewritten-request**:
+  - "Fix `zig/init_dl_model.py` so Blackwell GPUs select `requirements-blackwell.txt` and `transform_pb_to_onnx()` also converts `discogs-effnet-bs64-1.pb`, and convert `models/discogs-effnet-bs64-1.pb` to `models/discogs-effnet-bs64-1.onnx` now."

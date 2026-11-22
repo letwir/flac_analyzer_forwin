@@ -177,6 +177,15 @@ func prepareIngestJSON(payload IngestPayload) (json.RawMessage, json.RawMessage,
 	if !hasFeatures {
 		return nil, nil, nil, fmt.Errorf("refusing to ingest empty features")
 	}
+	if payload.Task.AnalysisDecision != StemsOnly {
+		var predictionMap map[string]any
+		if err := json.Unmarshal(predictions, &predictionMap); err != nil {
+			return nil, nil, nil, err
+		}
+		if len(predictionMap) == 0 {
+			return nil, nil, nil, fmt.Errorf("refusing to ingest empty predictions")
+		}
+	}
 	var meta map[string]any
 	if err := json.Unmarshal(metaJSON, &meta); err != nil {
 		return nil, nil, nil, err

@@ -1,0 +1,23 @@
+# Task Diary: 20261123-demucs-stem-mir-plan
+
+- **timestamp**: 2026-11-23T01:10:30+09:00
+- **task**: `20261123-demucs-stem-mir-plan` (`F:\repo\flac_analyzer_forwin`) — Plan Phase 1–3 Demucs 6-stem MIR expansion with category-theoretically decoupled common `.py` modules and record Major/Medium/Small goals plus POLYGLYPH loop-coding commands in `issues.md`.
+- **request-evidence**:
+  - User asked: `まずはPhase1-3をベースに計画。コードが圏論的に疎であるようにしたいので、分離可能枠をなるべく共通pyとして分離したい。大目標にPhase1-3を設定し、必要事項を中、小としてIssues.mdに記載、随時ループコーディングで回せるように命令をPOLYGLYPH形式で共有可能にしてほしい。`
+- **action**:
+  - Designed 5 pure domain common modules (`analyzer/common_signal.py`, `analyzer/common_stereo.py`, `analyzer/common_cross_stem.py`, `analyzer/common_pitch_harmony.py`, `analyzer/common_dispatch.py`) strictly separating pure mathematical morphisms $\mathrm{Mor}(\mathrm{Domain}\to\mathrm{Codomain})$ from SHM/IPC/ONNX worker effects.
+  - Added Section 14 (`### 14. Demucs 6ステム高度解析 & 圏論的疎結合共通モジュール化`) to `F:\repo\flac_analyzer_forwin\issues.md` structured into Major Goals (Phase 1–3), Medium Goals (`P1-M1`..`M3`, `P2-M1`..`M3`, `P3-M1`..`M2`), Small atomic loop tickets (`P*-M*-S*`), and a shared `POLYGLYPH×SIGMA/1` loop-coding command block with LRF rules, convergence propositions `P1..P6`, and dispatch seed template.
+  - Normalized LF line endings on `issues.md` and verified `git diff --check -- issues.md` (exit 0).
+- **result**:
+  - `git diff --check -- F:\repo\flac_analyzer_forwin\issues.md`: exit 0 (112 insertions, 0 deletions).
+- **friction**:
+  - `edit_file` initially wrote CRLF endings to LF-tracked `issues.md` and one typo character; both were immediately normalized and verified with `git diff --check`.
+- **attribution**:
+  - PromptDefect: 0% (clear architectural goal, category-theoretic decoupling constraint, target file `issues.md`, and POLYGLYPH loop-coding output format).
+  - AgentDefect: 0% (caught and normalized LF endings before completion).
+- **impact**:
+  - `issues.md` now serves as an immediately executable backlog and POLYGLYPH contract seed for iterative Proposer-Judge loop coding across Phase 1–3.
+- **feedback**:
+  - None (no defensible prompt defect).
+- **rewritten-request**:
+  - "Structure the Phase 1–3 Demucs 6-stem analysis plan into Major, Medium, and Small tickets in `issues.md`, separating pure DSP/MIR morphisms into common `analyzer/common_*.py` modules for category-theoretic decoupling, and include a shareable POLYGLYPH×SIGMA/1 command block for iterative loop coding."

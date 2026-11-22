@@ -9,6 +9,7 @@ Essentia ONNX/PBモデルのダウンロード、TensorFlowモデルのONNX自�
 """
 
 import os
+import re
 import sys
 import urllib.request
 import subprocess
@@ -133,17 +134,80 @@ def download_models():
             print(f"\n  └─ 警告: ダウンロードに失敗いたしましたわ ({fname}): {e}")
 
 
+PB_CONVERSIONS = (
+    (
+        "discogs-effnet-bs64-1.pb",
+        "discogs-effnet-bs64-1.onnx",
+        "serving_default_melspectrogram:0",
+        "PartitionedCall:1",
+    ),
+    (
+        "genre_discogs400-discogs-effnet-1.pb",
+        "genre_discogs400-discogs-effnet-1.onnx",
+        "serving_default_model_Placeholder:0",
+        "PartitionedCall:0",
+    ),
+)
+
+BLACKWELL_GPU_PATTERN = re.compile(
+    r"\bRTX\s*50\d{2}\b|\bB[12]00\b|\bGB\d+\b|Blackwell",
+    re.IGNORECASE,
+)
+
+
+def is_blackwell_gpu() -> bool:
+    """nvidia-smi で Blackwell 世代 GPU か判定しますわ。"""
+    try:
+        res = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        return False
+    return res.returncode == 0 and bool(BLACKWELL_GPU_PATTERN.search(res.stdout))
+
+
+def select_requirements_file(project_root: str, blackwell: bool) -> str:
+    """GPU 世代に応じて使用する requirements ファイルを返しますわ。"""
+    blackwell_req = os.path.join(project_root, "requirements-blackwell.txt")
+    if blackwell and os.path.exists(blackwell_req):
+        return blackwell_req
+    return os.path.join(project_root, "requirements.txt")
+
+
+def _find_missing_modules(python_exe: str, modules: tuple[str, ...]) -> list[str]:
+    check_code = (
+        "import importlib.util, sys; "
+        "missing = [m for m in sys.argv[1:] if importlib.util.find_spec(m) is None]; "
+        "print(' '.join(missing))"
+    )
+    res = subprocess.run(
+        [python_exe, "-c", check_code, *modules],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [m for m in res.stdout.strip().split() if m]
+
+
 def transform_pb_to_onnx():
-    """TensorFlowの .pb モデルを ONNX に自動変換（Transform）し、不要なモジュールをアンインストールしますわ。"""
-    pb_file = os.path.join(MODELS_DIR, "genre_discogs400-discogs-effnet-1.pb")
-    onnx_file = os.path.join(MODELS_DIR, "genre_discogs400-discogs-effnet-1.onnx")
+    """TensorFlowの .pb モデルを ONNX に自動変換（Transform）し、一時導入したモジュールのみクリーンアップしますわ。"""
+    pending: list[tuple[str, str, str, str]] = []
+    for pb_name, onnx_name, input_name, output_name in PB_CONVERSIONS:
+        pb_file = os.path.join(MODELS_DIR, pb_name)
+        onnx_file = os.path.join(MODELS_DIR, onnx_name)
+        if not os.path.exists(pb_file):
+            print(f"\n[TRANSFORM] 警告: 変換元の .pb ファイルが見つかりませんわ ({pb_name})。")
+            continue
+        if os.path.exists(onnx_file) and os.path.getsize(onnx_file) > 0:
+            print(f"\n[TRANSFORM] [SKIP] {onnx_name} は既に存在しておりますわ。")
+            continue
+        pending.append((pb_file, onnx_file, input_name, output_name))
 
-    if not os.path.exists(pb_file):
-        print("\n[TRANSFORM] 警告: 変換元の .pb ファイルが見つかりませんわ。")
-        return
-
-    if os.path.exists(onnx_file) and os.path.getsize(onnx_file) > 0:
-        print("\n[TRANSFORM] [SKIP] genre_discogs400 ONNXモデルは既に存在しておりますわ。")
+    if not pending:
         return
 
     print("\n=== 2. TensorFlow pbモデルから ONNXモデルへの自己変換（Transform）を開始しますわ ===")
@@ -154,39 +218,38 @@ def transform_pb_to_onnx():
         pip_exe = sys.executable
         python_exe = sys.executable
 
-    # A. 一時的に tensorflow と tf2onnx をインストール
-    print("変換用モジュール (tensorflow, tf2onnx) を一時的にインストールしますわ...")
+    missing_modules = _find_missing_modules(python_exe, ("tensorflow", "tf2onnx"))
+    temp_installed: list[str] = []
     try:
-        subprocess.run([pip_exe, "install", "tensorflow", "tf2onnx"], check=True)
-    except Exception as e:
-        print(f"  └─ エラー: 変換用モジュールのインストールに失敗しましたの: {e}")
-        return
+        if missing_modules:
+            print(f"変換用モジュール ({', '.join(missing_modules)}) を一時的にインストールしますわ...")
+            subprocess.run([pip_exe, "install", *missing_modules], check=True)
+            temp_installed = missing_modules
 
-    # B. tf2onnx を用いて変換を実行
-    print("TF2ONNX 変換を実行しておりますわ...")
-    try:
-        subprocess.run(
-            [
-                python_exe, "-m", "tf2onnx.convert",
-                "--input", pb_file,
-                "--inputs", "serving_default_model_Placeholder:0",
-                "--outputs", "PartitionedCall:0",
-                "--output", onnx_file,
-                "--opset", "15"
-            ],
-            check=True
-        )
-        print("  └─ ONNX への自己変換が大成功いたしましたわ！")
-    except Exception as e:
-        print(f"  └─ エラー: ONNX 変換に失敗しましたの: {e}")
-
-    # C. 不要なモジュールをアンインストールして環境をクリーンアップ
-    print("一時モジュール (tensorflow, tf2onnx) をアンインストールして環境をクリーンアップしますわ...")
-    try:
-        subprocess.run([pip_exe, "uninstall", "-y", "tensorflow", "tf2onnx"], check=True)
-        print("  └─ クリーンアップが完了いたしましたわ！")
-    except Exception as e:
-        print(f"  └─ 警告: アンインストール中に警告が発生しましたの: {e}")
+        for pb_file, onnx_file, input_name, output_name in pending:
+            print(f"TF2ONNX 変換を実行しておりますわ: {os.path.basename(pb_file)} -> {os.path.basename(onnx_file)}")
+            subprocess.run(
+                [
+                    python_exe, "-m", "tf2onnx.convert",
+                    "--input", pb_file,
+                    "--inputs", input_name,
+                    "--outputs", output_name,
+                    "--output", onnx_file,
+                    "--opset", "15",
+                ],
+                check=True,
+            )
+            if not os.path.exists(onnx_file) or os.path.getsize(onnx_file) == 0:
+                raise RuntimeError(f"ONNX conversion produced empty or missing output: {onnx_file}")
+            print(f"  └─ 完了いたしましたわ: {os.path.basename(onnx_file)}")
+    finally:
+        if temp_installed:
+            print(f"一時モジュール ({', '.join(temp_installed)}) をアンインストールして環境をクリーンアップしますわ...")
+            try:
+                subprocess.run([pip_exe, "uninstall", "-y", *temp_installed], check=True)
+                print("  └─ クリーンアップが完了いたしましたわ！")
+            except Exception as e:
+                print(f"  └─ 警告: アンインストール中に警告が発生しましたの: {e}")
 
 
 def setup_environment():
@@ -205,7 +268,7 @@ def setup_environment():
     else:
         print("仮想環境は既に存在しておりますの。")
 
-    # 2. pip を介した requirements.txt のインストール
+    # 2. pip を介した requirements のインストール
     pip_exe = os.path.join(VENV_DIR, "Scripts", "pip.exe")
     if not os.path.exists(pip_exe):
         pip_exe = "pip"
@@ -216,9 +279,12 @@ def setup_environment():
     except Exception as e:
         print(f"  └─ pipのアップグレード中に警告が発生しましたの: {e}")
 
-    req_file = os.path.join(PROJECT_ROOT, "requirements.txt")
-    if os.path.exists(os.path.join(PROJECT_ROOT, "requirements-blackwell.txt")):
-        print("💡 Blackwell (RTX 50xx) 環境用定義要件が検出されましたわ。")
+    blackwell = is_blackwell_gpu()
+    req_file = select_requirements_file(PROJECT_ROOT, blackwell)
+    if os.path.basename(req_file) == "requirements-blackwell.txt":
+        print(f"💡 Blackwell (RTX 50xx) GPU を検出したため {req_file} を使用いたしますわ。")
+    else:
+        print(f"標準要件ファイル {req_file} を使用いたしますわ。")
 
     if os.path.exists(req_file):
         print(f"{req_file} に基づいて依存ライブラリをインストールしておりますわ...")

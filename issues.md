@@ -233,3 +233,115 @@
   - [x] SQLite一括登録・claim順序・ageing、3種ワークロードの純粋ポリシー、Join後cleanup、ビルドをローカルで確認する。
   - [ ] 実ホストでCUE複数曲・長尺単曲・短尺単曲を流し、待ち行列の進行、CPU枝数、VRAM回復を確認する（push後に継続）。
   - 要件: `docs/workload_scheduler_requirements.lrf`
+
+---
+
+### 14. Demucs 6ステム高度解析 & 圏論的疎結合共通モジュール化 (`goal:demucs-stem-mir`)
+
+> **設計原則（Category-Theoretic Decoupling / `CODE_RULE.md` 準拠）**
+> - $\mathrm{Sep}(\mathrm{IO\_Effect}, \mathrm{PureDomain})$: ワーカー (`demucs_daemon.py`, `worker_cpu_daemon.py`, `worker_gpu_daemon.py`) は SHM/IPC/ONNX セッション管理（効果系）のみを担い、音響変換は `analyzer/common_*.py` の**純粋射 $\mathrm{Mor}(\mathrm{Domain}\to\mathrm{Codomain})$** として完全分離する。
+> - **共通 `.py` 分離枠（5モジュール）**:
+>   1. `analyzer/common_signal.py`: 帯域分割 (`subband_energy_morphism`)、7統計量包絡 (`envelope_stats7_morphism`: min/median 0潰れ解消)、自己相関/相互相関ラグ (`xcorr_lag_morphism`)、包絡減衰傾き (`decay_slope_morphism`) の純粋射。
+>   2. `analyzer/common_stereo.py`: ステレオ波形 $\mathbb{R}^{2\times N}$ に対する Mid/Side 分解、Stereo Width $W=\mathrm{RMS}(S)/(\mathrm{RMS}(M)+\mathrm{RMS}(S)+\epsilon)$、Panning ILD (L/R dB・32フレーム推移)、L/R 位相相関係数 $\rho_{LR}$、低域 (<120Hz) 位相整合度の純粋射。
+>   3. `analyzer/common_cross_stem.py`: 積対象 $\prod_{s\in\mathrm{Stems}}\mathbb{R}^N \times \mathbb{R}^N_{\text{mix}}$ 上のエネルギー構成比・Active Ratio・分離残差 SNR ($\mathrm{mix}-\sum y_s$)・ボーカル帯域マスキング・32フレーム編曲アーク行列・Drums×Bass ポケット＆サイドチェインダッキング純粋射。
+>   4. `analyzer/common_pitch_harmony.py`: パラメータ化 $(f_{\min},f_{\max})$ 有声ゲート付き F0 輪郭・音域・跳躍度・安定度・ビブラート (4–8Hz) 純粋射（`vocals`/`bass` 共通関手）、およびクロマ→コード列・クロマエントロピー・純和声クロマ合成純粋射。
+>   5. `analyzer/common_dispatch.py`: `StemName` から「必要 Warmup 集合」と「適用 `FeatureExtractor` / `BasePlugin` の直積 ($\prod$)」への純粋ルーティング関手（画一コピペ `STEM_CONFIGS` の廃止と無駄計算の除去）。
+
+---
+
+#### 【大目標 Phase 1】共通純粋射基盤の確立・既存バグ/未接続プラグイン解消・モノラル化直前のステレオ＆クロスステム基礎抽出 (`goal:phase1-foundation`)
+
+- [ ] **中目標 P1-M1: 共通信号処理・統計純粋射 (`analyzer/common_signal.py`) の分離と既存欠落値の修復**
+  - [ ] `P1-M1-S1`: `analyzer/common_signal.py` を新設し、状態非依存の7統計量純粋射 `envelope_stats7_morphism` (mean, std, peak, max, min, median, entropy)、FFT 帯域分割射 `subband_energy_morphism`、相互相関ラグ射 `xcorr_lag_morphism`、減衰傾き射 `decay_slope_morphism` を実装する。
+  - [ ] `P1-M1-S2`: `analyzer/librosa_dsp.py` の `_build_raw_features` で `0.0` ハードコードされている `rms_min`, `rms_median`, `centroid_min`, `centroid_median` を `envelope_stats7_morphism` 経由の実測値へ接続する。
+  - [ ] `P1-M1-S3`: `analyzer/essentia_dsp.py:21` の `_calc_chord_sequence` における `"vocal"`（単数形）タイポを `"vocals"` に修正し、`vocals` ステムでコード列が `["C"]*32` 固定になるバグを解消する。
+  - [ ] `P1-M1-S4`: `tests/test_common_signal.py` を作成し、純粋射の参照透過性・境界入力（空配列・無音・NaN/Inf 防御）および `"vocals"` コード列回帰テストを検証する。
+
+- [ ] **中目標 P1-M2: ステレオ空間純粋射 (`analyzer/common_stereo.py`) とクロスステム基礎純粋射 (`analyzer/common_cross_stem.py`) の分離＆ `demucs_daemon` モノラル化直前フック**
+  - [ ] `P1-M2-S1`: `analyzer/common_stereo.py` を新設し、`(2, N)` 波形から `pan_mean`, `pan_std`, `stereo_width`, `lr_correlation`, `low_band_phase_coherence`, `pan_seq_32`, `width_seq_32` を算出する純粋射 `stereo_field_morphism` とモノラル化射 `mono_downmix_morphism` を実装する。
+  - [ ] `P1-M2-S2`: `analyzer/common_cross_stem.py` を新設し、`mix` と6ステム波形群から各ステムの `energy_share`, `active_ratio`, `v_to_accomp_db`, `vocal_band_masking` (300Hz–4kHz)、分離品質 `residual_snr_db` ($\mathrm{mix}-\sum y_s$)、および32フレーム編曲稼働マトリクス `arrangement_arc_32` を算出する純粋射 `cross_stem_foundation_morphism` を実装する。
+  - [ ] `P1-M2-S3`: `models.py` (`HTDemucsSeparator.separate`) および `demucs_daemon.py` にて、ステレオ波形をモノラル化して SHM へ書き出す直前に `stereo_field_morphism` と `cross_stem_foundation_morphism` を適用し、**SHM 容量を1バイトも増やさず**メタデータ/特徴量へ渡すパイプラインを接続する（各ステムの `snr` にもステム対残差比または有効 SNR を供給）。
+  - [ ] `P1-M2-S4`: `tests/test_common_stereo_and_cross_stem.py` を作成し、センターモノラル信号・ハードパン信号・逆位相信号・既知ステム合成信号に対する不変条件（$W\in[0,1]$, $\rho_{LR}\in[-1,1]$, $\sum \text{energy\_share}\approx 1$）を検証する。
+
+- [ ] **中目標 P1-M3: ステム別ルーティング関手 (`analyzer/common_dispatch.py`) と未接続4プラグインの本番パイプライン統合**
+  - [ ] `P1-M3-S1`: `analyzer/common_dispatch.py` を新設し、`analyzer.toml` の有効設定と `ctx.source`（ステム名）を受け取って適用対象プラグインを合成する純粋ディスパッチ関手 `build_stem_extractor_morphism` を実装する。
+  - [ ] `P1-M3-S2`: 未接続だった4プラグインを適材適所で本番接続する：
+    - `voice_cpp.py` (CPP / Breathiness) $\to$ `vocals`（および `mix`）
+    - `audio_cutoff_lufs.py` $\to$ `mix`（カットオフ・偽ハイレゾ・TruePeak・LUFS/LRA）＋全6ステム（LUFS/LRA のみ高速算出）
+    - `psychoacoustics_din45692.py` (Sharpness / Roughness / Tonality) $\to$ `mix`, `vocals`, `guitar`, `drums`
+    - `structure_ssm.py` (Chorus / Drop / Novelty) $\to$ `mix`
+  - [ ] `P1-M3-S3`: `worker_cpu_daemon.py` / `analyzer/librosa_dsp.py` から `common_dispatch.py` を呼び出し、`RawFeatures.to_postgres_dict()` で新規フィールドが欠落なく出力されることを `tests/test_plugin_dispatch_integration.py` で検証する。
+
+---
+
+#### 【大目標 Phase 2】ステム別「楽器特化 DSP」純粋射の導入と不要計算の刈り込み (`goal:phase2-instrument-dsp`)
+
+- [ ] **中目標 P2-M1: 不要 Warmup / 不適合特徴量の刈り込みによる計算予算の創出**
+  - [ ] `P2-M1-S1`: `analyzer/common_dispatch.py` と `STEM_CONFIGS` を改修し、`drums` からの `chroma` / `chroma_cqt` / `tonnetz` / `key` / `chord_sequence` 除外、および非低域ステム（`vocals`, `piano`, `guitar`）からの `subbass_env_mean` (20–60Hz) 除外を宣言的に定義する。
+  - [ ] `P2-M1-S2`: スキーマ互換維持のため、除外されたキーには `None` または型安全な単位元（Neutral Element）を返し、`orchestrator/dispatcher/analysis_decision.go` の `completeStemFeatures` 契約を壊さないことをテストで保証する。
+
+- [ ] **中目標 P2-M2: パラメータ化 F0・輪郭純粋射 (`analyzer/common_pitch_harmony.py`) と `vocals` / `bass` 特化解析**
+  - [ ] `P2-M2-S1`: `analyzer/common_pitch_harmony.py` を新設し、帯域 $(f_{\min}, f_{\max})$ と RMS+HNR 有声ゲートを受け取る汎用ピッチ輪郭射 `voiced_f0_contour_morphism` を実装する（有声率 `voiced_ratio`、音域 `f0_min_hz`/`f0_max_hz`/`f0_median_hz`/`pitch_range_semitones`、音程跳躍度 `melodic_interval_mean`、ピッチ安定度/ケロケロ度 `pitch_quantization_score`、4–8Hz 変調から算出する `vibrato_rate_hz`/`vibrato_extent_cents`）。
+  - [ ] `P2-M2-S2`: `vocals` ステムに `voiced_f0_contour_morphism(C2..C7)` と `common_signal.subband_energy_morphism` を適用し、**シンガーズフォルマント比 (2.5–3.5kHz)**、**歯擦音比 (Sibilance: 5–10kHz)**、**フレーズ長・残響減衰指標** を抽出する。
+  - [ ] `P2-M2-S3`: `bass` ステムに `voiced_f0_contour_morphism(E1..E4)` と3帯域エネルギー分割射（**Sub-bass 20–60Hz / Mid-bass 60–250Hz / Harmonics-Attack 250–1500Hz 比**）および `decay_slope_morphism`（**サステイン/レガート vs スタッカート度**）を適用する。
+  - [ ] `P2-M2-S4`: 合成サイン波・FM ビブラート信号・矩形波ベース信号を用いた単体テスト `tests/test_vocal_and_bass_morphisms.py` を作成し、ビブラート周波数/深さと帯域比の理論値一致を検証する。
+
+- [ ] **中目標 P2-M3: `drums` / `guitar` / `piano` / `other` 楽器特化純粋射の実装**
+  - [ ] `P2-M3-S1`: `drums` 用に3帯域オンセット分解純粋射 `drum_band_onset_morphism`（Low 30–120Hz ≒ Kick, Mid 150–400Hz+1.5–4kHz ≒ Snare, High 6–16kHz ≒ HiHat）を実装し、各帯域の**打撃密度 (hits/sec)**、**Kick/Snare/HiHat バランス**、**マイクロタイミング揺らぎ（グリッド偏差＝打ち込み度 vs 生ドラム度）**、**トランジェント鋭さ**を算出する。
+  - [ ] `P2-M3-S2`: `drums` 低域包絡 × `bass` 包絡に `common_cross_stem.rhythm_pocket_and_ducking_morphism` を適用し、**Kick–Bass 時間ラグ [ms]**、**ポケット同期スコア**、**サイドチェイン・ダッキング強度**を算出する。
+  - [ ] `P2-M3-S3`: `guitar` / `piano` / `other` 用に純粋射 `harmonic_instrument_character_morphism` を実装し、`guitar` の**歪み度（高次倍音フラットネス＋Roughness＋クリッピング率）＆ストローク対単音リード比**、`piano` の**和音密度（クロマエントロピー）＆打鍵ベロシティ分散＆ペダル減衰**、`other` の **HPSS 調波/打撃比＆パッド持続度**を算出する。
+  - [ ] `P2-M3-S4`: `tests/test_instrument_specific_morphisms.py` を作成し、各楽器特化射の単体テストと計算時間を検証する。
+
+---
+
+#### 【大目標 Phase 3】クロスステム和声統合・編曲構造 SSM・選択的 Essentia ステム推論 (`goal:phase3-cross-harmonic-semantic`)
+
+- [ ] **中目標 P3-M1: 純和声ステム合成クロマによる高精度キー/コード進行 & クロスステム和声テンション解析**
+  - [ ] `P3-M1-S1`: `analyzer/common_pitch_harmony.py` と `common_cross_stem.py` に、`drums` と `vocals` を除いた和声ステム群（`bass + piano + guitar + other`）から純和声 CQT クロマを合成する射 `harmonic_bus_chroma_morphism` を実装し、`mix` クロマとのキー/コード一致度および確信度向上を算出する。
+  - [ ] `P3-M1-S2`: `bass` の F0 ルート音 × 和声ステムのコード構成音 × `vocals` の F0 メロディ音を照合する積射 `cross_stem_harmonic_tension_morphism` を実装し、**ベース・ルート整合率（オンコード率）**、**ボーカル・コードトーン整合率 vs テンション/ブルーノート率**を算出する。
+  - [ ] `P3-M1-S3`: `tests/test_cross_stem_harmony.py` にて、既知コード進行＋ベースルート＋テンションメロディの合成マルチステム入力に対する推論精度を検証する。
+
+- [ ] **中目標 P3-M2: マルチステム編曲構造 SSM と選択的 Essentia ONNX ステム推論（ドメインシフト検証付き）**
+  - [ ] `P3-M2-S1`: `analyzer/structure_ssm.py` を拡張し、`mix` 単体だけでなく6ステムのエネルギー＋純和声クロマを結合した状態空間上の自己相似行列射 `multistem_structure_ssm_morphism` を実装して、ブレイク・落ちサビ・ラスサビ・ドロップの境界検出精度を高める。
+  - [ ] `P3-M2-S2`: `worker_cpu_daemon.py` / `analyzer/essentia_dsp.py` に設定駆動の選択的ステム推論射（`vocals` に対する `gender` / `voice_instrumental` 等、デフォルトは `analyzer.toml` で on/off 制御可能）を追加し、`mix` 推論値との乖離（ドメインシフト指標）を併記する。
+  - [ ] `P3-M2-S3`: PostgreSQL `raw.library_flac.features` JSONB スキーマ（`analysis_schema_version = 2` または後方互換拡張）および `zig/migrate_features.py` との整合・E2E 回帰テストを完了する。
+
+---
+
+#### 🔁 POLYGLYPH形式 ループコーディング共有命令セット (`loop-agent` / Proposer × Judge 共通ペイロード)
+
+以下のブロックは、各 Phase / 中目標 / 小目標を `loop-agent`（Proposer × On-Demand Researcher × Claude Judge）またはサブエージェントで反復実装・検証する際にそのまま共有可能な **POLYGLYPH×SIGMA/1 契約シード**です。
+
+```text
+@meta=text/POLYGLYPH×SIGMA/1
+@codec=nearest_ancestor(POLYGLYPH.md);read_before_body=true
+@authority=SIGMA/1+routed-LRF-only;PG=representation-only
+@decode_failure=STOP;unknown=preserve;action=blocked;ask=true
+
+#SIGMA LRF/1
+@lrf=1|aud=LLM|scope=demucs-stem-mir-loop
+R|cat.purity|*|MUST|LW_SCOPE|all new DSP/MIR logic MUST reside in pure domain modules analyzer/common_signal.py, analyzer/common_stereo.py, analyzer/common_cross_stem.py, analyzer/common_pitch_harmony.py, analyzer/common_dispatch.py as explicit morphisms Mor(Domain->Codomain) free of filesystem/SHM/DB/ONNX/global-mutable-state effects
+R|cat.functor|*|MUST|LW_SCOPE|compose stem extractors via Reader Applicative FeatureExtractor (pure/map/ap/__mul__/product_all) and pure product objects; workers (demucs_daemon.py, worker_cpu_daemon.py, worker_gpu_daemon.py) perform IO/SHM attachment only and invoke composed pure morphisms
+R|shm.invariant|*|MUST|LW_SCOPE|compute stereo (2,N) and cross-stem wave morphisms inside demucs_daemon/models.py immediately BEFORE mono downmix; NEVER double SHM arena size to stereo and NEVER break single-stem wavefront streaming or RAM admission budgets
+R|code.rule|*|MUST|LW_SCOPE|enforce EarlyReturn, GuardClause(exit_fast), no nested if-else, no silent exception swallowing, explicit context logging on boundary errors, and name affix (Large/Heavy/Complex/Batch/Mega) on functions >30 lines
+R|schema.compat|*|MUST|LW_SCOPE|preserve orchestrator/dispatcher/analysis_decision.go requiredAnalysisStems completeness contract and raw.library_flac.features JSONB backward compatibility; replace skipped stem computations with type-safe neutral elements
+R|verify.gate|*|MUST|LW_SCOPE|every small ticket (P*-M*-S*) MUST pass pytest focused unit/regression tests, git diff --check, and proof-checker.exe -path <target> before marking [*]tested or [x]done
+
+§LOOP_CONVERGENCE_PROPOSITIONS (Judge 収束判定命題 P1..P6)
+P1(圏論的疎結合): ∀新規特徴量 f ∈ Phase1..3: f = Mor_pure ∘ IO_adapter ∧ Mor_pure ∈ analyzer/common_*.py ∧ IO副作用(SHM/File/DB/ONNX)=∅.
+P2(SHM不変・ゼロ肥大): Stereo特徴量(Pan/Width/ρ_LR) ∧ CrossStem基礎特徴量(EnergyShare/ActiveRatio/ResidualSNR/Masking/ArrangementArc) は `HTDemucsSeparator.separate` 内のモノラル化直前 `(2,N)` オンメモリ段階で算出され、SHM割当サイズ増分 = 0 bytes.
+P3(バグ解消・既存資産結線): `essentia_dsp.py:21` `"vocal"`→`"vocals"` 修正済 ∧ `rms_min/median`,`centroid_min/median` 実測値結線済 ∧ 未接続4プラグイン(`voice_cpp`,`audio_cutoff_lufs`,`psychoacoustics_din45692`,`structure_ssm`)が `common_dispatch.py` 経由で対象ステムへ結線済.
+P4(楽器特化・無駄計算削減): `drums` から不適合な CQT/和声計算が除外され、`vocals`(有声F0輪郭/ビブラート/フォルマント/歯擦音/CPP)、`drums`(Kick/Snare/HiHat帯域オンセット/マイクロタイミング)、`bass`(低域F0/3帯域比/サステイン/Kick×Bassポケット&ダッキング)、`guitar/piano/other`(歪み度/和音密度/HPSS) が純粋射の合成として稼働.
+P5(クロスステム和声・構造統合): `bass+piano+guitar+other` 純和声合成クロマ射 ∧ `bass×chord×vocals` テンション整合射 ∧ マルチステムSSM構造射が単体テストで理論値と一致.
+P6(検証・健全性): 変更対象に対する `pytest` 単体・回帰テスト全緑 ∧ `git diff --check` クリーン ∧ `¬SilentSwallow` / `EarlyReturn` 遵守.
+
+§DISPATCH_SEED_TEMPLATE (各イテレーションで `<TICKET_ID>` を指定して投入)
+Role: Proposer/Worker (or Judge)
+Target: `issues.md` §14 `<TICKET_ID>` (例: `P1-M1-S1`..`S4`, `P1-M2-S1`..`S4`, `P1-M3-S1`..`S3`, `P2-M1`..`M3`, `P3-M1`..`M2`)
+Acceptance: 命題 P1..P6 のうち `<TICKET_ID>` 該当命題をすべて充足 ∧ 単体テスト追加・PASS ∧ 既存テスト非破壊
+Scope: `analyzer/common_*.py` (純粋射新設) ⊕ 最小限の境界アダプタ (`analyzer/librosa_dsp.py`, `analyzer/essentia_dsp.py`, `models.py`, `demucs_daemon.py`, `worker_cpu_daemon.py`, `tests/test_*.py`)
+Known facts:
+- `models.py:377-380` で `htdemucs_6s` の `(2,N)` 出力が即 `np.mean(axis=0)` されており、この直前がステレオ射＆クロスステム射の唯一無二のゼロコピー計測点である。
+- `analyzer/essentia_dsp.py:21` は `"vocal"` タイポにより `"vocals"` ステムのコード列が `["C"]*32` 固定になっている。
+- `analyzer/librosa_dsp.py:351-471` の `STEM_CONFIGS` は7エントリ完全同一コピーであり、`common_dispatch.py` の関手ルーティングへ置換する。
+```

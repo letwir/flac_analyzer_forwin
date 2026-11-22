@@ -39,7 +39,7 @@ func ClassifyWorkload(task TaskPayload) WorkloadClass {
 // GetCPUConsumerCount determines the number of concurrent CPU stem consumers to use.
 func GetCPUConsumerCount(task TaskPayload, poolMax int, stemCount int) int {
 	class := ClassifyWorkload(task)
-	if class == WorkloadClassShortSingleTrack {
+	if class == WorkloadClassShortSingleTrack || class == WorkloadClassMultiTrackCUE {
 		if poolMax < stemCount {
 			return poolMax
 		}

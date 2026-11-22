@@ -68,9 +68,13 @@ def handle_extract_cpu(payload: dict[str, Any], essentia_models: dict) -> dict[s
                 step = time.perf_counter()
                 extracted_librosa[stem_name] = _serialize_librosa_features(librosa_extractor.run(ctx), track_hash)
                 librosa_sec += time.perf_counter() - step
-                if stem_name == "mix" and essentia_models:
+                if stem_name == "mix":
+                    if not essentia_models:
+                        raise RuntimeError("Essentia models are not loaded; cannot extract mix predictions")
                     step = time.perf_counter()
                     extracted_essentia = run_essentia_serialized(extract_mel_patches(y_np, sr, n_patches=64), essentia_models)
+                    if not extracted_essentia:
+                        raise RuntimeError("Essentia returned empty predictions for mix stem")
                     essentia_sec += time.perf_counter() - step
             finally:
                 ctx.clear()
@@ -90,6 +94,8 @@ def main() -> None:
     if os.path.exists(models_dir):
         import models
         essentia_models = models.init_worker_onnx(models_dir, providers_override=["CPUExecutionProvider"])
+    else:
+        logging.error("Essentia models directory not found: %s", models_dir)
     sys.stdout.write(json.dumps({"status": "ready", "role": "cpu", "device": "cpu"}) + "\n")
     sys.stdout.flush()
     task_count = 0
