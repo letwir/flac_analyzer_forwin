@@ -119,6 +119,31 @@ class TestCrossStemHarmony(unittest.TestCase):
         nov = compute_novelty_curve(ssm, kernel_size=16)
         self.assertGreater(float(np.max(nov[256:])), 0.0)
 
+    def test_extract_section_restores_mix_section_metrics_and_skips_stems(self) -> None:
+        from analyzer.core import AudioContext
+        from analyzer.librosa_dsp import extract_section
+
+        sr = 22050
+        dur = 25.0
+        n = int(sr * dur)
+        t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
+        env = np.where((t >= 8.0) & (t < 16.0), 0.9, 0.2).astype(np.float32)
+        # 周期的アタックを含めて onset_env の緩急を作るわ
+        pulse = (0.5 + 0.5 * np.sin(2.0 * np.pi * 2.0 * t)).astype(np.float32)
+        y = env * pulse * np.sin(2.0 * np.pi * 220.0 * t).astype(np.float32)
+
+        mix_ctx = AudioContext(y=y, sr=sr, source="mix")
+        sec = extract_section(mix_ctx)
+        self.assertGreaterEqual(sec.section_count, 1)
+        self.assertGreaterEqual(sec.drop_position, 0.0)
+        self.assertLessEqual(sec.drop_position, 1.0)
+        self.assertGreaterEqual(sec.section_length_std, 0.0)
+
+        drum_ctx = AudioContext(y=y, sr=sr, source="drums")
+        drum_sec = extract_section(drum_ctx)
+        self.assertEqual(drum_sec.section_count, 0)
+        self.assertEqual(drum_sec.drop_position, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

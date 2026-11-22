@@ -168,9 +168,69 @@ def extract_spectral_centroid_sd(ctx: AudioContext) -> float:
     return extract_centroid_obj(ctx).std
 
 
+def extract_section_Large(ctx: AudioContext) -> SectionFeatures:
+    """Onset 強度の局所 RMS 変化点からセクション数・セクション長標準偏差・ドロップ位置を算出しますわ！"""
+    if ctx.source != "mix":
+        return SectionFeatures()
+
+    onset_env = ctx.onset_env
+    if onset_env is None or len(onset_env) < 20:
+        return SectionFeatures()
+
+    n_frames = len(onset_env)
+    drop_position = float(np.argmax(onset_env)) / max(n_frames, 1)
+
+    window = max(int(n_frames * 0.05), 10)
+    hop_frames = max(1, window // 2)
+    local_rms = np.array(
+        [
+            float(np.sqrt(np.mean(onset_env[max(0, i - window) : i + window] ** 2)))
+            for i in range(0, n_frames, hop_frames)
+        ],
+        dtype=np.float32,
+    )
+
+    duration_sec = float(len(ctx.y) / ctx.sr) if (ctx.y is not None and ctx.sr > 0) else 0.0
+    if len(local_rms) < 3 or duration_sec <= 0.0:
+        return SectionFeatures(
+            section_count=1,
+            section_length_std=0.0,
+            drop_position=drop_position,
+        )
+
+    diffs = np.abs(np.diff(local_rms))
+    max_sections = max(1, int(duration_sec / 20.0))
+    k = min(max_sections, len(diffs))
+    if k < 1:
+        return SectionFeatures(
+            section_count=1,
+            section_length_std=0.0,
+            drop_position=drop_position,
+        )
+
+    boundary_indices = np.sort(np.argsort(diffs)[-k:])
+    sec_per_frame = hop_frames * 512.0 / float(ctx.sr)
+    boundary_secs = [
+        float(b * sec_per_frame)
+        for b in boundary_indices
+        if 0.0 < float(b * sec_per_frame) < duration_sec
+    ]
+
+    times = [0.0] + boundary_secs + [duration_sec]
+    lengths = [times[i + 1] - times[i] for i in range(len(times) - 1)]
+    section_count = len(lengths)
+    section_length_std = float(np.std(lengths)) if len(lengths) > 1 else 0.0
+
+    return SectionFeatures(
+        section_count=section_count,
+        section_length_std=section_length_std,
+        drop_position=drop_position,
+    )
+
+
 def extract_section(ctx: AudioContext) -> SectionFeatures:
-    """セクション構造特徴量を算出しますわ！"""
-    return SectionFeatures(section_count=0, section_length_std=0.0, drop_position=0.0)
+    """セクション構造特徴量を算出しますわ！ Mor(AudioContext -> SectionFeatures)"""
+    return extract_section_Large(ctx)
 
 
 def extract_temporal_seq(ctx: AudioContext) -> TemporalSeqFeatures:
