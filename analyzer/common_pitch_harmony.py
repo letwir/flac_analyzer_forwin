@@ -366,6 +366,16 @@ def _estimate_chord_seq32_from_chroma(chroma: np.ndarray) -> list[str]:
     return [chord_names[int(round(float(v))) % len(chord_names)] for v in resampled]
 
 
+def _bound_long_signal_windows(y: np.ndarray, max_samples: int = 262144, win_len: int = 4096) -> np.ndarray:
+    """長尺トラックでの CQT/YIN 計算量・メモリ爆発を防ぐため、原 sr のまま均等配置窓を連結いたしますわ！"""
+    arr = np.nan_to_num(np.asarray(y, dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
+    if arr.size <= max_samples:
+        return arr
+    n_win = max(1, max_samples // win_len)
+    starts = np.linspace(0, arr.size - win_len, n_win, dtype=np.int64)
+    return np.concatenate([arr[s : s + win_len] for s in starts])
+
+
 def harmonic_bus_chroma_morphism_Large(
     stems_mono: Mapping[str, np.ndarray],
     sr: int,
@@ -375,7 +385,7 @@ def harmonic_bus_chroma_morphism_Large(
     Mor(Prod_{harm}(R^N) x SR -> HarmonicBusMetrics)
     """
     harm_arrays = [
-        np.nan_to_num(np.asarray(stems_mono[name], dtype=np.float32).ravel(), nan=0.0, posinf=0.0, neginf=0.0)
+        _bound_long_signal_windows(stems_mono[name])
         for name in ("bass", "piano", "guitar", "other")
         if name in stems_mono and np.asarray(stems_mono[name]).size > 0
     ]
@@ -398,7 +408,9 @@ def harmonic_bus_chroma_morphism_Large(
             "harmonic_chroma": np.zeros((12, 0), dtype=np.float32),
         }
 
-    bus = np.sum([a[:min_len] for a in harm_arrays], axis=0).astype(np.float32)
+    bus = np.zeros(min_len, dtype=np.float32)
+    for arr in harm_arrays:
+        bus += arr[:min_len]
     with LIBROSA_LOCK:
         try:
             chroma = librosa.feature.chroma_cqt(y=bus, sr=sr)
@@ -460,7 +472,8 @@ def cross_stem_harmonic_tension_morphism_Large(
 
     bass_agree = 0.0
     if bass_y is not None and np.asarray(bass_y).size >= 2048:
-        bass_f0 = voiced_f0_contour_morphism(bass_y, sr, fmin_hz=41.20, fmax_hz=329.63)
+        bass_bounded = _bound_long_signal_windows(bass_y)
+        bass_f0 = voiced_f0_contour_morphism(bass_bounded, sr, fmin_hz=41.20, fmax_hz=329.63)
         bass_pcs = _hz_seq_to_pitch_classes(bass_f0["f0_seq_32"])
         valid_bass = [pc for pc in bass_pcs if pc is not None]
         if valid_bass:
@@ -475,7 +488,8 @@ def cross_stem_harmonic_tension_morphism_Large(
     vocal_chord_ratio = 0.0
     vocal_tension_ratio = 0.0
     if vocals_y is not None and np.asarray(vocals_y).size >= 2048:
-        voc_f0 = voiced_f0_contour_morphism(vocals_y, sr, fmin_hz=65.41, fmax_hz=2093.0)
+        vocals_bounded = _bound_long_signal_windows(vocals_y)
+        voc_f0 = voiced_f0_contour_morphism(vocals_bounded, sr, fmin_hz=65.41, fmax_hz=2093.0)
         voc_pcs = _hz_seq_to_pitch_classes(voc_f0["f0_seq_32"])
         voiced_hits = [1.0 if pc in top3_per_frame[i] else 0.0 for i, pc in enumerate(voc_pcs) if pc is not None]
         if voiced_hits:

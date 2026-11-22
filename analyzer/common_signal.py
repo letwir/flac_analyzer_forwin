@@ -64,23 +64,37 @@ def envelope_stats7_morphism(arr: np.ndarray | list[float]) -> dict[str, float]:
     }
 
 
+def _sample_native_windows(clean: np.ndarray, win_len: int = 4096, max_windows: int = 128) -> np.ndarray:
+    """長尺波形のメモリ爆発を防ぐため、原サンプリングレートのまま均等配置した連続窓 (M, win_len) を切り出しますわ！"""
+    if clean.size <= win_len:
+        return clean[np.newaxis, :]
+    n_avail = clean.size // win_len
+    if n_avail <= max_windows:
+        return clean[: n_avail * win_len].reshape(n_avail, win_len)
+    starts = np.linspace(0, clean.size - win_len, max_windows, dtype=np.int64)
+    return np.stack([clean[s : s + win_len] for s in starts], axis=0)
+
+
 def subband_energy_morphism(
     y: np.ndarray,
     sr: int,
     bands: Mapping[str, tuple[float, float]],
 ) -> dict[str, float]:
-    """rFFT パワースペクトルを用いて指定周波数帯域ごとのエネルギーおよび占有比を算出する純粋射ですわ！
+    """有界ウィンドウ平均 rFFT パワースペクトル (Welch型) により帯域エネルギー占有比を算出する純粋射ですわ！
 
-    Mor(R^N x SR x Bands -> SubbandEnergies): 複数の楽器ステム解析で共通利用されますの。
+    Mor(R^N x SR x Bands -> SubbandEnergies): 長尺トラックでも NumPy FFT の float64 昇格メモリを定数上限 (<4MB) に抑えますの。
     """
     clean = _sanitize_1d_array(y)
     if clean.size == 0 or sr <= 0 or not bands:
         return {f"{name}_ratio": 0.0 for name in bands} | {f"{name}_energy": 0.0 for name in bands}
 
-    # 長尺信号でも過剰な FFT メモリ確保を避けるため float32 rFFT を用いるわ
-    spectrum = np.fft.rfft(clean)
-    power = np.abs(spectrum) ** 2
-    freqs = np.fft.rfftfreq(clean.size, d=1.0 / float(sr))
+    win_len = min(4096, clean.size)
+    windows = _sample_native_windows(clean, win_len=win_len, max_windows=128)
+    hann = np.hanning(win_len).astype(np.float64) if win_len >= 4 else np.ones(win_len, dtype=np.float64)
+    # 窓単位の rFFT 平均電力 (M <= 128, win_len <= 4096) に限定し、全長 FFT による GB 級メモリ確保を根絶するわ
+    spec = np.fft.rfft(windows.astype(np.float64) * hann[np.newaxis, :], axis=1)
+    power = np.mean(np.abs(spec) ** 2, axis=0)
+    freqs = np.fft.rfftfreq(win_len, d=1.0 / float(sr))
     total_energy = float(np.sum(power))
     out: dict[str, float] = {}
     for name, (f_lo, f_hi) in bands.items():
@@ -97,9 +111,9 @@ def xcorr_lag_morphism_Complex(
     hop_sec: float,
     max_lag_sec: float = 0.25,
 ) -> dict[str, float]:
-    """2つの包絡時系列の正規化相互相関から最適ラグ(ms)・ピーク相関・ゼロラグ相関を算出する純粋射ですわ！
+    """2つの包絡時系列から ±max_lag_sec の有界ラグのみ O(K*N) で相互相関算出する純粋射ですわ！
 
-    Mor(R^T x R^T -> XCorrMetrics): ビブラート周期や Kick-Bass ポケット同期・サイドチェイン解析の基盤ですの。
+    Mor(R^T x R^T -> XCorrMetrics): np.correlate(mode='full') の O(N^2) 爆発を回避し、長尺でも <1ms で完了いたしますの。
     """
     a = _sanitize_1d_array(env_a).astype(np.float64)
     b = _sanitize_1d_array(env_b).astype(np.float64)
@@ -114,17 +128,24 @@ def xcorr_lag_morphism_Complex(
         return {"best_lag_ms": 0.0, "peak_corr": 0.0, "zero_lag_corr": 0.0}
 
     max_lag_frames = max(1, min(n - 1, int(round(max_lag_sec / hop_sec))))
-    full_corr = np.correlate(a, b, mode="full") / denom
-    mid = n - 1
-    window = full_corr[mid - max_lag_frames : mid + max_lag_frames + 1]
-    zero_corr = float(np.clip(full_corr[mid], -1.0, 1.0))
+    zero_corr = float(np.clip(float(np.dot(a, b)) / denom, -1.0, 1.0))
 
-    # 絶対相関が最大のラグを選択し、負相関(サイドチェイン等)も情報として保持いたしますわ
-    peak_idx = int(np.argmax(np.abs(window)))
-    best_lag_frames = peak_idx - max_lag_frames
+    best_lag_frames = 0
+    best_corr = zero_corr
+    for lag in range(-max_lag_frames, max_lag_frames + 1):
+        if lag == 0:
+            corr = zero_corr
+        elif lag > 0:
+            corr = float(np.dot(a[lag:], b[: n - lag])) / denom
+        else:
+            corr = float(np.dot(a[: n + lag], b[-lag:])) / denom
+        if abs(corr) > abs(best_corr):
+            best_corr = corr
+            best_lag_frames = lag
+
     return {
         "best_lag_ms": float(best_lag_frames * hop_sec * 1000.0),
-        "peak_corr": float(np.clip(window[peak_idx], -1.0, 1.0)),
+        "peak_corr": float(np.clip(best_corr, -1.0, 1.0)),
         "zero_lag_corr": zero_corr,
     }
 
@@ -219,18 +240,27 @@ def drum_band_onset_morphism_Large(y: np.ndarray, sr: int) -> dict[str, float]:
     step = max(1, int(round(sr * hop_sec)))
     n_frames = max(1, clean.size // step)
     usable = n_frames * step
-    blocks = clean[:usable].reshape(n_frames, step).astype(np.float64)
-    # 10ms ブロックの高速 rFFT で 3 帯域 (Kick/Snare/HiHat) の短時間エネルギー時系列を同時算出するわ
-    spec = np.abs(np.fft.rfft(blocks, axis=1)) ** 2
     freqs = np.fft.rfftfreq(step, d=1.0 / float(sr))
 
     kick_mask = (freqs >= 30.0) & (freqs <= 120.0)
     snare_mask = ((freqs >= 150.0) & (freqs <= 400.0)) | ((freqs >= 1500.0) & (freqs <= 4000.0))
     hihat_mask = (freqs >= 6000.0) & (freqs <= 16000.0)
 
-    kick_env = np.sqrt(np.mean(spec[:, kick_mask], axis=1)) if np.any(kick_mask) else np.zeros(n_frames)
-    snare_env = np.sqrt(np.mean(spec[:, snare_mask], axis=1)) if np.any(snare_mask) else np.zeros(n_frames)
-    hihat_env = np.sqrt(np.mean(spec[:, hihat_mask], axis=1)) if np.any(hihat_mask) else np.zeros(n_frames)
+    # 長尺トラックでの 2D rFFT メモリスパイクを防ぐため 4096 フレーム単位にチャンク分割して処理するわ
+    kick_env = np.zeros(n_frames, dtype=np.float32)
+    snare_env = np.zeros(n_frames, dtype=np.float32)
+    hihat_env = np.zeros(n_frames, dtype=np.float32)
+    blocks_all = clean[:usable].reshape(n_frames, step)
+    chunk_frames = 4096
+    for start_f in range(0, n_frames, chunk_frames):
+        end_f = min(n_frames, start_f + chunk_frames)
+        spec = np.abs(np.fft.rfft(blocks_all[start_f:end_f].astype(np.float64), axis=1)) ** 2
+        if np.any(kick_mask):
+            kick_env[start_f:end_f] = np.sqrt(np.mean(spec[:, kick_mask], axis=1)).astype(np.float32)
+        if np.any(snare_mask):
+            snare_env[start_f:end_f] = np.sqrt(np.mean(spec[:, snare_mask], axis=1)).astype(np.float32)
+        if np.any(hihat_mask):
+            hihat_env[start_f:end_f] = np.sqrt(np.mean(spec[:, hihat_mask], axis=1)).astype(np.float32)
 
     kick_rate, kick_times = _count_band_onset_peaks(kick_env, hop_sec)
     snare_rate, _ = _count_band_onset_peaks(snare_env, hop_sec)

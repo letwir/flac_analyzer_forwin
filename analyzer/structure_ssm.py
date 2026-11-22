@@ -149,14 +149,28 @@ class StructureSsmPlugin(BasePlugin):
         }
 
 
+def _resample_chroma_to_32(chroma: np.ndarray, n_frames: int = FIXED_SEQ_FRAMES) -> np.ndarray:
+    """12xT 純和声クロマ行列を 12x32 へ正規化リサンプリングいたしますわ！ Mor(R^{12xT} -> R^{12x32})"""
+    if chroma is None or np.asarray(chroma).size == 0:
+        return np.zeros((12, n_frames), dtype=np.float32)
+    c_mat = np.nan_to_num(np.asarray(chroma, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    if c_mat.ndim != 2 or c_mat.shape[0] != 12 or c_mat.shape[1] == 0:
+        return np.zeros((12, n_frames), dtype=np.float32)
+    rows_32 = [np.asarray(_resample_to_fixed_frames(c_mat[i], n_frames), dtype=np.float32) for i in range(12)]
+    out = np.vstack(rows_32)
+    col_norms = np.linalg.norm(out, axis=0, keepdims=True)
+    return np.where(col_norms > 1e-9, out / np.maximum(col_norms, 1e-9), 0.0).astype(np.float32)
+
+
 def multistem_structure_ssm_morphism_Large(
     mix_y: np.ndarray,
     stems_mono: dict[str, np.ndarray] | Any,
     sr: int,
+    harmonic_chroma: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """6ステムの編曲稼働アークと全体エネルギーを統合した SSM 構造解析射ですわ！
+    """6ステムの編曲稼働アーク (6D) と純和声クロマ (12D) を結合した 18D 状態空間 SSM 構造解析射ですわ！
 
-    Mor(R^N x Prod_{s}(R^N) x SR -> MultiStemStructure)
+    Mor(R^N x Prod_{s}(R^N) x SR x Chroma? -> MultiStemStructure)
     """
     duration_sec = float(len(mix_y) / sr) if sr > 0 else 0.0
     if duration_sec < 1.0 or not stems_mono:
@@ -166,10 +180,12 @@ def multistem_structure_ssm_morphism_Large(
             "drop_position_sec": 0.0,
             "break_position_sec": 0.0,
             "structural_complexity": 0.0,
+            "state_dim": 18,
+            "chroma_included": False,
             "novelty_seq_32": [0.0] * FIXED_SEQ_FRAMES,
         }
 
-    # 32フレーム空間上で各ステムの包絡エネルギーを行方向へ積み重ねて編曲状態ベクトルを作るわ
+    # 32フレーム空間上で各ステムの包絡エネルギー (6行) と純和声クロマ (12行) を結合するわ
     n_frames = FIXED_SEQ_FRAMES
     rows: list[np.ndarray] = []
     for name in ("vocals", "drums", "bass", "guitar", "piano", "other"):
@@ -186,10 +202,18 @@ def multistem_structure_ssm_morphism_Large(
         peak = float(np.max(curve))
         rows.append(curve / peak if peak > 1e-9 else curve)
 
-    feat_mat = np.vstack(rows)
+    if harmonic_chroma is None or np.asarray(harmonic_chroma).size == 0:
+        from .common_pitch_harmony import harmonic_bus_chroma_morphism
+
+        harmonic_chroma = harmonic_bus_chroma_morphism(stems_mono, sr).get("harmonic_chroma")
+
+    chroma_32 = _resample_chroma_to_32(harmonic_chroma, n_frames=n_frames)
+    chroma_included = bool(np.any(chroma_32 > 0.0))
+    feat_mat = np.vstack(rows + [chroma_32])
+
     ssm = compute_ssm(feat_mat)
     novelty = compute_novelty_curve(ssm, kernel_size=4)
-    total_arc = np.sum(feat_mat, axis=0)
+    total_arc = np.sum(np.vstack(rows), axis=0)
     chorus_s, chorus_e, drop_pos, complexity = detect_chorus_and_drop(novelty, total_arc, duration_sec)
 
     # ブレイク位置 (10%〜90% の区間で全ステム合算エネルギーが最小の谷)
@@ -204,6 +228,8 @@ def multistem_structure_ssm_morphism_Large(
         "drop_position_sec": drop_pos,
         "break_position_sec": break_pos_sec,
         "structural_complexity": complexity,
+        "state_dim": int(feat_mat.shape[0]),
+        "chroma_included": chroma_included,
         "novelty_seq_32": _resample_to_fixed_frames(novelty, FIXED_SEQ_FRAMES),
     }
 
@@ -212,6 +238,7 @@ def multistem_structure_ssm_morphism(
     mix_y: np.ndarray,
     stems_mono: dict[str, np.ndarray] | Any,
     sr: int,
+    harmonic_chroma: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(R^N x Prod_{s}(R^N) x SR -> MultiStemStructure)"""
-    return multistem_structure_ssm_morphism_Large(mix_y, stems_mono, sr)
+    """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(R^N x Prod_{s}(R^N) x SR x Chroma? -> MultiStemStructure)"""
+    return multistem_structure_ssm_morphism_Large(mix_y, stems_mono, sr, harmonic_chroma=harmonic_chroma)

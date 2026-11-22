@@ -167,6 +167,19 @@ def build_stem_extractor_morphism(
     """
     def _run_composed(ctx: AudioContext) -> RawFeatures:
         raw = base_extractor.run(ctx)
+        already_populated = any(
+            getattr(raw, attr, None) is not None
+            for attr in (
+                "audio_cutoff_lufs_feat",
+                "voice_cpp_feat",
+                "psychoacoustics_feat",
+                "structure_ssm_feat",
+                "stem_profiles",
+            )
+        )
+        if toml_cfg is None and already_populated:
+            return raw
+
         plugin_feats = extract_stem_plugins_morphism(ctx, toml_cfg=toml_cfg)
         if "voice_cpp_feat" in plugin_feats:
             raw.voice_cpp_feat = plugin_feats["voice_cpp_feat"]

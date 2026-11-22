@@ -54,6 +54,18 @@ class TestCommonStereoAndCrossStem(unittest.TestCase):
         self.assertEqual(mono.dtype, np.float32)
         self.assertTrue(mono.flags["C_CONTIGUOUS"])
 
+    def test_long_signal_low_band_coherence_no_aliasing(self) -> None:
+        # 30秒 @ 44.1kHz (1,323,000 samples): 旧間引き (step=10) では 4410Hz 成分が 0Hz/低域へ折り返していた条件
+        sr = 44100
+        n = sr * 30
+        t = np.linspace(0.0, 30.0, n, endpoint=False, dtype=np.float32)
+        sub_60hz = 0.4 * np.sin(2.0 * np.pi * 60.0 * t)
+        alias_trap_4410hz = 0.8 * np.sin(2.0 * np.pi * 4410.0 * t)
+        # 60Hz は完全同相 (L=R)、4410Hz は完全逆相 (L=-R)
+        stereo = np.stack([sub_60hz + alias_trap_4410hz, sub_60hz - alias_trap_4410hz], axis=0)
+        res = stereo_field_morphism(stereo, sr)
+        self.assertGreater(res["low_band_phase_coherence"], 0.9)
+
     def test_cross_stem_foundation_energy_share_and_residual(self) -> None:
         sr = 44100
         t = np.linspace(0.0, 1.0, sr, endpoint=False, dtype=np.float32)

@@ -66,6 +66,26 @@ class TestCrossStemHarmony(unittest.TestCase):
         self.assertEqual(cs["harmonic_bus"]["harmonic_bus_key"], "C")
         self.assertGreater(cs["harmonic_tension"]["bass_root_agreement_ratio"], 0.7)
 
+    def test_multistem_ssm_includes_harmonic_chroma_with_flat_energy(self) -> None:
+        from analyzer.structure_ssm import multistem_structure_ssm_morphism
+
+        sr = 22050
+        n = sr * 2
+        half = n // 2
+        t1 = np.linspace(0.0, 1.0, half, endpoint=False, dtype=np.float32)
+        t2 = np.linspace(1.0, 2.0, n - half, endpoint=False, dtype=np.float32)
+        # 音量 (RMS) は全区間一定のまま、後半で C major -> F# major へ転調させるわ
+        c_maj = 0.3 * (np.sin(2.0 * np.pi * 261.63 * t1) + np.sin(2.0 * np.pi * 329.63 * t1) + np.sin(2.0 * np.pi * 392.00 * t1))
+        fs_maj = 0.3 * (np.sin(2.0 * np.pi * 369.99 * t2) + np.sin(2.0 * np.pi * 466.16 * t2) + np.sin(2.0 * np.pi * 554.37 * t2))
+        piano = np.concatenate([c_maj, fs_maj]).astype(np.float32)
+        ssm_res = multistem_structure_ssm_morphism(piano, {"piano": piano}, sr)
+        self.assertEqual(ssm_res["state_dim"], 18)
+        self.assertTrue(ssm_res["chroma_included"])
+        self.assertGreater(ssm_res["structural_complexity"], 0.0)
+        # 転調境界付近 (中間フレーム) で novelty ピークが立っていること
+        nov = ssm_res["novelty_seq_32"]
+        self.assertGreater(max(nov[10:22]), min(nov) + 0.05)
+
 
 if __name__ == "__main__":
     unittest.main()

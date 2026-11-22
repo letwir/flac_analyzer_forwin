@@ -59,6 +59,22 @@ class TestCommonSignalMorphisms(unittest.TestCase):
         self.assertGreater(res["peak_corr"], 0.9)
         self.assertAlmostEqual(abs(res["best_lag_ms"]), 30.0, delta=5.0)
 
+    def test_xcorr_lag_55min_long_track_bounded_complexity(self) -> None:
+        import time
+
+        # 55分トラック (20ms ホップ = 165,000 フレーム) が O(K*N) で高速完了することを検証するわ
+        hop_sec = 0.02
+        n = 165000
+        rng = np.random.default_rng(7)
+        env_a = rng.standard_normal(n).astype(np.float32)
+        env_b = np.roll(env_a, 2)  # 40ms シフト
+        t0 = time.perf_counter()
+        res = xcorr_lag_morphism(env_a, env_b, hop_sec=hop_sec, max_lag_sec=0.25)
+        elapsed = time.perf_counter() - t0
+        self.assertLess(elapsed, 0.5)
+        self.assertGreater(res["peak_corr"], 0.95)
+        self.assertAlmostEqual(abs(res["best_lag_ms"]), 40.0, delta=1.0)
+
     def test_decay_slope_morphism(self) -> None:
         sr = 44100
         hop = 512

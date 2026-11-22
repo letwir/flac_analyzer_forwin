@@ -47,33 +47,60 @@ def mono_downmix_morphism(y_stereo: np.ndarray) -> np.ndarray:
 
 
 def _compute_lr_correlation(left: np.ndarray, right: np.ndarray) -> float:
-    """L/R チャンネル間のピアソン相関係数 ρ_LR ∈ [-1, 1] を算出しますわ！ Mor(R^N x R^N -> R)"""
-    if left.size == 0:
+    """チャンク単位積和によりフル尺 float64 コピーなしで L/R 相関係数 ρ_LR ∈ [-1, 1] を算出しますわ！ Mor(R^N x R^N -> R)"""
+    n = left.size
+    if n == 0:
         return 1.0
-    l_centered = left.astype(np.float64) - float(np.mean(left))
-    r_centered = right.astype(np.float64) - float(np.mean(right))
-    denom = float(np.linalg.norm(l_centered) * np.linalg.norm(r_centered))
+    chunk = 1048576
+    sum_l = sum_r = sum_ll = sum_rr = sum_lr = 0.0
+    for start in range(0, n, chunk):
+        end = min(n, start + chunk)
+        l64 = left[start:end].astype(np.float64)
+        r64 = right[start:end].astype(np.float64)
+        sum_l += float(np.sum(l64))
+        sum_r += float(np.sum(r64))
+        sum_ll += float(np.dot(l64, l64))
+        sum_rr += float(np.dot(r64, r64))
+        sum_lr += float(np.dot(l64, r64))
+    inv_n = 1.0 / float(n)
+    var_l = max(0.0, sum_ll - (sum_l * sum_l) * inv_n)
+    var_r = max(0.0, sum_rr - (sum_r * sum_r) * inv_n)
+    denom = float(np.sqrt(var_l * var_r))
     if denom <= _EPS:
         return 1.0
-    corr = float(np.dot(l_centered, r_centered) / denom)
-    return float(np.clip(corr, -1.0, 1.0))
+    cov_lr = sum_lr - (sum_l * sum_r) * inv_n
+    return float(np.clip(cov_lr / denom, -1.0, 1.0))
 
 
 def _compute_low_band_coherence(left: np.ndarray, right: np.ndarray, sr: int, cutoff_hz: float = 120.0) -> float:
-    """Parseval の定理に基づき 120Hz 以下低域の L/R 位相整合度を rFFT で高速算出しますわ！ Mor(R^N x R^N -> R)"""
+    """間引き (エイリアシング) を行わず原 sr の連続窓 rFFT クロススペクトルから 120Hz 以下低域の L/R 位相整合度を算出しますわ！
+
+    Mor(R^N x R^N -> R)
+    """
     if left.size < 64 or sr <= 0:
         return 1.0
-    # 全長 FFT によるメモリ肥大を避けるため最大 16384 サンプル単位に制限するか先頭窓で計算するわ
-    step = max(1, left.size // 131072)
-    l_sub = left[::step].astype(np.float64)
-    r_sub = right[::step].astype(np.float64)
-    eff_sr = float(sr) / float(step)
-    freqs = np.fft.rfftfreq(l_sub.size, d=1.0 / eff_sr)
+    win_len = min(4096, left.size)
+    max_windows = 64
+    n_avail = left.size // win_len
+    if n_avail <= max_windows:
+        starts = np.arange(0, n_avail * win_len, win_len, dtype=np.int64)
+    else:
+        starts = np.linspace(0, left.size - win_len, max_windows, dtype=np.int64)
+    if starts.size == 0:
+        return 1.0
+
+    # 原サンプリングレート sr のまま連続窓を切り出し、Nyquist 崩壊による高域折り返しを完全に防ぐわ
+    freqs = np.fft.rfftfreq(win_len, d=1.0 / float(sr))
     mask = (freqs > 0.0) & (freqs <= float(cutoff_hz))
     if not np.any(mask):
         return 1.0
-    l_fft = np.fft.rfft(l_sub)[mask]
-    r_fft = np.fft.rfft(r_sub)[mask]
+
+    hann = np.hanning(win_len).astype(np.float64)
+    l_win = np.stack([left[s : s + win_len] for s in starts], axis=0).astype(np.float64) * hann[np.newaxis, :]
+    r_win = np.stack([right[s : s + win_len] for s in starts], axis=0).astype(np.float64) * hann[np.newaxis, :]
+    l_fft = np.fft.rfft(l_win, axis=1)[:, mask]
+    r_fft = np.fft.rfft(r_win, axis=1)[:, mask]
+
     denom = float(np.linalg.norm(l_fft) * np.linalg.norm(r_fft))
     if denom <= _EPS:
         return 1.0
@@ -102,13 +129,23 @@ def stereo_field_morphism_Complex(y_stereo: np.ndarray, sr: int) -> dict[str, An
     if st.shape[1] == 0:
         return _neutral_stereo_metrics()
 
-    left = st[0].astype(np.float64)
-    right = st[1].astype(np.float64)
-    mid = 0.5 * (left + right)
-    side = 0.5 * (left - right)
+    left = st[0]
+    right = st[1]
+    # チャンク単位積和により全長 float64 配列 (mid/side) を確保せず RMS(M), RMS(S) を厳密計算するわ
+    sum_m2 = 0.0
+    sum_s2 = 0.0
+    chunk = 1048576
+    for start in range(0, left.size, chunk):
+        end = min(left.size, start + chunk)
+        l64 = left[start:end].astype(np.float64)
+        r64 = right[start:end].astype(np.float64)
+        m64 = 0.5 * (l64 + r64)
+        s64 = 0.5 * (l64 - r64)
+        sum_m2 += float(np.dot(m64, m64))
+        sum_s2 += float(np.dot(s64, s64))
 
-    rms_m = float(np.sqrt(np.mean(mid * mid)))
-    rms_s = float(np.sqrt(np.mean(side * side)))
+    rms_m = float(np.sqrt(sum_m2 / float(left.size)))
+    rms_s = float(np.sqrt(sum_s2 / float(left.size)))
     if (rms_m + rms_s) <= _EPS:
         return _neutral_stereo_metrics()
 

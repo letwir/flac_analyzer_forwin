@@ -54,19 +54,31 @@ def _frame_rms_curve(y: np.ndarray, n_frames: int = FIXED_SEQ_FRAMES) -> np.ndar
 
 
 def _bandpass_rms_envelope(y: np.ndarray, sr: int, f_lo: float, f_hi: float, hop_sec: float = 0.02) -> np.ndarray:
-    """FFT 帯域フィルタ後に短時間 RMS 包絡線を抽出しますわ！ Mor(R^N x SR -> R^T)"""
+    """Parseval の定理に基づくチャンク分割短時間 rFFT 帯域積分で RMS 包絡線を抽出しますわ！
+
+    Mor(R^N x SR -> R^T): 全長 FFT+iFFT による GB 級メモリスパイクを排除いたしますの。
+    """
     if y.size < 64 or sr <= 0:
         return np.empty(0, dtype=np.float32)
     step = max(1, int(round(sr * hop_sec)))
     n_frames = max(1, y.size // step)
     usable = n_frames * step
-    # 長尺でも高速に帯域抽出するため 1 次元 rFFT フィルタを一括適用するわ
-    spec = np.fft.rfft(y[:usable].astype(np.float64))
-    freqs = np.fft.rfftfreq(usable, d=1.0 / float(sr))
+    freqs = np.fft.rfftfreq(step, d=1.0 / float(sr))
     mask = (freqs >= f_lo) & (freqs <= f_hi)
-    filtered = np.fft.irfft(spec * mask, n=usable)
-    blocks = filtered.reshape(n_frames, step)
-    return np.sqrt(np.mean(blocks * blocks, axis=1)).astype(np.float32)
+    if not np.any(mask):
+        return np.zeros(n_frames, dtype=np.float32)
+
+    # Parseval の定理: 帯域内パワー合計 * (2 / N^2) が時間領域の平均二乗エネルギーに近似対応するわ
+    blocks_all = y[:usable].reshape(n_frames, step)
+    out = np.zeros(n_frames, dtype=np.float32)
+    scale = 2.0 / float(step * step)
+    chunk_frames = 4096
+    for start_f in range(0, n_frames, chunk_frames):
+        end_f = min(n_frames, start_f + chunk_frames)
+        spec = np.fft.rfft(blocks_all[start_f:end_f].astype(np.float64), axis=1)
+        band_power = np.sum(np.abs(spec[:, mask]) ** 2, axis=1) * scale
+        out[start_f:end_f] = np.sqrt(band_power).astype(np.float32)
+    return out
 
 
 def rhythm_pocket_and_ducking_morphism(
@@ -99,22 +111,79 @@ def rhythm_pocket_and_ducking_morphism(
 
 def _compute_vocal_masking_metrics(
     vocals_y: np.ndarray | None,
-    accomp_y: np.ndarray,
+    accomp_parts: list[np.ndarray],
     sr: int,
+    n_samples: int,
 ) -> tuple[float, float]:
-    """ボーカル対伴奏ラウドネス比 (dB) と 300Hz-4kHz 帯域マスキング度を算出しますわ！"""
-    if vocals_y is None or vocals_y.size == 0:
+    """チャンク積和により全長伴奏バッファを確保せずボーカル対伴奏比(dB)とマスキング度を算出しますわ！"""
+    if vocals_y is None or vocals_y.size == 0 or n_samples == 0:
         return -60.0, 0.0
-    e_v = float(np.mean(vocals_y.astype(np.float64) ** 2))
-    e_a = float(np.mean(accomp_y.astype(np.float64) ** 2))
+    chunk = 1048576
+    sum_v2 = 0.0
+    sum_a2 = 0.0
+    for start in range(0, n_samples, chunk):
+        end = min(n_samples, start + chunk)
+        v_blk = vocals_y[start:end].astype(np.float64)
+        sum_v2 += float(np.dot(v_blk, v_blk))
+        a_blk = np.zeros(end - start, dtype=np.float64)
+        for part in accomp_parts:
+            a_blk += part[start:end]
+        sum_a2 += float(np.dot(a_blk, a_blk))
+
+    e_v = sum_v2 / float(n_samples)
+    e_a = sum_a2 / float(n_samples)
     v_to_accomp_db = float(np.clip(10.0 * np.log10((e_v + _EPS) / (e_a + _EPS)), -60.0, 60.0))
 
+    # 帯域エネルギー比較は均等配置した有限サンプル窓のみで伴奏合算を行えば <4MB で済むわ
+    win_len = min(4096, n_samples)
+    max_windows = 128
+    n_avail = n_samples // win_len
+    starts = (
+        np.arange(0, n_avail * win_len, win_len, dtype=np.int64)
+        if n_avail <= max_windows
+        else np.linspace(0, n_samples - win_len, max_windows, dtype=np.int64)
+    )
+    if starts.size == 0:
+        return v_to_accomp_db, 0.0
+
+    v_win = np.concatenate([vocals_y[s : s + win_len] for s in starts])
+    a_win = np.zeros_like(v_win, dtype=np.float32)
+    for part in accomp_parts:
+        a_win += np.concatenate([part[s : s + win_len] for s in starts])
+
     bands = {"vocal_core": (300.0, 4000.0)}
-    v_band = subband_energy_morphism(vocals_y, sr, bands)["vocal_core_energy"]
-    a_band = subband_energy_morphism(accomp_y, sr, bands)["vocal_core_energy"]
-    # 伴奏側の中音域衝突比: 伴奏がボーカル中核帯域をどれだけ埋めているか (0..1)
+    v_band = subband_energy_morphism(v_win, sr, bands)["vocal_core_energy"]
+    a_band = subband_energy_morphism(a_win, sr, bands)["vocal_core_energy"]
     masking = float(np.clip(a_band / (v_band + a_band + _EPS), 0.0, 1.0)) if (v_band + a_band) > _EPS else 0.0
     return v_to_accomp_db, masking
+
+
+def _compute_chunked_energies_Large(
+    mix_arr: np.ndarray,
+    aligned: dict[str, np.ndarray],
+) -> tuple[float, float, dict[str, float]]:
+    """チャンク分割積和により全長 float64 コピーなしで mix・各ステム・分離残差のエネルギーを算出しますわ！"""
+    n_samples = mix_arr.size
+    chunk = 1048576
+    sum_mix2 = 0.0
+    sum_res2 = 0.0
+    stem_sums2: dict[str, float] = {name: 0.0 for name in aligned}
+
+    for start in range(0, n_samples, chunk):
+        end = min(n_samples, start + chunk)
+        m_blk = mix_arr[start:end].astype(np.float64)
+        sum_mix2 += float(np.dot(m_blk, m_blk))
+        s_blk = np.zeros(end - start, dtype=np.float64)
+        for name, wav in aligned.items():
+            w_blk = wav[start:end].astype(np.float64)
+            stem_sums2[name] += float(np.dot(w_blk, w_blk))
+            s_blk += w_blk
+        res_blk = m_blk - s_blk
+        sum_res2 += float(np.dot(res_blk, res_blk))
+
+    inv_n = 1.0 / float(n_samples)
+    stem_energies = {name: val * inv_n for name, val in stem_sums2.items()}
+    return sum_mix2 * inv_n, sum_res2 * inv_n, stem_energies
 
 
 def cross_stem_foundation_morphism_Large(
@@ -136,17 +205,8 @@ def cross_stem_foundation_morphism_Large(
             "arrangement_arc_32": {"stems": {}, "active_stem_count_seq_32": [0] * FIXED_SEQ_FRAMES},
         }
 
-    # 分離残差 (mix - sum(stems)) から Demucs 再構成信頼度 SNR を算出するわ
-    stem_sum = np.zeros_like(mix_arr, dtype=np.float64)
-    stem_energies: dict[str, float] = {}
-    for name, wav in aligned.items():
-        w64 = wav.astype(np.float64)
-        stem_sum += w64
-        stem_energies[name] = float(np.mean(w64 * w64))
-
-    residual = mix_arr.astype(np.float64) - stem_sum
-    e_res = float(np.mean(residual * residual))
-    e_mix = float(np.mean(mix_arr.astype(np.float64) ** 2))
+    # チャンク分割演算により長尺でも全長 float64 中間配列を確保しないわ
+    e_mix, e_res, stem_energies = _compute_chunked_energies_Large(mix_arr, aligned)
     residual_snr_db = float(np.clip(10.0 * np.log10((e_mix + _EPS) / (e_res + _EPS)), -40.0, 60.0))
 
     total_stem_e = float(sum(stem_energies.values()))
@@ -173,8 +233,7 @@ def cross_stem_foundation_morphism_Large(
 
     vocals_y = aligned.get("vocals")
     accomp_parts = [w for k, w in aligned.items() if k != "vocals"]
-    accomp_y = np.sum(accomp_parts, axis=0) if accomp_parts else np.zeros_like(mix_arr)
-    v_to_accomp_db, masking = _compute_vocal_masking_metrics(vocals_y, np.asarray(accomp_y, dtype=np.float32), sr)
+    v_to_accomp_db, masking = _compute_vocal_masking_metrics(vocals_y, accomp_parts, sr, mix_arr.size)
 
     rhythm_pocket = (
         rhythm_pocket_and_ducking_morphism(aligned["drums"], aligned["bass"], sr)
@@ -198,7 +257,9 @@ def cross_stem_foundation_morphism_Large(
 
     from .structure_ssm import multistem_structure_ssm_morphism
 
-    multistem_struct = multistem_structure_ssm_morphism(mix_arr, aligned, sr)
+    multistem_struct = multistem_structure_ssm_morphism(
+        mix_arr, aligned, sr, harmonic_chroma=harm_bus_full["harmonic_chroma"]
+    )
 
     return {
         "residual_snr_db": residual_snr_db,

@@ -92,6 +92,27 @@ class TestPluginDispatchIntegration(unittest.TestCase):
         feats_bass = extract_tensor_features(y_t, sr, torch.device("cpu"), stem_name="bass")
         self.assertGreater(feats_bass["subbass_env_mean"], 0.0)
 
+    def test_no_double_plugin_execution_in_build_stem_extractor(self) -> None:
+        from unittest.mock import patch
+        import analyzer.common_dispatch as cd
+
+        sr = 22050
+        t = np.linspace(0.0, 1.5, int(sr * 1.5), endpoint=False, dtype=np.float32)
+        y = (0.3 * np.sin(2.0 * np.pi * 220.0 * t)).astype(np.float32)
+        ctx = AudioContext(y=y, sr=sr, source="vocals")
+        try:
+            with (
+                patch.object(cd, "extract_voice_cpp", wraps=cd.extract_voice_cpp) as spy_cpp,
+                patch.object(cd, "extract_psychoacoustics", wraps=cd.extract_psychoacoustics) as spy_psy,
+            ):
+                raw = build_stem_extractor_morphism("vocals", librosa_extractor).run(ctx)
+                self.assertEqual(spy_cpp.call_count, 1)
+                self.assertEqual(spy_psy.call_count, 1)
+                self.assertIsNotNone(raw.voice_cpp_feat)
+                self.assertIsNotNone(raw.psychoacoustics_feat)
+        finally:
+            ctx.clear()
+
 
 if __name__ == "__main__":
     unittest.main()
