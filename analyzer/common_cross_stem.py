@@ -176,10 +176,17 @@ def cross_stem_foundation_morphism_Large(
     accomp_y = np.sum(accomp_parts, axis=0) if accomp_parts else np.zeros_like(mix_arr)
     v_to_accomp_db, masking = _compute_vocal_masking_metrics(vocals_y, np.asarray(accomp_y, dtype=np.float32), sr)
 
+    rhythm_pocket = (
+        rhythm_pocket_and_ducking_morphism(aligned["drums"], aligned["bass"], sr)
+        if ("drums" in aligned and "bass" in aligned)
+        else {"kick_bass_lag_ms": 0.0, "pocket_sync_score": 0.0, "sidechain_ducking_score": 0.0}
+    )
+
     return {
         "residual_snr_db": residual_snr_db,
         "v_to_accomp_db": v_to_accomp_db,
         "vocal_band_masking": masking,
+        "rhythm_pocket": rhythm_pocket,
         "per_stem": per_stem,
         "arrangement_arc_32": {
             "stems": arc_stems,
