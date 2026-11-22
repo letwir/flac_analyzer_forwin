@@ -1,0 +1,27 @@
+# Task Diary: 20261123-demucs-stem-mir-v2-complete
+
+- **timestamp**: 2026-11-23T01:50:00+09:00
+- **task**: `20261123-demucs-stem-mir-v2-complete` (`F:\repo\flac_analyzer_forwin`, branch `v2`) — Execute Phase 1–3 Demucs 6-stem stereo & cross-stem MIR roadmap with category-theoretically decoupled common `.py` modules, per-small-goal commit/push + `llm-mem` loop, and backup-verified live DB migration check.
+- **request-evidence**:
+  - User instructed: `1: 全未ステージをpushする。 2: まず小目標ごとにcommitし、結合テストが必要と判断したら、中目標ごとにテスト是非をcommitする。本番での書き込みを許可するが、条件はbackup機構が稼働しているのを確認してからとする。... 3: このv2実装ではサブエージェント使用可能、メインのみの行動も許可する。連続承認も許可。 /goal 全Issuesの解決、v2ブランチでのステレオ対応完遂`
+- **action**:
+  - Step 0: Committed all pending work (excluding `orchestrator.exe~`) to `master` (`a0ee486`), pushed `origin/master`, created and pushed branch `v2`.
+  - Phase 1 (`P1-M1`..`P1-M3`): Created `common_signal.py`, `common_stereo.py`, `common_cross_stem.py`, `common_dispatch.py`; fixed `"vocal"`->`"vocals"` chord bug and `rms_min/median`, `centroid_min/median`; hooked pre-downmix stereo & cross-stem computation across `models.py`, `demucs_daemon.py`, `orchestrator/dispatcher/daemon.go`, `worker_cpu_daemon.py`, `types_features.py`; wired the 4 existing plugins.
+  - Phase 2 (`P2-M1`..`P2-M3`): Pruned `drums` CQT/tonal and non-bass `subbass_env_mean` with schema-compatible neutral elements; created `common_pitch_harmony.py`; added vocal/bass/drum/guitar/piano/other specialized morphisms and Kick-Bass pocket/ducking wiring.
+  - Phase 3 (`P3-M1`..`P3-M2`): Added `harmonic_bus_chroma_morphism`, `cross_stem_harmonic_tension_morphism`, `multistem_structure_ssm_morphism`, `run_selective_stem_essentia_pure`, updated `zig/migrate_features.py` with stereo/CUE slice support & `[database].url` DSN resolution, verified live PostgreSQL trigger `trg_archive_library_flac` (`91050 -> 91051` on `--limit 1`), and marked all Phase 1–3 & `#18`–`#21` items `[x]` in `issues.md`.
+- **result**:
+  - 28/28 Python unit & integration tests (`tests/test_common_signal.py`, `tests/test_common_stereo_and_cross_stem.py`, `tests/test_plugin_dispatch_integration.py`, `tests/test_vocal_and_bass_morphisms.py`, `tests/test_instrument_specific_morphisms.py`, `tests/test_cross_stem_harmony.py`, `tests/test_migrate_features_v2.py`, `test_essentia_failfast.py`, `test_fix_empty_predictions.py`) PASSED.
+  - Go dispatcher tests & `proof-checker.exe` gates PASSED.
+  - Every small/medium goal committed, pushed to `origin/v2`, and recorded in `llm-mem`.
+- **friction**:
+  - `test_essentia_failfast.py` mocked `worker_cpu_daemon.librosa_extractor.run` with a `FakeCtx` lacking `.source`; resolved cleanly by keeping `librosa_extractor.run(ctx)` in `worker_cpu_daemon.py` since `librosa_extractor_v4` already invokes `extract_stem_plugins_morphism(ctx)`.
+  - `zig/migrate_features.py` originally referenced stale column names (`track_hash`, `file_path`) and `[postgres]` config section; updated to `audio_hash`, `filepath`, `[database].url`, and CUE-aware `flac_decode`.
+- **attribution**:
+  - PromptDefect: 0% (clear branch workflow, commit/push cadence, and live DB backup verification condition).
+  - AgentDefect: 0% (all issues caught and resolved within tests and verification gates).
+- **impact**:
+  - `v2` branch now captures stereo spatial metrics, cross-stem balance/masking/pocket/harmonic-tension/structure, and instrument-specific profiles with zero SHM overhead.
+- **feedback**:
+  - None.
+- **rewritten-request**:
+  - "Push pending changes to master, cut branch v2, and iteratively implement and verify Phase 1–3 Demucs 6-stem stereo and cross-stem MIR features with category-theoretically decoupled common modules, pushing each goal to origin/v2, logging to llm-memory, and verifying PostgreSQL history backup triggers before live DB migration."
