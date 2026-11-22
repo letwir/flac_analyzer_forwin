@@ -217,11 +217,11 @@
   - [x] 3-4. `execute = true` 確認後のパイプライン実行テスト
 
 ### 12. Go非介在・治具マイグレーションスクリプトの実装 (`goal:pipeline`)
-- [ ] [#21 [Tool] Go非介在・治具マイグレーションスクリプト (zig/migrate_features.py) の実装](https://github.com/letwir/flac_analyzer_forwin/issues/21)
-  - [ ] 4-1. `--migrate-features` による既存 DB (`raw.library_flac.features`) への JSONB 差分マージ (`||`) 機構の実装
-  - [ ] 4-2. `--from-audio` による FLAC 直接デコード・新特徴量高速バッチ抽出モードの実装（Demucs再実行バイパス）
-  - [ ] 4-3. `--dry-run`, `--fix-tags`, `--batch-size` 等の運用管理オプションおよび単体テスト整備
-  - [ ] 4-4. 実DBおよびテスト音源に対するマイグレーション動作検証
+- [x] [#21 [Tool] Go非介在・治具マイグレーションスクリプト (zig/migrate_features.py) の実装](https://github.com/letwir/flac_analyzer_forwin/issues/21)
+  - [x] 4-1. `--migrate-features` による既存 DB (`raw.library_flac.features`) への JSONB 差分マージ (`||`) 機構の実装
+  - [x] 4-2. `--from-audio` による FLAC 直接デコード・新特徴量高速バッチ抽出モードの実装（Demucs再実行バイパス）
+  - [x] 4-3. `--dry-run`, `--fix-tags`, `--batch-size` 等の運用管理オプションおよび単体テスト整備
+  - [x] 4-4. 実DBおよびテスト音源に対するマイグレーション動作検証
 
 ### 13. ワークロード適応型SQLiteキュー・スケジューラー (`goal:workload-scheduler`)
 - [*] **【Arch/SQLite】CUEバッチ・長尺単曲・短尺単曲を区別し、資源に合わせてタスク順序とCPU枝数を調整する**
@@ -301,10 +301,10 @@
   - [x] `P3-M1-S2`: `bass` の F0 ルート音 × 和声ステムのコード構成音 × `vocals` の F0 メロディ音を照合する積射 `cross_stem_harmonic_tension_morphism` を実装し、**ベース・ルート整合率（オンコード率）**、**ボーカル・コードトーン整合率 vs テンション/ブルーノート率**を算出する。
   - [x] `P3-M1-S3`: `tests/test_cross_stem_harmony.py` にて、既知コード進行＋ベースルート＋テンションメロディの合成マルチステム入力に対する推論精度を検証する。
 
-- [ ] **中目標 P3-M2: マルチステム編曲構造 SSM と選択的 Essentia ONNX ステム推論（ドメインシフト検証付き）**
+- [x] **中目標 P3-M2: マルチステム編曲構造 SSM と選択的 Essentia ONNX ステム推論（ドメインシフト検証付き）**
   - [x] `P3-M2-S1`: `analyzer/structure_ssm.py` を拡張し、`mix` 単体だけでなく6ステムのエネルギー＋純和声クロマを結合した状態空間上の自己相似行列射 `multistem_structure_ssm_morphism` を実装して、ブレイク・落ちサビ・ラスサビ・ドロップの境界検出精度を高める。
   - [x] `P3-M2-S2`: `worker_cpu_daemon.py` / `analyzer/essentia_dsp.py` に設定駆動の選択的ステム推論射（`vocals` に対する `gender` / `voice_instrumental` 等、デフォルトは `analyzer.toml` で on/off 制御可能）を追加し、`mix` 推論値との乖離（ドメインシフト指標）を併記する。
-  - [ ] `P3-M2-S3`: PostgreSQL `raw.library_flac.features` JSONB スキーマ（`analysis_schema_version = 2` または後方互換拡張）および `zig/migrate_features.py` との整合・E2E 回帰テストを完了する。
+  - [x] `P3-M2-S3`: PostgreSQL `raw.library_flac.features` JSONB スキーマ（`analysis_schema_version = 2` または後方互換拡張）および `zig/migrate_features.py` との整合・E2E 回帰テストを完了する。
 
 ---
 
