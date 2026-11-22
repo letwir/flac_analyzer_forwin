@@ -9,6 +9,7 @@ from typing import Any
 import librosa
 import numpy as np
 
+from .common_signal import envelope_stats7_morphism
 from .core import AudioContext, FeatureExtractor, FIXED_SEQ_FRAMES, _resample_to_fixed_frames
 from .registry_plugins import BasePlugin, register_plugin
 from .types_features import RmsFeatures
@@ -17,29 +18,8 @@ logger = logging.getLogger("analyzer.librosa_dynamics")
 
 
 def _calc_rms_stats(rms: np.ndarray) -> dict[str, float]:
-    """RMS時系列から7スカラー統計量を算出しますわ！"""
-    mean_val = float(np.mean(rms))
-    std_val = float(np.std(rms))
-    peak_val = float(np.max(rms)) if len(rms) > 0 else 0.0
-    max_val = peak_val
-    min_val = float(np.min(rms)) if len(rms) > 0 else 0.0
-    median_val = float(np.median(rms)) if len(rms) > 0 else 0.0
-    abs_rms = np.abs(rms)
-    s = float(np.sum(abs_rms))
-    if s < 1e-10:
-        entropy_val = 0.0
-    else:
-        p = abs_rms / s
-        entropy_val = float(-np.sum(p * np.log2(p + 1e-10)))
-    return {
-        "mean": mean_val,
-        "std": std_val,
-        "peak": peak_val,
-        "max": max_val,
-        "min": min_val,
-        "median": median_val,
-        "entropy": entropy_val,
-    }
+    """RMS時系列から7スカラー統計量を算出しますわ！ Mor(R^T -> Stats7)"""
+    return envelope_stats7_morphism(rms)
 
 
 def extract_rms_obj(ctx: AudioContext) -> RmsFeatures:
@@ -53,6 +33,8 @@ def extract_rms_obj(ctx: AudioContext) -> RmsFeatures:
         entropy=stats["entropy"],
         seq=_resample_to_fixed_frames(safe_rms, FIXED_SEQ_FRAMES),
         peak=stats["peak"],
+        min=stats["min"],
+        median=stats["median"],
     )
 
 

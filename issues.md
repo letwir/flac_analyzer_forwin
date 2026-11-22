@@ -253,7 +253,7 @@
 
 - [ ] **中目標 P1-M1: 共通信号処理・統計純粋射 (`analyzer/common_signal.py`) の分離と既存欠落値の修復**
   - [x] `P1-M1-S1`: `analyzer/common_signal.py` を新設し、状態非依存の7統計量純粋射 `envelope_stats7_morphism` (mean, std, peak, max, min, median, entropy)、FFT 帯域分割射 `subband_energy_morphism`、相互相関ラグ射 `xcorr_lag_morphism`、減衰傾き射 `decay_slope_morphism` を実装する。
-  - [ ] `P1-M1-S2`: `analyzer/librosa_dsp.py` の `_build_raw_features` で `0.0` ハードコードされている `rms_min`, `rms_median`, `centroid_min`, `centroid_median` を `envelope_stats7_morphism` 経由の実測値へ接続する。
+  - [x] `P1-M1-S2`: `analyzer/librosa_dsp.py` の `_build_raw_features` で `0.0` ハードコードされている `rms_min`, `rms_median`, `centroid_min`, `centroid_median` を `envelope_stats7_morphism` 経由の実測値へ接続する。
   - [ ] `P1-M1-S3`: `analyzer/essentia_dsp.py:21` の `_calc_chord_sequence` における `"vocal"`（単数形）タイポを `"vocals"` に修正し、`vocals` ステムでコード列が `["C"]*32` 固定になるバグを解消する。
   - [ ] `P1-M1-S4`: `tests/test_common_signal.py` を作成し、純粋射の参照透過性・境界入力（空配列・無音・NaN/Inf 防御）および `"vocals"` コード列回帰テストを検証する。
 

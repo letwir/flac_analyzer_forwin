@@ -107,6 +107,8 @@ class SpectralCentroidFeatures:
     entropy: float
     seq: list[float]
     peak: float
+    min: float = 0.0
+    median: float = 0.0
 
 
 @dataclass
@@ -118,6 +120,8 @@ class RmsFeatures:
     entropy: float
     seq: list[float]
     peak: float
+    min: float = 0.0
+    median: float = 0.0
 
 
 @dataclass
