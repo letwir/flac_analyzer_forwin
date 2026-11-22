@@ -170,3 +170,99 @@ def decay_slope_morphism(
         "decay_db_per_sec": float(np.median(neg_diffs)),
         "sustain_ratio": sustain_ratio,
     }
+
+
+def _count_band_onset_peaks(env: np.ndarray, hop_sec: float) -> tuple[float, list[float]]:
+    """帯域 RMS 包絡の立ち上がり差分ピークから打撃密度 (hits/sec) と時刻リスト(s)を抽出しますわ！"""
+    if env.size < 4 or hop_sec <= 0.0:
+        return 0.0, []
+    diff = np.maximum(0.0, np.diff(env, prepend=env[0]))
+    peak_val = float(np.max(diff))
+    if peak_val <= _EPS:
+        return 0.0, []
+    thresh = max(peak_val * 0.2, float(np.mean(diff) + 1.5 * np.std(diff)))
+    min_gap_frames = max(1, int(round(0.08 / hop_sec)))
+    peaks: list[int] = []
+    for idx in range(1, diff.size - 1):
+        is_local = diff[idx] >= diff[idx - 1] and diff[idx] > diff[idx + 1] and diff[idx] >= thresh
+        if not is_local:
+            continue
+        if peaks and (idx - peaks[-1]) < min_gap_frames:
+            if diff[idx] > diff[peaks[-1]]:
+                peaks[-1] = idx
+            continue
+        peaks.append(idx)
+    dur_sec = float(env.size) * hop_sec
+    times = [float(p) * hop_sec for p in peaks]
+    return float(len(peaks) / max(dur_sec, _EPS)), times
+
+
+def drum_band_onset_morphism_Large(y: np.ndarray, sr: int) -> dict[str, float]:
+    """drums ステムを Kick(30-120Hz)/Snare(150-400Hz+1.5-4kHz)/HiHat(6-16kHz) へ帯域分解する純粋射ですわ！
+
+    Mor(R^N x SR -> DrumProfile): 打撃密度・帯域バランス・マイクロタイミング揺らぎ・トランジェント鋭さを算出いたしますの。
+    """
+    clean = _sanitize_1d_array(y)
+    if clean.size < 256 or sr <= 0:
+        return {
+            "kick_energy_ratio": 0.0,
+            "snare_energy_ratio": 0.0,
+            "hihat_energy_ratio": 0.0,
+            "kick_hits_per_sec": 0.0,
+            "snare_hits_per_sec": 0.0,
+            "hihat_hits_per_sec": 0.0,
+            "human_feel_std_ms": 0.0,
+            "transient_crest": 0.0,
+        }
+
+    hop_sec = 0.01
+    step = max(1, int(round(sr * hop_sec)))
+    n_frames = max(1, clean.size // step)
+    usable = n_frames * step
+    blocks = clean[:usable].reshape(n_frames, step).astype(np.float64)
+    # 10ms ブロックの高速 rFFT で 3 帯域 (Kick/Snare/HiHat) の短時間エネルギー時系列を同時算出するわ
+    spec = np.abs(np.fft.rfft(blocks, axis=1)) ** 2
+    freqs = np.fft.rfftfreq(step, d=1.0 / float(sr))
+
+    kick_mask = (freqs >= 30.0) & (freqs <= 120.0)
+    snare_mask = ((freqs >= 150.0) & (freqs <= 400.0)) | ((freqs >= 1500.0) & (freqs <= 4000.0))
+    hihat_mask = (freqs >= 6000.0) & (freqs <= 16000.0)
+
+    kick_env = np.sqrt(np.mean(spec[:, kick_mask], axis=1)) if np.any(kick_mask) else np.zeros(n_frames)
+    snare_env = np.sqrt(np.mean(spec[:, snare_mask], axis=1)) if np.any(snare_mask) else np.zeros(n_frames)
+    hihat_env = np.sqrt(np.mean(spec[:, hihat_mask], axis=1)) if np.any(hihat_mask) else np.zeros(n_frames)
+
+    kick_rate, kick_times = _count_band_onset_peaks(kick_env, hop_sec)
+    snare_rate, _ = _count_band_onset_peaks(snare_env, hop_sec)
+    hihat_rate, _ = _count_band_onset_peaks(hihat_env, hop_sec)
+
+    # マイクロタイミング揺らぎ: Kick 打撃間隔 (IOI) の中央値グリッドからの偏差標準偏差 (ms)
+    human_feel_ms = 0.0
+    if len(kick_times) >= 3:
+        iois = np.diff(np.asarray(kick_times, dtype=np.float64))
+        grid = float(np.median(iois))
+        if grid > _EPS:
+            human_feel_ms = float(np.std(iois - grid) * 1000.0)
+
+    total_rms = float(np.sqrt(np.mean(clean.astype(np.float64) ** 2)))
+    transient_crest = float(np.max(np.abs(clean)) / (total_rms + _EPS)) if total_rms > _EPS else 0.0
+    ratios = subband_energy_morphism(
+        clean,
+        sr,
+        {"kick": (30.0, 120.0), "snare_lo": (150.0, 400.0), "snare_hi": (1500.0, 4000.0), "hihat": (6000.0, 16000.0)},
+    )
+    return {
+        "kick_energy_ratio": float(ratios["kick_ratio"]),
+        "snare_energy_ratio": float(ratios["snare_lo_ratio"] + ratios["snare_hi_ratio"]),
+        "hihat_energy_ratio": float(ratios["hihat_ratio"]),
+        "kick_hits_per_sec": kick_rate,
+        "snare_hits_per_sec": snare_rate,
+        "hihat_hits_per_sec": hihat_rate,
+        "human_feel_std_ms": human_feel_ms,
+        "transient_crest": transient_crest,
+    }
+
+
+def drum_band_onset_morphism(y: np.ndarray, sr: int) -> dict[str, float]:
+    """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(R^N x SR -> DrumProfile)"""
+    return drum_band_onset_morphism_Large(y, sr)
