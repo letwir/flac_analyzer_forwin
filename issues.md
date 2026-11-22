@@ -286,11 +286,11 @@
   - [x] `P2-M2-S3`: `bass` ステムに `voiced_f0_contour_morphism(E1..E4)` と3帯域エネルギー分割射（**Sub-bass 20–60Hz / Mid-bass 60–250Hz / Harmonics-Attack 250–1500Hz 比**）および `decay_slope_morphism`（**サステイン/レガート vs スタッカート度**）を適用する。
   - [x] `P2-M2-S4`: 合成サイン波・FM ビブラート信号・矩形波ベース信号を用いた単体テスト `tests/test_vocal_and_bass_morphisms.py` を作成し、ビブラート周波数/深さと帯域比の理論値一致を検証する。
 
-- [ ] **中目標 P2-M3: `drums` / `guitar` / `piano` / `other` 楽器特化純粋射の実装**
+- [x] **中目標 P2-M3: `drums` / `guitar` / `piano` / `other` 楽器特化純粋射の実装**
   - [x] `P2-M3-S1`: `drums` 用に3帯域オンセット分解純粋射 `drum_band_onset_morphism`（Low 30–120Hz ≒ Kick, Mid 150–400Hz+1.5–4kHz ≒ Snare, High 6–16kHz ≒ HiHat）を実装し、各帯域の**打撃密度 (hits/sec)**、**Kick/Snare/HiHat バランス**、**マイクロタイミング揺らぎ（グリッド偏差＝打ち込み度 vs 生ドラム度）**、**トランジェント鋭さ**を算出する。
   - [x] `P2-M3-S2`: `drums` 低域包絡 × `bass` 包絡に `common_cross_stem.rhythm_pocket_and_ducking_morphism` を適用し、**Kick–Bass 時間ラグ [ms]**、**ポケット同期スコア**、**サイドチェイン・ダッキング強度**を算出する。
   - [x] `P2-M3-S3`: `guitar` / `piano` / `other` 用に純粋射 `harmonic_instrument_character_morphism` を実装し、`guitar` の**歪み度（高次倍音フラットネス＋Roughness＋クリッピング率）＆ストローク対単音リード比**、`piano` の**和音密度（クロマエントロピー）＆打鍵ベロシティ分散＆ペダル減衰**、`other` の **HPSS 調波/打撃比＆パッド持続度**を算出する。
-  - [ ] `P2-M3-S4`: `tests/test_instrument_specific_morphisms.py` を作成し、各楽器特化射の単体テストと計算時間を検証する。
+  - [x] `P2-M3-S4`: `tests/test_instrument_specific_morphisms.py` を作成し、各楽器特化射の単体テストと計算時間を検証する。
 
 ---
 
