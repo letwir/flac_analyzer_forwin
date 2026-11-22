@@ -18,7 +18,7 @@ from .types import EssentiaFeatures
 
 def _calc_chord_sequence(ctx: AudioContext) -> list[str]:
     """12Dクロマと24コードのピアソン相関から32フレームのコード名時系列を生成しますわ！"""
-    if ctx.source not in ("mix", "bass", "vocal", "piano", "guitar", "other"):
+    if ctx.source not in ("mix", "bass", "vocals", "piano", "guitar", "other"):
         return ["C" for _ in range(FIXED_SEQ_FRAMES)]
 
     try:
