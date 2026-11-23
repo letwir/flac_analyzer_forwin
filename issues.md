@@ -351,7 +351,7 @@ Known facts:
 `GPT-6.2 Sol` Verifier レビュー（全19件の安全性指摘）を統合した、v2 パイプライン高速化の本番計画である。各 Phase を中目標、各チケット (`PA-S1`..`PD-S2`) を小目標とし、小目標ごとに `go test ./...`・Python `unittest`・`GPT-6.2 Sol` Verifier 検証・修正・`issues.md` チェック・`git push origin v2`・`llm-mem.exe ingest` を完遂する。
 
 #### Phase A (中目標): 並行基盤・ライフタイム・Windows ハンドル安全化
-- [ ] **PA-S1**: `ShmArenaPool` の並列マップ競合修正と明示的リース返却 (`orchestrator/dispatcher/shm_windows.go`, `shm_windows_test.go`) — `sync.Mutex` + `inUse map[int]bool` + `ReleaseWorkerArenaSet(workerID int)` 導入、並列取得/解放/Close のストレステスト追加
+- [x] **PA-S1**: `ShmArenaPool` の並列マップ競合修正と明示的リース返却 (`orchestrator/dispatcher/shm_windows.go`, `shm_windows_test.go`) — `sync.Mutex` + `inUse map[int]bool` + `ReleaseWorkerArenaSet(workerID int)` 導入、並列取得/解放/Close のストレステスト追加
 - [ ] **PA-S2**: Wavefront 単一 teardown・`CleanupGPU` ターゲット固定・SHM->Disk 切替時ディスク残量再検証 (`orchestrator/dispatcher/pipeline_demucs.go`, `pipeline_features.go`, `admission.go`, `daemon_pool.go`) — `newStemWavefront` 直後の単一 `defer` 集約、解放済み/非ロック下での `CleanupGPU` 禁止と保持中の同クライアント直撃＋エラー時 retire、`RetainGpuDaemonIdle` 対応、SHM→Disk 昇格時の `diskKnown` ＆ 容量チェック
 - [ ] **PA-S3**: リクエスト単位キャッシュディレクトリ (`owner.json`・リパースポイント検査・死滅 PID 限定掃除) (`orchestrator/dispatcher/cache_dir.go`, `cache_dir_test.go`) — `CreateRequestCacheDir` / `RemoveRequestCacheDir` / `PurgeDeadOwnedCacheDirs` 実装と孤立削除防止テスト
 

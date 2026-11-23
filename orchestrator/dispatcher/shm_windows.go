@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"sync"
 	"syscall"
 	"unsafe"
 )
@@ -179,7 +180,7 @@ func UnlockMemory(addr uintptr, size uintptr) error {
 	}
 	retUnlock, _, errUnlock := procVirtualUnlock.Call(addr, size)
 	if retUnlock == 0 {
-		return fmt.Errorf("VirtualUnlock failed: %v", errUnlock)
+		return fmt.Errorf("VirtualUnlock failed: %w", errUnlock)
 	}
 	return nil
 }
@@ -198,6 +199,9 @@ func NewSharedMemory(name string, size uint32) (*SharedMemory, error) {
 	return NewSharedMemoryWithLock(name, size, true)
 }
 
+// NewSharedMemoryWithLock creates and maps a named Windows shared memory region.
+// If MapViewOfFile and rollback CloseHandle both fail, it returns a partial *SharedMemory
+// retaining the open handle so callers can retry Close() without leaking handles.
 func NewSharedMemoryWithLock(name string, size uint32, enableLock bool) (*SharedMemory, error) {
 	name16, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
@@ -213,7 +217,7 @@ func NewSharedMemoryWithLock(name string, size uint32, enableLock bool) (*Shared
 		uintptr(unsafe.Pointer(name16)),
 	)
 	if handle == 0 {
-		return nil, fmt.Errorf("CreateFileMappingW failed: %v", errStr)
+		return nil, fmt.Errorf("CreateFileMappingW failed: %w", errStr)
 	}
 
 	addr, _, errStr := procMapViewOfFile.Call(
@@ -224,8 +228,17 @@ func NewSharedMemoryWithLock(name string, size uint32, enableLock bool) (*Shared
 		uintptr(size),
 	)
 	if addr == 0 {
-		syscall.CloseHandle(syscall.Handle(handle))
-		return nil, fmt.Errorf("MapViewOfFile failed: %v", errStr)
+		mapErr := fmt.Errorf("MapViewOfFile failed: %w", errStr)
+		if closeErr := syscall.CloseHandle(syscall.Handle(handle)); closeErr != nil {
+			partial := &SharedMemory{
+				Name:       name,
+				Size:       size,
+				handle:     syscall.Handle(handle),
+				enableLock: enableLock,
+			}
+			return partial, errors.Join(mapErr, fmt.Errorf("rollback CloseHandle failed: %w", closeErr))
+		}
+		return nil, mapErr
 	}
 
 	var data []byte
@@ -272,7 +285,7 @@ func (shm *SharedMemory) Freeze() error {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return fmt.Errorf("VirtualProtect(PAGE_READONLY) failed: %v", errStr)
+		return fmt.Errorf("VirtualProtect(PAGE_READONLY) failed: %w", errStr)
 	}
 	return nil
 }
@@ -286,7 +299,7 @@ func (shm *SharedMemory) Unfreeze() error {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return fmt.Errorf("VirtualProtect(PAGE_READWRITE) failed: %v", errStr)
+		return fmt.Errorf("VirtualProtect(PAGE_READWRITE) failed: %w", errStr)
 	}
 	return nil
 }
@@ -303,10 +316,15 @@ func (shm *SharedMemory) EnsureCapacity(requiredSize uint32) error {
 
 	name := shm.Name
 	enableLock := shm.enableLock
-	_ = shm.Close()
+	if err := shm.Close(); err != nil {
+		return fmt.Errorf("close existing SHM before resize %s: %w", name, err)
+	}
 
 	newShm, err := NewSharedMemoryWithLock(name, requiredSize, enableLock)
 	if err != nil {
+		if newShm != nil {
+			*shm = *newShm
+		}
 		return err
 	}
 
@@ -315,33 +333,40 @@ func (shm *SharedMemory) EnsureCapacity(requiredSize uint32) error {
 }
 
 func (shm *SharedMemory) Close() error {
-	var lastErr error
+	var closeErrs []error
 	if shm.addr != 0 {
 		if shm.isLocked {
-			_ = UnlockMemory(shm.addr, uintptr(shm.Size))
-			shm.isLocked = false
+			if err := UnlockMemory(shm.addr, uintptr(shm.Size)); err != nil {
+				closeErrs = append(closeErrs, fmt.Errorf("VirtualUnlock failed: %w", err))
+			} else {
+				shm.isLocked = false
+			}
 		}
 		ret, _, errStr := procUnmapViewOfFile.Call(shm.addr)
 		if ret == 0 {
-			lastErr = fmt.Errorf("UnmapViewOfFile failed: %v", errStr)
+			closeErrs = append(closeErrs, fmt.Errorf("UnmapViewOfFile failed: %w", errStr))
+		} else {
+			shm.addr = 0
+			shm.data = nil
+			shm.isLocked = false
 		}
-		shm.addr = 0
-		shm.data = nil
 	}
 	if shm.handle != 0 {
-		err := syscall.CloseHandle(shm.handle)
-		if err != nil {
-			lastErr = fmt.Errorf("CloseHandle failed: %v", err)
+		if err := syscall.CloseHandle(shm.handle); err != nil {
+			closeErrs = append(closeErrs, fmt.Errorf("CloseHandle failed: %w", err))
+		} else {
+			shm.handle = 0
 		}
-		shm.handle = 0
 	}
-	return lastErr
+	return errors.Join(closeErrs...)
 }
 
 type WorkerArenaSet struct {
+	mu         sync.Mutex
 	WorkerID   int
 	arenas     map[string]*SharedMemory
 	enableLock bool
+	dirty      bool
 }
 
 func NewWorkerArenaSet(workerID int, enableLock bool) *WorkerArenaSet {
@@ -353,11 +378,18 @@ func NewWorkerArenaSet(workerID int, enableLock bool) *WorkerArenaSet {
 }
 
 func (w *WorkerArenaSet) GetOrCreateArena(stem string, requiredSize uint32) (*SharedMemory, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	shm, exists := w.arenas[stem]
 	if !exists {
 		tagName := fmt.Sprintf("Local\\FlacShm_W%d_%s", w.WorkerID, stem)
 		newShm, err := NewSharedMemoryWithLock(tagName, requiredSize, w.enableLock)
 		if err != nil {
+			if newShm != nil {
+				w.arenas[stem] = newShm
+				w.dirty = true
+			}
 			return nil, fmt.Errorf("failed to create initial SHM arena for stem %s (size %d): %w", stem, requiredSize, err)
 		}
 		w.arenas[stem] = newShm
@@ -365,21 +397,46 @@ func (w *WorkerArenaSet) GetOrCreateArena(stem string, requiredSize uint32) (*Sh
 	}
 
 	if err := shm.EnsureCapacity(requiredSize); err != nil {
+		if shm.handle != 0 || shm.addr != 0 {
+			w.dirty = true
+		}
 		return nil, fmt.Errorf("failed to ensure capacity for stem %s (size %d): %w", stem, requiredSize, err)
 	}
 	return shm, nil
 }
 
-func (w *WorkerArenaSet) FreezeAll() error {
-	for stem, shm := range w.arenas {
-		if err := shm.Freeze(); err != nil {
-			log.Printf("[WARN] [Worker %d] Failed to freeze SHM %s: %v", w.WorkerID, stem, err)
-		}
+func (w *WorkerArenaSet) FreezeStem(stem string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	arena, ok := w.arenas[stem]
+	if !ok {
+		return fmt.Errorf("missing SHM arena for published stem %q", stem)
+	}
+	if err := arena.Freeze(); err != nil {
+		return fmt.Errorf("freeze published stem %q: %w", stem, err)
 	}
 	return nil
 }
 
+func (w *WorkerArenaSet) FreezeAll() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	var freezeErrs []error
+	for stem, shm := range w.arenas {
+		if err := shm.Freeze(); err != nil {
+			log.Printf("[WARN] [Worker %d] Failed to freeze SHM %s: %v", w.WorkerID, stem, err)
+			freezeErrs = append(freezeErrs, fmt.Errorf("freeze SHM arena %s: %w", stem, err))
+		}
+	}
+	return errors.Join(freezeErrs...)
+}
+
 func (w *WorkerArenaSet) UnfreezeAll() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	var unfreezeErrs []error
 	for stem, shm := range w.arenas {
 		if err := shm.Unfreeze(); err != nil {
@@ -391,6 +448,9 @@ func (w *WorkerArenaSet) UnfreezeAll() error {
 }
 
 func (w *WorkerArenaSet) VerifyIntegrity(stems []string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	for _, stem := range stems {
 		shm, exists := w.arenas[stem]
 		if !exists {
@@ -446,6 +506,9 @@ func ExtractFlacStreaminfoMD5(filePath string) (string, error) {
 }
 
 func (w *WorkerArenaSet) GetTagsMap() map[string]string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	tags := make(map[string]string, len(w.arenas))
 	for stem, shm := range w.arenas {
 		tags[stem] = shm.Name
@@ -454,43 +517,204 @@ func (w *WorkerArenaSet) GetTagsMap() map[string]string {
 }
 
 func (w *WorkerArenaSet) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	var closeErrs []error
 	for stem, shm := range w.arenas {
 		if err := shm.Close(); err != nil {
 			closeErrs = append(closeErrs, fmt.Errorf("close SHM arena %s: %w", stem, err))
+			continue
 		}
 		delete(w.arenas, stem)
 	}
 	return errors.Join(closeErrs...)
 }
 
+// ArenaLease represents a uniquely-tokenized exclusive borrow of a WorkerArenaSet.
+// It is safe to copy by value; all copies share the underlying singleflight lease state.
+type ArenaLease struct {
+	pool  *ShmArenaPool
+	Set   *WorkerArenaSet
+	state *arenaLeaseState
+}
+
+// CloseAndRelease closes the leased arenas and releases the lease exactly once.
+// Concurrent or duplicate calls on the lease or copies share the single cleanup result.
+func (l *ArenaLease) CloseAndRelease() error {
+	if l == nil || l.pool == nil || l.state == nil {
+		return nil
+	}
+	return l.pool.releaseLeaseState(l.state)
+}
+
+type arenaLeaseState struct {
+	workerID int
+	token    uint64
+	set      *WorkerArenaSet
+	closing  bool
+	done     bool
+	err      error
+	waitCh   chan struct{}
+}
+
 type ShmArenaPool struct {
-	workers    map[int]*WorkerArenaSet
-	enableLock bool
+	mu           sync.Mutex
+	cond         *sync.Cond
+	workers      map[int]*WorkerArenaSet
+	active       map[int]*arenaLeaseState
+	nextToken    uint64
+	closed       bool
+	enableLock   bool
+	closeSetHook func(workerID int, set *WorkerArenaSet) error
+	waiterHook   func()
 }
 
 func NewShmArenaPool(enableLock bool) *ShmArenaPool {
-	return &ShmArenaPool{
+	p := &ShmArenaPool{
 		workers:    make(map[int]*WorkerArenaSet),
+		active:     make(map[int]*arenaLeaseState),
 		enableLock: enableLock,
 	}
+	p.cond = sync.NewCond(&p.mu)
+	return p
 }
 
-func (p *ShmArenaPool) GetWorkerArenaSet(workerID int) *WorkerArenaSet {
+func (p *ShmArenaPool) closeWorkerSet(workerID int, set *WorkerArenaSet) error {
+	if set == nil {
+		return nil
+	}
+	if p.closeSetHook != nil {
+		return p.closeSetHook(workerID, set)
+	}
+	return set.Close()
+}
+
+// AcquireArenaLease leases workerID's arena set with a monotonic ownership token.
+func (p *ShmArenaPool) AcquireArenaLease(workerID int) (*ArenaLease, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed {
+		return nil, fmt.Errorf("shm arena pool is closed")
+	}
+	if _, inUse := p.active[workerID]; inUse {
+		return nil, fmt.Errorf("worker arena set %d is already in use", workerID)
+	}
 	set, exists := p.workers[workerID]
+	if exists && set.dirty {
+		if err := p.closeWorkerSet(workerID, set); err != nil {
+			return nil, fmt.Errorf("retry cleanup of dirty worker arena set %d: %w", workerID, err)
+		}
+		set.dirty = false
+	}
 	if !exists {
 		set = NewWorkerArenaSet(workerID, p.enableLock)
 		p.workers[workerID] = set
 	}
-	return set
+	p.nextToken++
+	if p.nextToken == 0 {
+		p.nextToken = 1
+	}
+	tok := p.nextToken
+	st := &arenaLeaseState{
+		workerID: workerID,
+		token:    tok,
+		set:      set,
+		waitCh:   make(chan struct{}),
+	}
+	p.active[workerID] = st
+	return &ArenaLease{
+		pool:  p,
+		Set:   set,
+		state: st,
+	}, nil
 }
 
+func (p *ShmArenaPool) releaseLeaseState(st *arenaLeaseState) error {
+	p.mu.Lock()
+	if st.done {
+		err := st.err
+		p.mu.Unlock()
+		return err
+	}
+	if st.closing {
+		waitCh := st.waitCh
+		hook := p.waiterHook
+		p.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		<-waitCh
+		return st.err
+	}
+	activeSt, ok := p.active[st.workerID]
+	if !ok || activeSt != st {
+		st.done = true
+		p.mu.Unlock()
+		return st.err
+	}
+	st.closing = true
+	set := st.set
+	p.mu.Unlock()
+
+	closeErr := p.closeWorkerSet(st.workerID, set)
+
+	p.mu.Lock()
+	st.err = closeErr
+	st.closing = false
+	st.done = true
+	if closeErr != nil && set != nil {
+		set.dirty = true
+	}
+	delete(p.active, st.workerID)
+	close(st.waitCh)
+	if p.cond != nil {
+		p.cond.Broadcast()
+	}
+	p.mu.Unlock()
+	return closeErr
+}
+
+// CloseIdle closes any non-leased worker arena sets while leaving the pool open.
+func (p *ShmArenaPool) CloseIdle() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var closeErrs []error
+	for id, set := range p.workers {
+		if _, inUse := p.active[id]; inUse {
+			continue
+		}
+		if err := set.Close(); err != nil {
+			set.dirty = true
+			closeErrs = append(closeErrs, fmt.Errorf("close idle worker arena %d: %w", id, err))
+			continue
+		}
+		set.dirty = false
+		delete(p.workers, id)
+	}
+	return errors.Join(closeErrs...)
+}
+
+// Close stops new acquisitions, drains active leases, and closes all worker arena sets.
 func (p *ShmArenaPool) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.closed = true
+	for len(p.active) > 0 {
+		p.cond.Wait()
+	}
+
 	var closeErrs []error
 	for id, set := range p.workers {
 		if err := set.Close(); err != nil {
+			set.dirty = true
 			closeErrs = append(closeErrs, fmt.Errorf("close worker arena %d: %w", id, err))
+			continue
 		}
+		set.dirty = false
 		delete(p.workers, id)
 	}
 	return errors.Join(closeErrs...)

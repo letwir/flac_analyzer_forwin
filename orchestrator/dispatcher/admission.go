@@ -126,7 +126,9 @@ func (d *Dispatcher) evaluateMemoryPressure(load uint32, diskFallback bool) Memo
 		if d.arenaPool != nil {
 			d.allocMutex.Lock()
 			if atomic.LoadInt32(&d.activeTaskCount) == 0 {
-				d.arenaPool.Close()
+				if err := d.arenaPool.CloseIdle(); err != nil {
+					d.LogWarn("[Admission] idle SHM shrink failed: %v", err)
+				}
 			}
 			d.allocMutex.Unlock()
 		}

@@ -220,17 +220,13 @@ func mergeFeatureMap(dst, src map[string]interface{}) {
 }
 
 func freezeStemForWavefront(storageMode StorageMode, arenaSet *WorkerArenaSet, stem string) error {
-	if storageMode != StorageModeSHM || arenaSet == nil {
+	if storageMode != StorageModeSHM {
 		return nil
 	}
-	arena, ok := arenaSet.arenas[stem]
-	if !ok {
-		return fmt.Errorf("missing SHM arena for published stem %q", stem)
+	if arenaSet == nil {
+		return fmt.Errorf("missing SHM arena set for published stem %q", stem)
 	}
-	if err := arena.Freeze(); err != nil {
-		return fmt.Errorf("freeze published stem %q: %w", stem, err)
-	}
-	return nil
+	return arenaSet.FreezeStem(stem)
 }
 
 func waitForExecutionDelay(ctx context.Context, delay time.Duration) error {
@@ -256,7 +252,7 @@ func (d *Dispatcher) executeDemucsStage(
 	cacheDir string,
 	currentCfg Config,
 	stems []string,
-) (audioHash string, sampleRate int, stemInfos map[string]StemInfo, resultArenaSet *WorkerArenaSet, features *FeatureOutputs, retErr error) {
+) (audioHash string, sampleRate int, stemInfos map[string]StemInfo, resultArenaLease *ArenaLease, features *FeatureOutputs, retErr error) {
 	demucsTimeoutDur := ComputeAdaptiveTimeoutPure(
 		task,
 		currentCfg.DemucsTimeoutSec,
@@ -282,6 +278,7 @@ func (d *Dispatcher) executeDemucsStage(
 		}
 	}
 
+	var arenaLease *ArenaLease
 	var arenaSet *WorkerArenaSet
 	var tagsMap map[string]string
 	var allocError error
@@ -291,8 +288,12 @@ func (d *Dispatcher) executeDemucsStage(
 	}()
 	closeArenaOnError := func() {
 		if arenaSet != nil {
-			arenaCleanupErr = errors.Join(arenaCleanupErr, arenaSet.UnfreezeAll(), arenaSet.Close())
+			arenaCleanupErr = errors.Join(arenaCleanupErr, arenaSet.UnfreezeAll())
 			arenaSet = nil
+		}
+		if arenaLease != nil {
+			arenaCleanupErr = errors.Join(arenaCleanupErr, arenaLease.CloseAndRelease())
+			arenaLease = nil
 		}
 	}
 
@@ -304,8 +305,17 @@ func (d *Dispatcher) executeDemucsStage(
 		estimatedSize := uint32(EstimateShmSizeForTaskWithRatio(task, ratio))
 
 		shmAllocStart := time.Now()
+		var acquireErr error
+		arenaLease, acquireErr = d.arenaPool.AcquireArenaLease(id)
+		if acquireErr != nil {
+			return "", 0, nil, nil, nil, fmt.Errorf("acquire worker SHM arena lease: %w", acquireErr)
+		}
+		defer func() {
+			// Disarmed automatically on success when handedOffLease clears arenaLease/arenaSet.
+			closeArenaOnError()
+		}()
+		arenaSet = arenaLease.Set
 		d.allocMutex.Lock()
-		arenaSet = d.arenaPool.GetWorkerArenaSet(id)
 		for {
 			availPhysMem, err := GetAvailableMemory()
 			if err != nil {
@@ -340,7 +350,7 @@ func (d *Dispatcher) executeDemucsStage(
 			allocError = nil
 			for _, stem := range stems {
 				if _, err := arenaSet.GetOrCreateArena(stem, estimatedSize); err != nil {
-					allocError = fmt.Errorf("Failed to allocate/reuse SHM arena for %s (attempt %d/%d): %v", stem, attempt, retryCount, err)
+					allocError = fmt.Errorf("Failed to allocate/reuse SHM arena for %s (attempt %d/%d): %w", stem, attempt, retryCount, err)
 					break
 				}
 			}
@@ -406,10 +416,18 @@ func (d *Dispatcher) executeDemucsStage(
 	}
 	demucsStageStart := time.Now()
 
+	if d.demucsPool == nil {
+		closeArenaOnError()
+		return "", 0, nil, nil, nil, fmt.Errorf("Demucs daemon pool is not initialized")
+	}
 	demucsClient, dErr := d.demucsPool.Acquire(ctxDemucs)
 	if dErr != nil {
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("failed to acquire Demucs daemon for separation: %w", dErr)
+	}
+	if demucsClient == nil {
+		closeArenaOnError()
+		return "", 0, nil, nil, nil, fmt.Errorf("acquired nil Demucs daemon client")
 	}
 
 	generation := demucsWavefrontGeneration.Add(1)
@@ -505,23 +523,26 @@ func (d *Dispatcher) executeDemucsStage(
 	cpuResp, gpuResp, waveHash, waveSR, waveErr = wavefront.Wait()
 
 	var cleanupErr error
-	if err := d.gpuArbiter.Acquire(ctxPost); err == nil {
+	if d.gpuDaemonPool == nil {
+		cleanupErr = fmt.Errorf("GPU daemon pool is not initialized")
+	} else if d.gpuArbiter == nil {
+		cleanupErr = fmt.Errorf("GPU arbiter is not initialized")
+		d.gpuDaemonPool.TrimIdle(0)
+	} else if err := d.gpuArbiter.Acquire(ctxPost); err == nil {
 		gpuClient, err := d.gpuDaemonPool.Acquire(ctxPost)
-		if err == nil {
+		if err != nil {
+			cleanupErr = fmt.Errorf("acquire GPU daemon for cleanup: %w", err)
+		} else if gpuClient == nil {
+			cleanupErr = fmt.Errorf("acquired nil GPU daemon for cleanup")
+		} else {
 			cleanupErr = gpuClient.CleanupGPU(ctxPost)
 			d.gpuDaemonPool.Release(gpuClient)
-		} else {
-			cleanupErr = fmt.Errorf("acquire GPU daemon for cleanup: %w", err)
 		}
-		if d.gpuDaemonPool != nil {
-			d.gpuDaemonPool.TrimIdle(0)
-		}
+		d.gpuDaemonPool.TrimIdle(0)
 		d.gpuArbiter.Release()
 	} else {
 		cleanupErr = fmt.Errorf("acquire GPU arbiter for cleanup: %w", err)
-		if d.gpuDaemonPool != nil {
-			d.gpuDaemonPool.TrimIdle(0)
-		}
+		d.gpuDaemonPool.TrimIdle(0)
 	}
 
 	if sepErr != nil {
@@ -545,6 +566,10 @@ func (d *Dispatcher) executeDemucsStage(
 		return "", 0, nil, nil, nil, fmt.Errorf("GPU cleanup failed: %w", cleanupErr)
 	}
 
+	if sepResp == nil {
+		closeArenaOnError()
+		return "", 0, nil, nil, nil, fmt.Errorf("Demucs daemon separation returned nil response")
+	}
 	if sepResp.AudioHash != waveHash || sepResp.SR != waveSR {
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("final Demucs response does not match stem transfer metadata")
@@ -578,40 +603,70 @@ func (d *Dispatcher) executeDemucsStage(
 		}
 	}
 
-	return sepResp.AudioHash, demucsSR, sepResp.Stems, arenaSet, joinedFeatures, nil
+	// Handoff ownership of arenaLease to the caller now that all checks passed.
+	handedOffLease := arenaLease
+	arenaLease = nil
+	arenaSet = nil
+	return sepResp.AudioHash, demucsSR, sepResp.Stems, handedOffLease, joinedFeatures, nil
 }
 
 // executeMixOnlyStage decodes the original mix into one bounded backing area
 // and runs the feature lanes without invoking Demucs inference.
-func (d *Dispatcher) executeMixOnlyStage(id int, task TaskPayload, storageMode StorageMode, cacheDir string, cfg Config) (string, *FeatureOutputs, *WorkerArenaSet, error) {
+func (d *Dispatcher) executeMixOnlyStage(id int, task TaskPayload, storageMode StorageMode, cacheDir string, cfg Config) (audioHash string, features *FeatureOutputs, resultArenaLease *ArenaLease, retErr error) {
 	timeout := ComputeAdaptiveTimeoutPure(task, cfg.FeatureExtractTimeoutSec, cfg.AdaptiveTimeoutRatio, cfg.MaxAdaptiveTimeoutSec)
 	ctx, cancel := context.WithTimeout(d.currentExecutionContext(), timeout)
 	defer cancel()
 
+	var arenaLease *ArenaLease
 	var arenaSet *WorkerArenaSet
+	var arenaCleanupErr error
+	leaseHandedOff := false
+	closeOnError := func() {
+		if arenaSet != nil {
+			arenaCleanupErr = errors.Join(arenaCleanupErr, arenaSet.UnfreezeAll())
+			arenaSet = nil
+		}
+		if arenaLease != nil {
+			arenaCleanupErr = errors.Join(arenaCleanupErr, arenaLease.CloseAndRelease())
+			arenaLease = nil
+		}
+	}
+	defer func() {
+		if !leaseHandedOff {
+			closeOnError()
+		}
+		retErr = errors.Join(retErr, arenaCleanupErr)
+	}()
 	tags := map[string]string{}
 	if storageMode == StorageModeSHM {
 		ratio := cfg.ShmExpansionRatio
 		if ratio <= 0 {
 			ratio = 3.5
 		}
-		arenaSet = d.arenaPool.GetWorkerArenaSet(id)
+		var err error
+		arenaLease, err = d.arenaPool.AcquireArenaLease(id)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("acquire mix worker SHM arena lease: %w", err)
+		}
+		arenaSet = arenaLease.Set
 		if _, err := arenaSet.GetOrCreateArena("mix", uint32(EstimateShmSizeForTaskWithRatio(task, ratio))); err != nil {
-			arenaSet.Close()
+			closeOnError()
 			return "", nil, nil, fmt.Errorf("allocate mix SHM: %w", err)
 		}
 		tags = arenaSet.GetTagsMap()
 	}
-	closeOnError := func() {
-		if arenaSet != nil {
-			arenaSet.Close()
-			arenaSet = nil
-		}
+	if d.demucsPool == nil {
+		closeOnError()
+		return "", nil, nil, fmt.Errorf("decoder daemon pool is not initialized")
 	}
 	client, err := d.demucsPool.Acquire(ctx)
 	if err != nil {
 		closeOnError()
 		return "", nil, nil, fmt.Errorf("acquire decoder daemon: %w", err)
+	}
+	if client == nil {
+		closeOnError()
+		return "", nil, nil, fmt.Errorf("acquired nil decoder daemon client")
 	}
 	d.LogInfo("[DemucsQueue] Processing next queued item: %q", taskQueueLabel(task))
 	endSample := task.EndSample
@@ -627,16 +682,21 @@ func (d *Dispatcher) executeMixOnlyStage(id int, task TaskPayload, storageMode S
 		closeOnError()
 		return "", nil, nil, fmt.Errorf("decode raw mix: %w", err)
 	}
+	if response == nil {
+		closeOnError()
+		return "", nil, nil, fmt.Errorf("decode raw mix returned nil response")
+	}
 	if storageMode == StorageModeSHM {
 		if err := freezeStemForWavefront(storageMode, arenaSet, "mix"); err != nil {
 			closeOnError()
 			return "", nil, nil, err
 		}
 	}
-	features, err := d.executeFeaturesStage(response.SR, response.AudioHash, response.Stems, arenaSet, storageMode, task, cfg)
+	features, err = d.executeFeaturesStage(response.SR, response.AudioHash, response.Stems, arenaSet, storageMode, task, cfg)
 	if err != nil {
 		closeOnError()
 		return "", nil, nil, err
 	}
-	return response.AudioHash, features, arenaSet, nil
+	leaseHandedOff = true
+	return response.AudioHash, features, arenaLease, nil
 }

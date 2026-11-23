@@ -2,11 +2,15 @@ package dispatcher
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestSharedMemory(t *testing.T) {
@@ -14,10 +18,12 @@ func TestSharedMemory(t *testing.T) {
 	size := uint32(1024)
 
 	shm, err := NewSharedMemory(name, size)
+	if shm != nil {
+		t.Cleanup(func() { _ = shm.Close() })
+	}
 	if err != nil {
 		t.Fatalf("Failed to create shared memory: %v", err)
 	}
-	defer shm.Close()
 
 	t.Logf("SharedMemory created successfully. isLocked: %v", shm.isLocked)
 
@@ -53,10 +59,12 @@ func TestEnsureCapacity(t *testing.T) {
 	initialSize := uint32(512)
 
 	shm, err := NewSharedMemory(name, initialSize)
+	if shm != nil {
+		t.Cleanup(func() { _ = shm.Close() })
+	}
 	if err != nil {
 		t.Fatalf("Failed to create shared memory: %v", err)
 	}
-	defer shm.Close()
 
 	// Same or smaller capacity -> no-op reuse
 	if err := shm.EnsureCapacity(256); err != nil {
@@ -111,10 +119,12 @@ func TestVirtualLock(t *testing.T) {
 	size := uint32(8 * 1024 * 1024) // 8MB
 
 	shm, err := NewSharedMemoryWithLock(name, size, true)
+	if shm != nil {
+		t.Cleanup(func() { _ = shm.Close() })
+	}
 	if err != nil {
 		t.Fatalf("Failed to create shared memory: %v", err)
 	}
-	defer shm.Close()
 
 	if !shm.isLocked {
 		t.Errorf("Expected shm.isLocked to be true for 8MB SHM, got false")
@@ -143,12 +153,14 @@ func TestVirtualLock(t *testing.T) {
 func TestShmArenaPool(t *testing.T) {
 	_ = EnableProcessWorkingSetLock(256, 4096)
 	pool := NewShmArenaPool(true)
-	defer pool.Close()
+	t.Cleanup(func() { _ = pool.Close() })
 
-	worker1 := pool.GetWorkerArenaSet(1)
-	if worker1 == nil {
-		t.Fatalf("Expected worker1 arena set, got nil")
+	lease1, err := pool.AcquireArenaLease(1)
+	if err != nil || lease1 == nil || lease1.Set == nil {
+		t.Fatalf("Expected worker1 arena lease, got (%v, %v)", lease1, err)
 	}
+	t.Cleanup(func() { _ = lease1.CloseAndRelease() })
+	worker1 := lease1.Set
 
 	stems := []string{"mix", "bass", "drums", "vocals", "other", "guitar", "piano"}
 	for _, stem := range stems {
@@ -200,7 +212,12 @@ func TestShmArenaPool(t *testing.T) {
 		t.Fatalf("Expected mix size 4MB, got %d", shmMix.Size)
 	}
 
-	pool.Close()
+	if err := lease1.CloseAndRelease(); err != nil {
+		t.Fatalf("lease1.CloseAndRelease() failed: %v", err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatalf("pool.Close() failed: %v", err)
+	}
 	if len(worker1.arenas) != 0 {
 		t.Fatalf("Expected 0 arenas after pool close, got %d", len(worker1.arenas))
 	}
@@ -211,10 +228,12 @@ func TestShmPythonInterop(t *testing.T) {
 	size := uint32(1024 * 1024 * 4) // 4MB
 
 	shm, err := NewSharedMemory(name, size)
+	if shm != nil {
+		t.Cleanup(func() { _ = shm.Close() })
+	}
 	if err != nil {
 		t.Fatalf("Failed to create shared memory: %v", err)
 	}
-	defer shm.Close()
 
 	// 1. Python writes to SHM
 	pyWriteScript := `
@@ -384,5 +403,270 @@ func TestComputeAdaptiveTimeoutPure(t *testing.T) {
 	fileDur := ComputeAdaptiveTimeoutPure(fileTask, 300, 1.5, 7200)
 	if fileDur.Seconds() != 1200 { // 300 + 600 * 1.5 = 1200s (20 min)
 		t.Errorf("Expected 1200s for single FLAC file fallback, got %v", fileDur)
+	}
+}
+
+func TestShmArenaPoolConcurrentStress(t *testing.T) {
+	pool := NewShmArenaPool(false)
+
+	// Duplicate lease for the same worker ID must fail until released, and a stale
+	// lease handle must NOT release or close a subsequent owner's lease.
+	lease1, err := pool.AcquireArenaLease(42)
+	if err != nil || lease1 == nil {
+		t.Fatalf("first AcquireArenaLease failed: %v", err)
+	}
+	if _, err := lease1.Set.GetOrCreateArena("mix", 4096); err != nil {
+		t.Fatalf("lease1 GetOrCreateArena failed: %v", err)
+	}
+	if second, err := pool.AcquireArenaLease(42); err == nil || second != nil {
+		t.Fatalf("expected duplicate AcquireArenaLease to fail while in use")
+	}
+	if err := lease1.CloseAndRelease(); err != nil {
+		t.Fatalf("lease1 CloseAndRelease failed: %v", err)
+	}
+
+	lease2, err := pool.AcquireArenaLease(42)
+	if err != nil || lease2 == nil {
+		t.Fatalf("expected reacquisition after release, got (%v, %v)", lease2, err)
+	}
+	if _, err := lease2.Set.GetOrCreateArena("mix", 4096); err != nil {
+		t.Fatalf("lease2 GetOrCreateArena failed: %v", err)
+	}
+	// Stale CloseAndRelease on lease1 must be a safe no-op and leave lease2 intact.
+	if err := lease1.CloseAndRelease(); err != nil {
+		t.Fatalf("stale CloseAndRelease returned unexpected error: %v", err)
+	}
+	if err := lease2.Set.VerifyIntegrity([]string{"mix"}); err != nil {
+		t.Fatalf("stale lease corrupted active lease2 arenas: %v", err)
+	}
+	// CloseIdle must skip active lease2.
+	if err := pool.CloseIdle(); err != nil {
+		t.Fatalf("CloseIdle failed: %v", err)
+	}
+	if err := lease2.Set.VerifyIntegrity([]string{"mix"}); err != nil {
+		t.Fatalf("CloseIdle closed active lease2 arenas: %v", err)
+	}
+
+	// Same-set concurrent FreezeStem / UnfreezeAll / Close serialization.
+	var sameSetWG sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		sameSetWG.Add(1)
+		go func() {
+			defer sameSetWG.Done()
+			for k := 0; k < 25; k++ {
+				if err := lease2.Set.FreezeStem("mix"); err != nil {
+					t.Errorf("FreezeStem failed: %v", err)
+				}
+				if err := lease2.Set.FreezeAll(); err != nil {
+					t.Errorf("FreezeAll failed: %v", err)
+				}
+				if err := lease2.Set.UnfreezeAll(); err != nil {
+					t.Errorf("UnfreezeAll failed: %v", err)
+				}
+			}
+		}()
+	}
+	sameSetWG.Wait()
+
+	// Barrier-controlled singleflight cleanup failure & stale duplicate interleaving test:
+	// Worker 42 lease2 + shallow copy race CloseAndRelease while CloseIdle & Acquire attempt overlap.
+	errInjected := errors.New("injected close failure")
+	var failNext atomic.Bool
+	failNext.Store(true)
+	var cleanupCalls atomic.Int32
+	cleanupEntered := make(chan struct{}, 1)
+	cleanupRelease := make(chan struct{})
+	var releaseGateOnce sync.Once
+	releaseGate := func() {
+		releaseGateOnce.Do(func() { close(cleanupRelease) })
+	}
+	t.Cleanup(releaseGate)
+	waiterEntered := make(chan struct{}, 1)
+	pool.waiterHook = func() {
+		select {
+		case waiterEntered <- struct{}{}:
+		default:
+		}
+	}
+	pool.closeSetHook = func(workerID int, set *WorkerArenaSet) error {
+		if workerID == 42 && failNext.Load() {
+			cleanupCalls.Add(1)
+			select {
+			case cleanupEntered <- struct{}{}:
+			default:
+			}
+			<-cleanupRelease
+			return errInjected
+		}
+		return set.Close()
+	}
+
+	leaseCopy := *lease2
+	var dupErr1, dupErr2 error
+	var dupWG sync.WaitGroup
+	dupWG.Add(1)
+	go func() {
+		defer dupWG.Done()
+		dupErr1 = lease2.CloseAndRelease()
+	}()
+	select {
+	case <-cleanupEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("primary CloseAndRelease did not enter cleanup hook")
+	}
+
+	// While cleanup is blocked: duplicate concurrent CloseAndRelease must enter waiter path,
+	// and bounded AcquireArenaLease(42) / CloseIdle probes must complete without blocking on pool mutex.
+	dupWG.Add(1)
+	go func() {
+		defer dupWG.Done()
+		dupErr2 = leaseCopy.CloseAndRelease()
+	}()
+	select {
+	case <-waiterEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("duplicate CloseAndRelease did not enter concurrent waiter path")
+	}
+
+	acqProbeDone := make(chan error, 1)
+	go func() {
+		_, err := pool.AcquireArenaLease(42)
+		acqProbeDone <- err
+	}()
+	select {
+	case err := <-acqProbeDone:
+		if err == nil {
+			t.Fatalf("expected AcquireArenaLease(42) to fail while cleanup is in progress")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("AcquireArenaLease(42) probe timed out while cleanup was blocked")
+	}
+
+	idleProbeDone := make(chan error, 1)
+	go func() {
+		idleProbeDone <- pool.CloseIdle()
+	}()
+	select {
+	case err := <-idleProbeDone:
+		if err != nil {
+			t.Fatalf("CloseIdle should skip worker 42 while cleanup is in progress, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("CloseIdle probe timed out while cleanup was blocked")
+	}
+
+	releaseGate()
+	waitDone := make(chan struct{})
+	go func() {
+		dupWG.Wait()
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("dupWG timed out waiting for concurrent CloseAndRelease calls")
+	}
+	if !errors.Is(dupErr1, errInjected) || !errors.Is(dupErr2, errInjected) {
+		t.Fatalf("expected both concurrent callers to receive errInjected, got (%v, %v)", dupErr1, dupErr2)
+	}
+	if calls := cleanupCalls.Load(); calls != 1 {
+		t.Fatalf("expected singleflight cleanup count=1, got %d", calls)
+	}
+
+	// Dirty set must refuse reacquisition while retry cleanup still fails.
+	if _, err := pool.AcquireArenaLease(42); !errors.Is(err, errInjected) {
+		t.Fatalf("expected dirty worker 42 retry failure with errInjected, got %v", err)
+	}
+
+	// Allow cleanup retry to succeed and acquire lease3; stale leaseCopy.CloseAndRelease must still
+	// return the recorded failure for lease2 without corrupting lease3.
+	failNext.Store(false)
+	lease3, err := pool.AcquireArenaLease(42)
+	if err != nil || lease3 == nil {
+		t.Fatalf("reacquire lease3 after dirty cleanup succeeded failed: %v", err)
+	}
+	if _, err := lease3.Set.GetOrCreateArena("mix", 4096); err != nil {
+		t.Fatalf("lease3 GetOrCreateArena failed: %v", err)
+	}
+	if staleErr := leaseCopy.CloseAndRelease(); !errors.Is(staleErr, errInjected) {
+		t.Fatalf("expected stale leaseCopy.CloseAndRelease to preserve recorded errInjected, got %v", staleErr)
+	}
+	if err := lease3.Set.VerifyIntegrity([]string{"mix"}); err != nil {
+		t.Fatalf("stale leaseCopy corrupted active lease3 arenas: %v", err)
+	}
+
+	// Pool.Close must reject new acquisitions immediately and wait until active lease3 releases.
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- pool.Close()
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		tmpLease, err := pool.AcquireArenaLease(99)
+		if err != nil {
+			break
+		}
+		if err := tmpLease.CloseAndRelease(); err != nil {
+			t.Fatalf("unexpected CloseAndRelease failure on probe lease: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pool.Close did not reject new acquisitions promptly")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case err := <-closeDone:
+		t.Fatalf("pool.Close finished prematurely before active lease3 released: %v", err)
+	case <-time.After(40 * time.Millisecond):
+	}
+	if err := lease3.CloseAndRelease(); err != nil {
+		t.Fatalf("lease3 CloseAndRelease failed: %v", err)
+	}
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("pool.Close failed after active lease released: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("pool.Close timed out after active lease released")
+	}
+
+	// Multi-worker concurrent acquire / write / freeze / unfreeze / close stress.
+	stressPool := NewShmArenaPool(false)
+	defer stressPool.Close()
+	const workers = 12
+	const iterations = 20
+	var wg sync.WaitGroup
+	for w := 1; w <= workers; w++ {
+		workerID := w
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				lease, err := stressPool.AcquireArenaLease(workerID)
+				if err != nil {
+					t.Errorf("worker %d iter %d acquire failed: %v", workerID, i, err)
+					return
+				}
+				if _, err := lease.Set.GetOrCreateArena("mix", 4096); err != nil {
+					t.Errorf("worker %d iter %d create arena failed: %v", workerID, i, err)
+				}
+				if err := lease.Set.FreezeStem("mix"); err != nil {
+					t.Errorf("worker %d iter %d FreezeStem failed: %v", workerID, i, err)
+				}
+				_ = lease.Set.GetTagsMap()
+				if err := lease.Set.UnfreezeAll(); err != nil {
+					t.Errorf("worker %d iter %d UnfreezeAll failed: %v", workerID, i, err)
+				}
+				if err := lease.CloseAndRelease(); err != nil {
+					t.Errorf("worker %d iter %d CloseAndRelease failed: %v", workerID, i, err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if err := stressPool.Close(); err != nil {
+		t.Fatalf("final stressPool.Close() failed: %v", err)
 	}
 }

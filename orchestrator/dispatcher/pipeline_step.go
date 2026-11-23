@@ -26,7 +26,7 @@ func (d *Dispatcher) executeTaskPipeline(id int, task TaskPayload) {
 func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synchronousIngest bool) {
 	taskStartTime := time.Now()
 	taskSuccess := false
-	var arenaSet *WorkerArenaSet
+	var arenaLease *ArenaLease
 	var trackHash string
 	centralLease, centrallyAdmitted := d.takeTaskAdmission(task)
 	d.inFlightMutex.Lock()
@@ -40,7 +40,7 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	}()
 	defer func() {
 		cleanupErr := cleanupThenRelease(func() error {
-			return cleanupTaskResources(trackHash, &arenaSet)
+			return cleanupTaskResources(trackHash, &arenaLease)
 		}, func() {
 			if admitted {
 				d.releaseRamAdmission(task, admission)
@@ -112,9 +112,9 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	var wavefrontFeatures *FeatureOutputs
 	var demucsErr error
 	if executionPlan.Decision == MixOnly {
-		computedHash, wavefrontFeatures, arenaSet, demucsErr = d.executeMixOnlyStage(id, task, storageMode, cacheDir, currentCfg)
+		computedHash, wavefrontFeatures, arenaLease, demucsErr = d.executeMixOnlyStage(id, task, storageMode, cacheDir, currentCfg)
 	} else {
-		computedHash, demucsSR, demucsStems, arenaSet, wavefrontFeatures, demucsErr = d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
+		computedHash, demucsSR, demucsStems, arenaLease, wavefrontFeatures, demucsErr = d.executeDemucsStage(id, task, storageMode, cacheDir, currentCfg, stems)
 	}
 	if demucsErr != nil {
 		if errors.Is(demucsErr, ErrRetryableTimeout) {
@@ -138,7 +138,11 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	feats := wavefrontFeatures
 	if feats == nil {
 		var featErr error
-		feats, featErr = d.executeFeaturesStage(demucsSR, trackHash, demucsStems, arenaSet, storageMode, task, currentCfg)
+		var featArenaSet *WorkerArenaSet
+		if arenaLease != nil {
+			featArenaSet = arenaLease.Set
+		}
+		feats, featErr = d.executeFeaturesStage(demucsSR, trackHash, demucsStems, featArenaSet, storageMode, task, currentCfg)
 		if featErr != nil {
 			d.failTask(task, featErr.Error())
 			return
@@ -146,12 +150,13 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	}
 	// Feature extraction has closed its read handles, so release the producer
 	// mappings before tagging and ingestion continue.
-	if arenaSet != nil {
-		if err := arenaSet.Close(); err != nil {
-			d.failTask(task, fmt.Sprintf("close feature SHM: %v", err))
+	if arenaLease != nil {
+		closeErr := arenaLease.CloseAndRelease()
+		arenaLease = nil
+		if closeErr != nil {
+			d.failTask(task, fmt.Sprintf("close feature SHM: %v", closeErr))
 			return
 		}
-		arenaSet = nil
 	}
 	if err := cleanupCache(trackHash); err != nil {
 		d.failTask(task, fmt.Sprintf("remove task cache: %v", err))
@@ -183,13 +188,13 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	taskSuccess = true
 }
 
-func cleanupTaskResources(trackHash string, arenaSet **WorkerArenaSet) error {
+func cleanupTaskResources(trackHash string, arenaLease **ArenaLease) error {
 	var cleanupErrs []error
-	if arenaSet != nil && *arenaSet != nil {
-		if err := (*arenaSet).Close(); err != nil {
+	if arenaLease != nil && *arenaLease != nil {
+		if err := (*arenaLease).CloseAndRelease(); err != nil {
 			cleanupErrs = append(cleanupErrs, err)
 		}
-		*arenaSet = nil
+		*arenaLease = nil
 	}
 	if err := cleanupCache(trackHash); err != nil {
 		cleanupErrs = append(cleanupErrs, err)
