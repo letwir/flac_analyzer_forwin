@@ -3,28 +3,13 @@
 package dispatcher
 
 import (
-	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
-
-// cleanupCache deletes the temporary cache directory for a given track hash upon task termination.
-func cleanupCache(trackHash string) error {
-	if trackHash == "" {
-		return nil
-	}
-	cacheDir := filepath.Join(os.TempDir(), "flac_analyzer_cache", trackHash)
-	if _, err := os.Stat(cacheDir); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	return os.RemoveAll(cacheDir)
-}
 
 // cleanupQueueFiles removes intermediate JSON files generated for a task if it fails or aborts.
 func cleanupQueueFiles(queueDir, trackHash, baseName string) {
@@ -46,24 +31,13 @@ func cleanupQueueFiles(queueDir, trackHash, baseName string) {
 // PurgeOrphanedQueueAndCacheFiles cleans up old cache directories and stale intermediate JSON files.
 // SideEffectFn: PurgeOrphanedQueueAndCacheFiles
 func PurgeOrphanedQueueAndCacheFiles(queueDir string, maxAge time.Duration) {
-	// 1. Purge Temp cache directory
-	cacheRoot := filepath.Join(os.TempDir(), "flac_analyzer_cache")
-	entries, err := os.ReadDir(cacheRoot)
-	if err == nil {
-		now := time.Now()
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			dirPath := filepath.Join(cacheRoot, entry.Name())
-			info, infoErr := entry.Info()
-			if infoErr != nil {
-				continue
-			}
-			if now.Sub(info.ModTime()) > maxAge {
-				_ = os.RemoveAll(dirPath)
-			}
-		}
+	// 1. Purge Temp cache directory: dead-owner request dirs first, then legacy unowned dirs by age.
+	cacheRoot := DefaultCacheBaseDir()
+	if _, err := PurgeDeadOwnedCacheDirs(cacheRoot); err != nil {
+		log.Printf("[StorageDefense] dead-owned cache purge: %v", err)
+	}
+	if _, err := PurgeStaleUnownedCacheDirs(cacheRoot, maxAge); err != nil {
+		log.Printf("[StorageDefense] stale unowned cache purge: %v", err)
 	}
 
 	// 2. Purge stale queue JSON files

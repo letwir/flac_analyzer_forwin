@@ -190,7 +190,7 @@ func TestStemWavefrontPreservesParentCancellationCauseAndSubsequentRetirementErr
 	parentCtx, parentCancel := context.WithCancelCause(t.Context())
 	defer parentCancel(nil)
 
-	lifecycle, child, err := NewStemLifecycle(parentCtx, "request-parent-cause", 24, []string{"mix"}, 1, 1)
+	lifecycle, child, err := NewStemLifecycle(parentCtx, "request-parent-cause", 24, []string{"mix"}, 2, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

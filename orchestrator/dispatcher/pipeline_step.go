@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,6 +26,7 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	taskSuccess := false
 	var arenaLease *ArenaLease
 	var trackHash string
+	var requestCacheDir string
 	centralLease, centrallyAdmitted := d.takeTaskAdmission(task)
 	d.inFlightMutex.Lock()
 	admission, admitted := d.ramAdmissions[admissionKey(task)]
@@ -40,7 +39,7 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	}()
 	defer func() {
 		cleanupErr := cleanupThenRelease(func() error {
-			return cleanupTaskResources(trackHash, &arenaLease)
+			return cleanupTaskResources(requestCacheDir, &arenaLease)
 		}, func() {
 			if admitted {
 				d.releaseRamAdmission(task, admission)
@@ -96,12 +95,16 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 		}
 	}
 
-	cacheDir := filepath.Join(os.TempDir(), "flac_analyzer_cache", trackHash)
+	// Disk mode owns a unique request-scoped cache dir (owner.json); SHM mode needs none.
+	cacheDir := ""
 	if storageMode == StorageModeDisk {
-		if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		created, err := CreateRequestCacheDir(DefaultCacheBaseDir(), NewCacheRequestID())
+		if err != nil {
 			d.failTask(task, fmt.Sprintf("Failed to create disk cache dir: %v", err))
 			return
 		}
+		requestCacheDir = created
+		cacheDir = created
 		d.LogInfo("[W-%d] [DiskMode] Using SSD temp directory for stem spooling: %s", id, cacheDir)
 	}
 
@@ -154,10 +157,11 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 			return
 		}
 	}
-	if err := cleanupCache(trackHash); err != nil {
+	if err := cleanupRequestCacheDir(requestCacheDir); err != nil {
 		d.failTask(task, fmt.Sprintf("remove task cache: %v", err))
 		return
 	}
+	requestCacheDir = ""
 
 	// 4. Tagging & Queue Output Stage
 	if err := d.executeTaggerStage(id, task, trackHash, feats); err != nil {
@@ -184,7 +188,7 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	taskSuccess = true
 }
 
-func cleanupTaskResources(trackHash string, arenaLease **ArenaLease) error {
+func cleanupTaskResources(requestCacheDir string, arenaLease **ArenaLease) error {
 	var cleanupErrs []error
 	if arenaLease != nil && *arenaLease != nil {
 		if err := (*arenaLease).CloseAndRelease(); err != nil {
@@ -192,7 +196,7 @@ func cleanupTaskResources(trackHash string, arenaLease **ArenaLease) error {
 		}
 		*arenaLease = nil
 	}
-	if err := cleanupCache(trackHash); err != nil {
+	if err := cleanupRequestCacheDir(requestCacheDir); err != nil {
 		cleanupErrs = append(cleanupErrs, err)
 	}
 	return errors.Join(cleanupErrs...)
