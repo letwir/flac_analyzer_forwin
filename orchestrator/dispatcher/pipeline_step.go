@@ -138,11 +138,7 @@ func (d *Dispatcher) executeTaskPipelineWithMode(id int, task TaskPayload, synch
 	feats := wavefrontFeatures
 	if feats == nil {
 		var featErr error
-		var featArenaSet *WorkerArenaSet
-		if arenaLease != nil {
-			featArenaSet = arenaLease.Set
-		}
-		feats, featErr = d.executeFeaturesStage(demucsSR, trackHash, demucsStems, featArenaSet, storageMode, task, currentCfg)
+		feats, featErr = d.executeFeaturesStage(demucsSR, trackHash, demucsStems, &arenaLease, storageMode, task, currentCfg)
 		if featErr != nil {
 			d.failTask(task, featErr.Error())
 			return

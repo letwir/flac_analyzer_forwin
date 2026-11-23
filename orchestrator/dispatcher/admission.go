@@ -394,9 +394,6 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 	}
 
 	availDisk, diskKnown := availableTaskDisk(cfg, task)
-	if (storageMode == StorageModeDisk || minAvailRAM == 0 && diskBytes > 0) && !diskKnown {
-		return taskAdmissionPlan{}, fmt.Errorf("disk observation unavailable")
-	}
 	if !diskKnown {
 		availDisk = math.MaxUint64
 	}
@@ -424,16 +421,20 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 	if !ok {
 		return taskAdmissionPlan{}, fmt.Errorf("%w: host RAM plus shared-GPU safety reserve overflow", ErrPermanentBudgetExcess)
 	}
-	if taskRAM > budget && cfg.EnableDiskModeFallback && storageMode != StorageModeDisk {
-		storageMode = StorageModeDisk
-		taskRAM, ok = checkedAddUint64(estimate.DiskModeRamBytes, sharedGPUReserve)
-		if !ok {
-			return taskAdmissionPlan{}, fmt.Errorf("%w: disk-mode RAM plus shared-GPU safety reserve overflow", ErrPermanentBudgetExcess)
-		}
-		diskBytes = estimate.DiskBytes
-	}
-	if taskRAM > budget {
-		return taskAdmissionPlan{}, fmt.Errorf("%w: required RAM %d exceeds configured total-RAM budget %d (storage=%s; shared-GPU reserve=%d)", ErrPermanentBudgetExcess, taskRAM, budget, storageMode, sharedGPUReserve)
+	storageMode, taskRAM, diskBytes, err = applyPromotionAndValidateDiskPure(
+		storageMode,
+		estimate,
+		sharedGPUReserve,
+		taskRAM,
+		diskBytes,
+		budget,
+		availDisk,
+		gigabytesToBytes(cfg.MinAvailDiskGB),
+		diskKnown,
+		cfg.EnableDiskModeFallback,
+	)
+	if err != nil {
+		return taskAdmissionPlan{}, err
 	}
 
 	retryDelay := secondsToDuration(cfg.GatekeeperRetryDelaySec)
@@ -540,6 +541,7 @@ func (d *Dispatcher) reserveTaskAdmission(task TaskPayload) (AdmissionLease, err
 		return AdmissionLease{}, err
 	}
 	lease.StorageMode = planned.storageMode
+	lease.DiskTempBytes = planned.request.DiskTempBytes
 	ramLease, ok := d.reserveRamAdmission(task, ramAdmission{
 		storageMode: planned.storageMode,
 		ramBytes:    planned.request.HostRAMBytes,
@@ -582,14 +584,32 @@ func (d *Dispatcher) recheckTaskAdmissionBeforeDispatch(task TaskPayload, lease 
 		return err
 	}
 	availDisk, diskKnown := availableTaskDisk(cfg, task)
-	if lease.StorageMode == StorageModeDisk && !diskKnown {
-		return fmt.Errorf("last-mile disk observation unavailable")
+	if err := validateDiskModeCapacityPure(lease.StorageMode, diskKnown, availDisk, lease.DiskTempBytes, gigabytesToBytes(cfg.MinAvailDiskGB)); err != nil {
+		return fmt.Errorf("last-mile disk validation failed: %w", err)
 	}
 	if !diskKnown {
 		availDisk = math.MaxUint64
 	}
 	pressure := d.evaluateMemoryPressure(memInfo.MemoryLoad, cfg.EnableDiskModeFallback)
-	decision := EvaluateGoNoGoPure(GatekeeperInput{
+	decision := EvaluateGoNoGoPure(buildLastMileGatekeeperInputPure(cfg, memInfo, gpu, availDisk, diskKnown, pressure, lease))
+	if !decision.IsGo {
+		return fmt.Errorf("last-mile admission NOGO: %s", decision.Reason)
+	}
+	// GlobalMemoryStatusEx.AvailPhys already reflects current shared-GPU memory use.
+	// Do not subtract SharedUsedBytes or active reservations from it a second time.
+	return nil
+}
+
+func buildLastMileGatekeeperInputPure(
+	cfg Config,
+	memInfo *sysinfo.MemoryInfo,
+	gpu *sysinfo.GpuMetrics,
+	availDisk uint64,
+	diskKnown bool,
+	pressure MemoryPressureDecision,
+	lease AdmissionLease,
+) GatekeeperInput {
+	return GatekeeperInput{
 		StorageMode:         lease.StorageMode,
 		EstimatedTaskDisk:   lease.DiskTempBytes,
 		AvailPhys:           memInfo.AvailPhys,
@@ -609,13 +629,7 @@ func (d *Dispatcher) recheckTaskAdmissionBeforeDispatch(task TaskPayload, lease 
 		EnableGpuThrottle:   cfg.EnableGpuThrottle,
 		AllowHighMemoryDisk: pressure.ForceDisk,
 		RetryDelay:          secondsToDuration(cfg.GatekeeperRetryDelaySec),
-	})
-	if !decision.IsGo {
-		return fmt.Errorf("last-mile admission NOGO: %s", decision.Reason)
 	}
-	// GlobalMemoryStatusEx.AvailPhys already reflects current shared-GPU memory use.
-	// Do not subtract SharedUsedBytes or active reservations from it a second time.
-	return nil
 }
 
 func (d *Dispatcher) takeTaskAdmission(task TaskPayload) (AdmissionLease, bool) {
@@ -730,6 +744,55 @@ func estimateTaskAdmissionResources(task TaskPayload, numWorkers int, profile pl
 func validateSharedGPUMemoryObservation(gpu *sysinfo.GpuMetrics, now time.Time) error {
 	if gpu == nil || gpu.IsStale(now, sysinfo.DefaultGpuStaleThreshold) || !gpu.SharedUsageValid {
 		return fmt.Errorf("GPU shared-memory observation unavailable")
+	}
+	return nil
+}
+
+// applyPromotionAndValidateDiskPure promotes to StorageModeDisk under RAM budget pressure,
+// enforces the permanent RAM budget ceiling first (so transient disk checks never mask ErrPermanentBudgetExcess),
+// and then re-validates disk observation & free-space floor against DiskBytes.
+func applyPromotionAndValidateDiskPure(
+	storageMode StorageMode,
+	estimate planner.ResourceEstimate,
+	sharedGPUReserve uint64,
+	taskRAM uint64,
+	diskBytes uint64,
+	budget uint64,
+	availDisk uint64,
+	minAvailDisk uint64,
+	diskKnown bool,
+	enableDiskFallback bool,
+) (StorageMode, uint64, uint64, error) {
+	if taskRAM > budget && enableDiskFallback && storageMode != StorageModeDisk {
+		storageMode = StorageModeDisk
+		var ok bool
+		taskRAM, ok = checkedAddUint64(estimate.DiskModeRamBytes, sharedGPUReserve)
+		if !ok {
+			return storageMode, taskRAM, diskBytes, fmt.Errorf("%w: disk-mode RAM plus shared-GPU safety reserve overflow", ErrPermanentBudgetExcess)
+		}
+		diskBytes = estimate.DiskBytes
+	}
+	if taskRAM > budget {
+		return storageMode, taskRAM, diskBytes, fmt.Errorf("%w: required RAM %d exceeds configured total-RAM budget %d (storage=%s; shared-GPU reserve=%d)", ErrPermanentBudgetExcess, taskRAM, budget, storageMode, sharedGPUReserve)
+	}
+	if err := validateDiskModeCapacityPure(storageMode, diskKnown, availDisk, diskBytes, minAvailDisk); err != nil {
+		return storageMode, taskRAM, diskBytes, err
+	}
+	return storageMode, taskRAM, diskBytes, nil
+}
+func validateDiskModeCapacityPure(storageMode StorageMode, diskKnown bool, availDisk, diskBytes, minAvailDisk uint64) error {
+	if storageMode != StorageModeDisk && diskBytes == 0 {
+		return nil
+	}
+	if !diskKnown {
+		return fmt.Errorf("disk observation unavailable for disk mode")
+	}
+	requiredDisk, ok := checkedAddUint64(minAvailDisk, diskBytes)
+	if !ok {
+		return fmt.Errorf("%w: required disk estimate overflow", ErrPermanentBudgetExcess)
+	}
+	if availDisk < requiredDisk {
+		return fmt.Errorf("insufficient disk space for disk mode: avail=%d required=%d", availDisk, requiredDisk)
 	}
 	return nil
 }

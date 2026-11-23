@@ -37,6 +37,10 @@ type stemWavefront struct {
 	published map[string]struct{}
 	cpu       *DaemonResponse
 	gpu       *DaemonResponse
+
+	// parent is the caller-owned context whose cancellation cause must survive even when a
+	// local failure cancels the lifecycle child first. Optional.
+	parent context.Context
 }
 
 func newStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycle, cpuConsumers int, run func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)) (*stemWavefront, error) {
@@ -133,23 +137,38 @@ func (w *stemWavefront) Fail(err error) {
 }
 
 func (w *stemWavefront) fail(err error) {
+	if err == nil {
+		return
+	}
 	w.mu.Lock()
-	if w.err == nil {
+	firstFailure := w.err == nil
+	if firstFailure {
 		w.err = err
+	} else if !errors.Is(w.err, err) {
+		w.err = errors.Join(w.err, err)
 	}
 	w.mu.Unlock()
-	w.lifecycle.Fail(err)
+	if firstFailure {
+		w.lifecycle.Fail(err)
+	}
 }
 
 func (w *stemWavefront) Wait() (*DaemonResponse, *DaemonResponse, string, int, error) {
 	w.wg.Wait()
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	causeErr := context.Cause(w.ctx)
+	if w.parent != nil {
+		causeErr = joinWavefrontCause(causeErr, context.Cause(w.parent))
+	}
 	if w.err != nil {
+		if causeErr != nil && !errors.Is(w.err, causeErr) {
+			return nil, nil, "", 0, errors.Join(causeErr, w.err)
+		}
 		return nil, nil, "", 0, w.err
 	}
-	if err := context.Cause(w.ctx); err != nil {
-		return nil, nil, "", 0, err
+	if causeErr != nil {
+		return nil, nil, "", 0, causeErr
 	}
 	if w.trackHash == "" || w.sr <= 0 {
 		return nil, nil, "", 0, fmt.Errorf("Demucs completed without a published stem")
@@ -286,7 +305,13 @@ func (d *Dispatcher) executeDemucsStage(
 	defer func() {
 		retErr = errors.Join(retErr, arenaCleanupErr)
 	}()
+	retireTracker := &liveRetirementTracker{}
 	closeArenaOnError := func() {
+		if len(retireTracker.snapshot()) > 0 {
+			arenaSet = nil
+			arenaCleanupErr = errors.Join(arenaCleanupErr, transferOrCloseArenaLease(&arenaLease, retireTracker, d.LogError))
+			return
+		}
 		if arenaSet != nil {
 			arenaCleanupErr = errors.Join(arenaCleanupErr, arenaSet.UnfreezeAll())
 			arenaSet = nil
@@ -429,35 +454,65 @@ func (d *Dispatcher) executeDemucsStage(
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("acquired nil Demucs daemon client")
 	}
+	demucsClientReleased := false
+	defer func() {
+		if !demucsClientReleased {
+			d.demucsPool.Release(demucsClient)
+		}
+	}()
 
 	generation := demucsWavefrontGeneration.Add(1)
 	requestID := fmt.Sprintf("demucs-%d-%d", generation, time.Now().UnixNano())
 	lifecycle, waveCtx, err := NewStemLifecycle(ctxPost, requestID, generation, stems, 2, 1)
 	if err != nil {
-		d.demucsPool.Release(demucsClient)
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("create stem lifecycle: %w", err)
 	}
 	defer lifecycle.Close()
-	cpuConsumers := GetCPUConsumerCount(task, d.config.NumWorkers, len(stems))
-	wavefront, err := newStemWavefront(waveCtx, len(stems), lifecycle, cpuConsumers, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
+	cpuConsumers := GetCPUConsumerCount(task, d.GetConfig().NumWorkers, len(stems))
+	wavefrontCtx := withLiveRetirementTracker(waveCtx, retireTracker)
+	wavefront, err := newStemWavefront(wavefrontCtx, len(stems), lifecycle, cpuConsumers, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
 		return d.executeFeatureLane(ctx, lane, payload)
 	})
 	if err != nil {
-		d.demucsPool.Release(demucsClient)
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, err
 	}
+	wavefront.parent = ctxPost
 
+	var cpuResp, gpuResp *DaemonResponse
+	var waveHash string
+	var waveSR int
+	var waveErr error
+	var wavefrontTeardownOnce sync.Once
+	finishWavefront := func(cause error) {
+		wavefrontTeardownOnce.Do(func() {
+			if cause != nil {
+				wavefront.Fail(cause)
+			}
+			wavefront.CloseInput()
+			cpuResp, gpuResp, waveHash, waveSR, waveErr = wavefront.Wait()
+		})
+	}
+	defer func() {
+		finishWavefront(ErrStemTransition)
+	}()
+
+	if d.gpuArbiter == nil {
+		arbiterErr := fmt.Errorf("GPU arbiter is unavailable")
+		finishWavefront(arbiterErr)
+		closeArenaOnError()
+		return "", 0, nil, nil, nil, joinWavefrontCause(arbiterErr, waveErr)
+	}
 	gpuArbiterReleased := false
 	if err := d.gpuArbiter.Acquire(ctxDemucs); err != nil {
-		d.demucsPool.Release(demucsClient)
+		finishWavefront(err)
 		closeArenaOnError()
 		// Preserve context cancellation versus our own internal timeouts.
 		if errors.Is(err, context.DeadlineExceeded) {
-			return "", 0, nil, nil, nil, fmt.Errorf("%w: failed to acquire GPU arbiter: %w", ErrRetryableTimeout, err)
+			return "", 0, nil, nil, nil, joinWavefrontCause(fmt.Errorf("%w: failed to acquire GPU arbiter: %w", ErrRetryableTimeout, err), waveErr)
 		}
-		return "", 0, nil, nil, nil, err
+		return "", 0, nil, nil, nil, joinWavefrontCause(err, waveErr)
 	}
 	defer func() {
 		if !gpuArbiterReleased {
@@ -501,6 +556,7 @@ func (d *Dispatcher) executeDemucsStage(
 		gpuArbiterReleased = true
 	}
 	d.demucsPool.Release(demucsClient)
+	demucsClientReleased = true
 	if !demucsReleased {
 		d.demucsScheduler.Release()
 		demucsReleased = true
@@ -510,60 +566,17 @@ func (d *Dispatcher) executeDemucsStage(
 		leaseReleased = true
 	}
 
-	var cpuResp *DaemonResponse
-	var gpuResp *DaemonResponse
-	var waveHash string
-	var waveSR int
-	var waveErr error
+	finishWavefront(sepErr)
+	d.scheduleIdleGPUDaemonTrim()
 
 	if sepErr != nil {
-		wavefront.Fail(sepErr)
-	}
-	wavefront.CloseInput()
-	cpuResp, gpuResp, waveHash, waveSR, waveErr = wavefront.Wait()
-
-	var cleanupErr error
-	if d.gpuDaemonPool == nil {
-		cleanupErr = fmt.Errorf("GPU daemon pool is not initialized")
-	} else if d.gpuArbiter == nil {
-		cleanupErr = fmt.Errorf("GPU arbiter is not initialized")
-		d.gpuDaemonPool.TrimIdle(0)
-	} else if err := d.gpuArbiter.Acquire(ctxPost); err == nil {
-		gpuClient, err := d.gpuDaemonPool.Acquire(ctxPost)
-		if err != nil {
-			cleanupErr = fmt.Errorf("acquire GPU daemon for cleanup: %w", err)
-		} else if gpuClient == nil {
-			cleanupErr = fmt.Errorf("acquired nil GPU daemon for cleanup")
-		} else {
-			cleanupErr = gpuClient.CleanupGPU(ctxPost)
-			d.gpuDaemonPool.Release(gpuClient)
-		}
-		d.gpuDaemonPool.TrimIdle(0)
-		d.gpuArbiter.Release()
-	} else {
-		cleanupErr = fmt.Errorf("acquire GPU arbiter for cleanup: %w", err)
-		d.gpuDaemonPool.TrimIdle(0)
-	}
-
-	if sepErr != nil {
-		if cleanupErr != nil {
-			sepErr = fmt.Errorf("%w; additionally, GPU cleanup failed: %v", sepErr, cleanupErr)
-		}
 		closeArenaOnError()
-		return "", 0, nil, nil, nil, fmt.Errorf("Demucs daemon separation failed: %w", sepErr)
+		return "", 0, nil, nil, nil, combineDemucsWavefrontError(sepErr, waveErr)
 	}
 
 	if waveErr != nil {
-		if cleanupErr != nil {
-			waveErr = fmt.Errorf("%w; additionally, GPU cleanup failed: %v", waveErr, cleanupErr)
-		}
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, fmt.Errorf("post-inference stem wavefront failed: %w", waveErr)
-	}
-
-	if cleanupErr != nil {
-		closeArenaOnError()
-		return "", 0, nil, nil, nil, fmt.Errorf("GPU cleanup failed: %w", cleanupErr)
 	}
 
 	if sepResp == nil {
@@ -692,11 +705,30 @@ func (d *Dispatcher) executeMixOnlyStage(id int, task TaskPayload, storageMode S
 			return "", nil, nil, err
 		}
 	}
-	features, err = d.executeFeaturesStage(response.SR, response.AudioHash, response.Stems, arenaSet, storageMode, task, cfg)
+	features, err = d.executeFeaturesStage(response.SR, response.AudioHash, response.Stems, &arenaLease, storageMode, task, cfg)
 	if err != nil {
+		if arenaLease == nil {
+			// Ownership already transferred to async live-worker retirement waiter.
+			arenaSet = nil
+		}
 		closeOnError()
 		return "", nil, nil, err
 	}
 	leaseHandedOff = true
 	return response.AudioHash, features, arenaLease, nil
+}
+
+func joinWavefrontCause(primary, waveErr error) error {
+	if waveErr == nil || errors.Is(primary, waveErr) {
+		return primary
+	}
+	return errors.Join(primary, waveErr)
+}
+
+func combineDemucsWavefrontError(sepErr, waveErr error) error {
+	combined := fmt.Errorf("Demucs daemon separation failed: %w", sepErr)
+	if waveErr != nil && !errors.Is(sepErr, waveErr) {
+		return errors.Join(combined, fmt.Errorf("post-inference stem wavefront failed: %w", waveErr))
+	}
+	return combined
 }

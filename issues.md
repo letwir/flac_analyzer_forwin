@@ -352,9 +352,14 @@ Known facts:
 
 #### Phase A (中目標): 並行基盤・ライフタイム・Windows ハンドル安全化
 - [x] **PA-S1**: `ShmArenaPool` の並列マップ競合修正と明示的リース返却 (`orchestrator/dispatcher/shm_windows.go`, `shm_windows_test.go`) — `sync.Mutex` + `inUse map[int]bool` + `ReleaseWorkerArenaSet(workerID int)` 導入、並列取得/解放/Close のストレステスト追加
-- [ ] **PA-S2**: Wavefront 単一 teardown・`CleanupGPU` ターゲット固定・SHM->Disk 切替時ディスク残量再検証 (`orchestrator/dispatcher/pipeline_demucs.go`, `pipeline_features.go`, `admission.go`, `daemon_pool.go`) — `newStemWavefront` 直後の単一 `defer` 集約、解放済み/非ロック下での `CleanupGPU` 禁止と保持中の同クライアント直撃＋エラー時 retire、`RetainGpuDaemonIdle` 対応、SHM→Disk 昇格時の `diskKnown` ＆ 容量チェック
+- [x] **PA-S2** (**条件付き完了: Verifier 未 PASS、残件は下記「PA-S2 未解決事項」に記録**): Wavefront 単一 teardown・`CleanupGPU` ターゲット固定・SHM->Disk 切替時ディスク残量再検証 (`orchestrator/dispatcher/pipeline_demucs.go`, `pipeline_features.go`, `admission.go`, `daemon_pool.go`) — `newStemWavefront` 直後の単一 `defer` 集約、解放済み/非ロック下での `CleanupGPU` 禁止と保持中の同クライアント直撃＋エラー時 retire、`RetainGpuDaemonIdle` 対応、SHM→Disk 昇格時の `diskKnown` ＆ 容量チェック
 - [ ] **PA-S3**: リクエスト単位キャッシュディレクトリ (`owner.json`・リパースポイント検査・死滅 PID 限定掃除) (`orchestrator/dispatcher/cache_dir.go`, `cache_dir_test.go`) — `CreateRequestCacheDir` / `RemoveRequestCacheDir` / `PurgeDeadOwnedCacheDirs` 実装と孤立削除防止テスト
 
+#### PA-S2 未解決事項 (2026-11-23 / ユーザー指示「残件を未解決として先に進む」により記録)
+GPT-6.2 Sol Verifier は 6 ラウンド実施したが STATUS: PASS に到達していない。各ラウンドで新たな局所指摘が出続けたため、ユーザー判断で打ち切り。go vet ./dispatcher と go test -count=1 ./... は最終状態で全パッケージ PASS。
+- 第6ラウンド指摘 3 件（syncLogger の nil logger 時の遅延ティアダウン喪失、子先行キャンセル回帰テストの競合、トリムテストの cleanup 競合）は修正済みだが **修正後の Verifier 再検証は未実施**。
+- 未検証: Windows 実機でのハンドル/mmap 挙動、go test -race 結果（Verifier は静的レビューのみ）。
+- 方針: 非同期ロガー（有界・書式キー統合キュー）導入に起因する指摘が継続しているため、Phase D の最終統合 Verifier (PD-S2) で PA-S2 の変更範囲を再点検すること。
 #### Phase B (中目標): Feature #1 (`DownstreamTracks` 動的拡大・3層 Admission 台帳・有界ターン `GPUArbiter`)
 - [ ] **PB-S1**: 設定項目追加・1 GiB VRAM 下限統一・単一ファイル強制 cap=1 (`orchestrator/config/config.go`, `loader.go`, `loader_test.go`, `dispatcher/reload.go`) — `MaxDownstreamTracks`, `RetainGpuDaemonIdle`, `DiskCacheDir`, `SpectroCacheDir`, `SpectroCacheMinFreeGB` 追加およびホットリロード整合
 - [ ] **PB-S2**: `AdmissionController` 決定論的 cap 解決と3層ライフタイム台帳分離 (`orchestrator/dispatcher/admission.go`, `gatekeeper.go`, `admission_test.go`) — (1) Downstream Track Lease, (2) GPU Execution Grant, (3) Retained Residency の完全分離、キュー受理と起動時 GPU 空き判定の分離、`DownstreamTracks=4` ＆ ドレインテスト

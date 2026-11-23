@@ -59,6 +59,7 @@ type OrchestratorConfig struct {
 	DemucsTimeoutSec           int     `toml:"demucs_timeout_sec"`
 	AdaptiveTimeoutRatio       float64 `toml:"adaptive_timeout_ratio"`
 	MaxAdaptiveTimeoutSec      int     `toml:"max_adaptive_timeout_sec"`
+	RetainGpuDaemonIdle        *bool   `toml:"retain_gpu_daemon_idle"`
 }
 
 // Config represents the fully normalized, runtime-validated configuration domain object.
@@ -103,4 +104,5 @@ type Config struct {
 	DemucsTimeoutSec           int
 	AdaptiveTimeoutRatio       float64
 	MaxAdaptiveTimeoutSec      int
+	RetainGpuDaemonIdle        bool
 }

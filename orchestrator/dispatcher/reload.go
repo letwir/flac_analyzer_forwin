@@ -27,8 +27,6 @@ func (d *Dispatcher) GetConfig() Config {
 // SideEffectFn: UpdateConfig
 func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	d.configMu.Lock()
-	defer d.configMu.Unlock()
-
 	oldCfg := d.config
 	diff := make(map[string]string)
 
@@ -116,7 +114,18 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	if oldCfg.DiskModeRamThresholdRatio != newCfg.DiskModeRamThresholdRatio {
 		diff["disk_mode_ram_threshold_ratio"] = fmt.Sprintf("%.2f -> %.2f", oldCfg.DiskModeRamThresholdRatio, newCfg.DiskModeRamThresholdRatio)
 	}
+	if oldCfg.RetainGpuDaemonIdle != newCfg.RetainGpuDaemonIdle {
+		diff["retain_gpu_daemon_idle"] = fmt.Sprintf("%v -> %v", oldCfg.RetainGpuDaemonIdle, newCfg.RetainGpuDaemonIdle)
+	}
 
 	d.config = newCfg
+	if d.gpuDaemonPool != nil {
+		d.gpuDaemonPool.SetRetainIdle(newCfg.RetainGpuDaemonIdle)
+	}
+	d.configMu.Unlock()
+
+	if d.gpuDaemonPool != nil && !newCfg.RetainGpuDaemonIdle {
+		d.scheduleIdleGPUDaemonTrim()
+	}
 	return diff
 }

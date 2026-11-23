@@ -72,6 +72,18 @@ type Dispatcher struct {
 	demucsPool             *DemucsDaemonPool
 	demucsScheduler        *AdaptiveDemucsScheduler
 	gpuArbiter             *GPUArbiter
+	featureOps             *featureLaneOps
+	retainGpuDaemonIdleFn  func() bool
+	retireMu               sync.Mutex
+	pendingRetirements     map[*WorkerDaemonClient]struct{}
+	gpuTrimMu              sync.Mutex
+	gpuTrimCond            *sync.Cond
+	gpuTrimRunning         bool
+	gpuTrimPending         bool
+	gpuTrimStopping        bool
+	gpuTrimWg              sync.WaitGroup
+	trimCtx                context.Context
+	cancelTrimCtx          context.CancelFunc
 }
 
 func (d *Dispatcher) currentExecutionContext() context.Context {
@@ -142,7 +154,7 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		readyCapacity = 1
 	}
 
-	return &Dispatcher{
+	d := &Dispatcher{
 		config:                 cfg,
 		db:                     db,
 		pgDB:                   pgConn,
@@ -170,6 +182,8 @@ func NewDispatcher(cfg Config, db *state.DB) *Dispatcher {
 		demucsScheduler:        demucsScheduler,
 		gpuArbiter:             NewGPUArbiter(),
 	}
+	gpuDaemonPool.SetRetainIdle(cfg.RetainGpuDaemonIdle)
+	return d
 }
 
 func (d *Dispatcher) getLogLevel() LogLevel {
@@ -424,20 +438,31 @@ func (d *Dispatcher) Stop() {
 	d.cancelIngest()
 
 	// Phase 3: 全ての後続処理完了後にプールおよび DB コネクションを破棄
+	d.stopIdleGPUDaemonTrim()
 	if d.cpuDaemonPool != nil {
-		_ = d.cpuDaemonPool.Close()
+		if err := d.cpuDaemonPool.Close(); err != nil {
+			d.LogError("[Dispatcher] Failed to close CPU daemon pool during shutdown: %v", err)
+		}
 	}
 	if d.gpuDaemonPool != nil {
-		_ = d.gpuDaemonPool.Close()
+		if err := d.gpuDaemonPool.Close(); err != nil {
+			d.LogError("[Dispatcher] Failed to close GPU daemon pool during shutdown: %v", err)
+		}
 	}
 	if d.demucsPool != nil {
-		_ = d.demucsPool.Close()
+		if err := d.demucsPool.Close(); err != nil {
+			d.LogError("[Dispatcher] Failed to close Demucs daemon pool during shutdown: %v", err)
+		}
 	}
 	if d.arenaPool != nil {
-		d.arenaPool.Close()
+		if err := d.arenaPool.Close(); err != nil {
+			d.LogError("[Dispatcher] Failed to close SHM arena pool during shutdown: %v", err)
+		}
 	}
 	if d.pgDB != nil {
-		_ = d.pgDB.Close()
+		if err := d.pgDB.Close(); err != nil {
+			d.LogError("[Dispatcher] Failed to close PostgreSQL connection during shutdown: %v", err)
+		}
 	}
 }
 

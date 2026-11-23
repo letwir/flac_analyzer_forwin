@@ -195,6 +195,11 @@ func NormalizeConfig(
 		maxAdaptiveTimeoutSec = 7200
 	}
 
+	retainGpuDaemonIdle := false
+	if raw.Orchestrator.RetainGpuDaemonIdle != nil {
+		retainGpuDaemonIdle = *raw.Orchestrator.RetainGpuDaemonIdle
+	}
+
 	resolvedPythonEnv := ResolvePythonEnv(raw.PythonEnv, numCPU, effectiveWorkers)
 
 	return &Config{
@@ -238,6 +243,7 @@ func NormalizeConfig(
 		DemucsTimeoutSec:           demucsTimeoutSec,
 		AdaptiveTimeoutRatio:       adaptiveTimeoutRatio,
 		MaxAdaptiveTimeoutSec:      maxAdaptiveTimeoutSec,
+		RetainGpuDaemonIdle:        retainGpuDaemonIdle,
 	}
 }
 

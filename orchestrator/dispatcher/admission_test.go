@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -534,5 +535,205 @@ func TestAdmissionEstimateUsesDecisionStemsAndLongTrackCPUParallelism(t *testing
 	}
 	if consumers != 1 || long.CPUWorkingRamBytes == 0 {
 		t.Fatalf("long-track CPU profile=%+v consumers=%d", long, consumers)
+	}
+}
+
+func TestValidateDiskModeCapacityOnPromotionRevalidatesUnknownAndLowDisk(t *testing.T) {
+	// Unknown disk size must fail when promoted to StorageModeDisk even if sentinel MaxUint64 was held.
+	err := validateDiskModeCapacityPure(StorageModeDisk, false, ^uint64(0), 2<<30, 5<<30)
+	if err == nil || !strings.Contains(err.Error(), "disk observation unavailable") {
+		t.Fatalf("expected disk observation unavailable on unknown disk promotion, got %v", err)
+	}
+
+	// Insufficient disk capacity below minAvailDisk + diskBytes must fail.
+	err = validateDiskModeCapacityPure(StorageModeDisk, true, 6<<30, 2<<30, 5<<30)
+	if err == nil || !strings.Contains(err.Error(), "insufficient disk space") {
+		t.Fatalf("expected insufficient disk space error, got %v", err)
+	}
+
+	// Sufficient known disk capacity succeeds.
+	if err := validateDiskModeCapacityPure(StorageModeDisk, true, 8<<30, 2<<30, 5<<30); err != nil {
+		t.Fatalf("unexpected error with sufficient known disk space: %v", err)
+	}
+
+	// SHM mode ignores disk fallback gate.
+	if err := validateDiskModeCapacityPure(StorageModeSHM, false, ^uint64(0), 0, 5<<30); err != nil {
+		t.Fatalf("unexpected error in SHM mode: %v", err)
+	}
+
+	// Permanent RAM rejection must NOT be masked by low/unknown disk during SHM->Disk promotion.
+	est := planner.ResourceEstimate{DiskModeRamBytes: 10 << 30, DiskBytes: 2 << 30}
+	_, _, _, err = applyPromotionAndValidateDiskPure(
+		StorageModeSHM,
+		est,
+		1<<30,
+		12<<30,
+		0,
+		8<<30, // Promoted RAM (11 GiB) still > 8 GiB budget
+		1<<30, // Low disk
+		5<<30,
+		false, // Unknown disk
+		true,
+	)
+	if !errors.Is(err, ErrPermanentBudgetExcess) {
+		t.Fatalf("expected ErrPermanentBudgetExcess to take precedence over disk check, got %v", err)
+	}
+
+	// Forced Disk mode (pressure.ForceDisk) with unknown disk AND over-budget RAM must still surface ErrPermanentBudgetExcess.
+	_, _, _, err = applyPromotionAndValidateDiskPure(
+		StorageModeDisk,
+		est,
+		1<<30,
+		11<<30, // Already switched to StorageModeDisk by pressure.ForceDisk, still > 8 GiB budget
+		est.DiskBytes,
+		8<<30,
+		^uint64(0),
+		5<<30,
+		false, // Unknown disk must not mask permanent RAM excess
+		true,
+	)
+	if !errors.Is(err, ErrPermanentBudgetExcess) {
+		t.Fatalf("expected ErrPermanentBudgetExcess on ForceDisk + unknown disk + over-budget RAM, got %v", err)
+	}
+
+	// Non-Disk mode with diskBytes > 0 must reject unknown disk so MaxUint64 never leaks into capacity.
+	_, _, _, err = applyPromotionAndValidateDiskPure(
+		StorageModeSHM,
+		est,
+		1<<30,
+		4<<30,
+		1<<30,
+		8<<30,
+		^uint64(0),
+		5<<30,
+		false,
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), "disk observation unavailable") {
+		t.Fatalf("expected disk observation unavailable when non-Disk plan carries diskBytes > 0 and unknown disk, got %v", err)
+	}
+
+	// Full promotion path where promoted RAM fits <= budget: must enforce unknown / insufficient / sufficient disk checks.
+	fitEst := planner.ResourceEstimate{DiskModeRamBytes: 5 << 30, DiskBytes: 2 << 30}
+	_, _, _, err = applyPromotionAndValidateDiskPure(
+		StorageModeSHM,
+		fitEst,
+		1<<30,
+		10<<30, // > 8 GiB budget -> promotes to Disk (5+1 = 6 <= 8 GiB)
+		0,
+		8<<30,
+		^uint64(0),
+		5<<30,
+		false, // Unknown disk
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), "disk observation unavailable") {
+		t.Fatalf("expected unknown disk error after fitting promotion, got %v", err)
+	}
+
+	_, _, _, err = applyPromotionAndValidateDiskPure(
+		StorageModeSHM,
+		fitEst,
+		1<<30,
+		10<<30,
+		0,
+		8<<30,
+		6<<30, // < 5 + 2 = 7 GiB required
+		5<<30,
+		true,
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), "insufficient disk space") {
+		t.Fatalf("expected insufficient disk error after fitting promotion, got %v", err)
+	}
+
+	promotedMode, promotedRAM, promotedDisk, err := applyPromotionAndValidateDiskPure(
+		StorageModeSHM,
+		fitEst,
+		1<<30,
+		10<<30,
+		0,
+		8<<30,
+		8<<30, // >= 5 + 2 = 7 GiB required
+		5<<30,
+		true,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("expected fitting promotion with sufficient disk space to succeed, got %v", err)
+	}
+	if promotedMode != StorageModeDisk || promotedRAM != 6<<30 || promotedDisk != fitEst.DiskBytes {
+		t.Fatalf("unexpected promoted plan: mode=%s ram=%d disk=%d", promotedMode, promotedRAM, promotedDisk)
+	}
+}
+
+func TestPromotedDiskTaskLeasePreservesDiskTempBytesOnLastMileRecheck(t *testing.T) {
+	fitEst := planner.ResourceEstimate{DiskModeRamBytes: 5 << 30, DiskBytes: 2 << 30}
+	promotedMode, promotedRAM, promotedDisk, err := applyPromotionAndValidateDiskPure(
+		StorageModeSHM,
+		fitEst,
+		1<<30,
+		10<<30, // Exceeds 8 GiB RAM budget -> promotes to Disk
+		0,
+		8<<30,
+		8<<30, // 8 GiB free disk >= 5 GiB floor + 2 GiB estimate
+		5<<30,
+		true,
+		true,
+	)
+	if err != nil {
+		t.Fatalf("expected SHM->Disk promotion to succeed with 8 GiB free disk, got %v", err)
+	}
+
+	controller, err := NewAdmissionController(AdmissionCapacity{
+		HostRAMBytes:     16 << 30,
+		DownstreamTracks: 1,
+		DiskTempBytes:    16 << 30,
+	})
+	if err != nil {
+		t.Fatalf("NewAdmissionController failed: %v", err)
+	}
+	lease, err := controller.AtomicReserve(AdmissionPlan{
+		HostRAMBytes:     promotedRAM,
+		DiskTempBytes:    promotedDisk,
+		DownstreamTracks: 1,
+	})
+	if err != nil {
+		t.Fatalf("AtomicReserve failed: %v", err)
+	}
+	defer controller.Release(lease)
+	lease.StorageMode = promotedMode
+	if lease.DiskTempBytes != fitEst.DiskBytes || lease.DiskTempBytes == 0 {
+		t.Fatalf("expected reserved lease DiskTempBytes=%d, got %d", fitEst.DiskBytes, lease.DiskTempBytes)
+	}
+
+	cfg := Config{
+		MinAvailRamGB:          2,
+		MinAvailDiskGB:         5,
+		MinAvailVramGB:         1,
+		EstimatedDemucsVramGB:  1,
+		MaxGpuUtilizationRatio: 0.9,
+		GatekeeperRetryDelaySec: 5,
+	}
+	memInfo := &sysinfo.MemoryInfo{TotalPhys: 32 << 30, AvailPhys: 16 << 30, MemoryLoad: 50}
+	gpu := &sysinfo.GpuMetrics{
+		DedicatedTotalBytes:     8 << 30,
+		AvailableVramBytes:      6 << 30,
+		DedicatedCapacityValid:  true,
+		DedicatedAvailableValid: true,
+		SharedUsageValid:        true,
+		CollectedAt:             time.Now(),
+	}
+
+	// Initially sufficient free disk (8 GiB >= 5 GiB floor + 2 GiB DiskTempBytes) passes last-mile check.
+	initial := EvaluateGoNoGoPure(buildLastMileGatekeeperInputPure(cfg, memInfo, gpu, 8<<30, true, MemoryPressureDecision{}, lease))
+	if !initial.IsGo {
+		t.Fatalf("expected initial last-mile recheck to pass with 8 GiB disk, got reason=%s", initial.Reason)
+	}
+
+	// Free disk drops to 6 GiB (> 5 GiB floor alone, < 5 GiB floor + 2 GiB DiskTempBytes): MUST reject!
+	lowered := EvaluateGoNoGoPure(buildLastMileGatekeeperInputPure(cfg, memInfo, gpu, 6<<30, true, MemoryPressureDecision{}, lease))
+	if lowered.IsGo {
+		t.Fatalf("expected last-mile recheck to reject promoted Disk task at 6 GiB avail (< 5 GiB floor + %d B DiskTempBytes), got GO", lease.DiskTempBytes)
 	}
 }
