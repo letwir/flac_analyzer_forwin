@@ -345,3 +345,27 @@ Known facts:
 - `analyzer/essentia_dsp.py:21` は `"vocal"` タイポにより `"vocals"` ステムのコード列が `["C"]*32` 固定になっている。
 - `analyzer/librosa_dsp.py:351-471` の `STEM_CONFIGS` は7エントリ完全同一コピーであり、`common_dispatch.py` の関手ルーティングへ置換する。
 ```
+
+### 15. 遊休ホストRAM (103GB) 高速化・DownstreamTracks 拡大・GPU STFT RAMDisk スピルオーバー計画 (Phase A–D)
+
+`GPT-6.2 Sol` Verifier レビュー（全19件の安全性指摘）を統合した、v2 パイプライン高速化の本番計画である。各 Phase を中目標、各チケット (`PA-S1`..`PD-S2`) を小目標とし、小目標ごとに `go test ./...`・Python `unittest`・`GPT-6.2 Sol` Verifier 検証・修正・`issues.md` チェック・`git push origin v2`・`llm-mem.exe ingest` を完遂する。
+
+#### Phase A (中目標): 並行基盤・ライフタイム・Windows ハンドル安全化
+- [ ] **PA-S1**: `ShmArenaPool` の並列マップ競合修正と明示的リース返却 (`orchestrator/dispatcher/shm_windows.go`, `shm_windows_test.go`) — `sync.Mutex` + `inUse map[int]bool` + `ReleaseWorkerArenaSet(workerID int)` 導入、並列取得/解放/Close のストレステスト追加
+- [ ] **PA-S2**: Wavefront 単一 teardown・`CleanupGPU` ターゲット固定・SHM->Disk 切替時ディスク残量再検証 (`orchestrator/dispatcher/pipeline_demucs.go`, `pipeline_features.go`, `admission.go`, `daemon_pool.go`) — `newStemWavefront` 直後の単一 `defer` 集約、解放済み/非ロック下での `CleanupGPU` 禁止と保持中の同クライアント直撃＋エラー時 retire、`RetainGpuDaemonIdle` 対応、SHM→Disk 昇格時の `diskKnown` ＆ 容量チェック
+- [ ] **PA-S3**: リクエスト単位キャッシュディレクトリ (`owner.json`・リパースポイント検査・死滅 PID 限定掃除) (`orchestrator/dispatcher/cache_dir.go`, `cache_dir_test.go`) — `CreateRequestCacheDir` / `RemoveRequestCacheDir` / `PurgeDeadOwnedCacheDirs` 実装と孤立削除防止テスト
+
+#### Phase B (中目標): Feature #1 (`DownstreamTracks` 動的拡大・3層 Admission 台帳・有界ターン `GPUArbiter`)
+- [ ] **PB-S1**: 設定項目追加・1 GiB VRAM 下限統一・単一ファイル強制 cap=1 (`orchestrator/config/config.go`, `loader.go`, `loader_test.go`, `dispatcher/reload.go`) — `MaxDownstreamTracks`, `RetainGpuDaemonIdle`, `DiskCacheDir`, `SpectroCacheDir`, `SpectroCacheMinFreeGB` 追加およびホットリロード整合
+- [ ] **PB-S2**: `AdmissionController` 決定論的 cap 解決と3層ライフタイム台帳分離 (`orchestrator/dispatcher/admission.go`, `gatekeeper.go`, `admission_test.go`) — (1) Downstream Track Lease, (2) GPU Execution Grant, (3) Retained Residency の完全分離、キュー受理と起動時 GPU 空き判定の分離、`DownstreamTracks=4` ＆ ドレインテスト
+- [ ] **PB-S3**: 有界ターン `GPUArbiter` による Demucs/Feature GPU 調停 (`orchestrator/dispatcher/gpu_arbiter.go`, `gpu_arbiter_test.go`, `pipeline_demucs.go`, `pipeline_features.go`) — `AcquireDemucs`, `AcquireFeatureBatch`, `RegisterPostDemucsFeatureTurn` 実装により最古の Demucs 待機前に Feature を最大1ターンだけ優先し自己デッドロックを根絶
+
+#### Phase C (中目標): Feature #2 (CPU専用 GPU チャンク STFT `*.spectro.npy`・Per-Volume 容量台帳・2段 Wavefront)
+- [ ] **PC-S1**: CPU 専用チャンク化 GPU STFT と決定的 `mmap` クローズ (`analyzer/tensor_dsp.py`, `worker_gpu_daemon.py`, `analyzer/core.py`, `tests/test_spectro_cache_parity.py`) — `T = 1 + N // 512`, `center=False`, `periodic=True` Hann 窓、`open_memmap` flush+close→`os.replace`、2048→1024 OOM リトライ、`extract_tensor_features` 1024-reflect 不変性維持、`AudioContext` の形状/dtype検証と `mmap` 完全解放
+- [ ] **PC-S2**: Per-Volume バイト予約台帳とキャッシュ掃除連動 (`orchestrator/dispatcher/volume_budget.go`, `volume_budget_test.go`, `admission.go`) — `DiskCacheDir` / `SpectroCacheDir` の原子予約・解放・残量ガード
+- [ ] **PC-S3**: `SpectroCacheOutcome` と 2段 Wavefront (`gpuJobs` -> `cpuJobs`) 統合 (`orchestrator/dispatcher/daemon.go`, `pipeline_demucs.go`, `pipeline_demucs_test.go`) — 単一クローズ所有者、`mix -> vocals` 順序保証、CPU STFT 自動フォールバック、`Wait()` 後のキャッシュ削除
+
+#### Phase D (中目標): 実測ベンチマーク＆ロールアウトゲート・最終監査・完了記録
+- [ ] **PD-S1**: `testFLAC/*` 実音声によるロールアウトゲート＆ベンチマーク検証 (`tests/test_phase_d_rollout_gate.py`) — `DownstreamTracks 1 vs 4` および `SpectroCache OFF vs ON` の JSON 特徴量完全一致・CUDA VRAM ピーク・ホスト RSS・孤立ファイルゼロ確認
+- [ ] **PD-S2**: Phase A–D 結合最終監査・ドキュメント＆ `llm-memory` 永続化 (`issues.md`, `memo/20261123-v2-phase-ad-complete/*`) — 全 Go/Python テスト完走、統合 `GPT-6.2 Sol` Verifier 承認、`issues.md` 全チェック、`origin/v2` プッシュ、`llm-mem.exe ingest` ＆ `eval` 完了
+
