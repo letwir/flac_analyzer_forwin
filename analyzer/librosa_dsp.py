@@ -10,6 +10,8 @@ from typing import Any
 
 import librosa
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
+from scipy.signal import find_peaks
 
 from constants import KEY_PROFILES, NOTES
 from .types_features import (
@@ -169,7 +171,7 @@ def extract_spectral_centroid_sd(ctx: AudioContext) -> float:
 
 
 def extract_section_Large(ctx: AudioContext) -> SectionFeatures:
-    """Onset 強度の局所 RMS 変化点からセクション数・セクション長標準偏差・ドロップ位置を算出しますわ！"""
+    """固定物理時間スケールの Onset-RMS 平滑化と prominence 閾値付きピーク検出で音楽構造セクションを算出しますわ！"""
     if ctx.source != "mix":
         return SectionFeatures()
 
@@ -177,43 +179,59 @@ def extract_section_Large(ctx: AudioContext) -> SectionFeatures:
     if onset_env is None or len(onset_env) < 20:
         return SectionFeatures()
 
+    duration_sec = float(len(ctx.y) / ctx.sr) if (ctx.y is not None and ctx.sr > 0) else 0.0
+    if duration_sec <= 0.0 or float(np.max(onset_env)) <= 1e-8:
+        return SectionFeatures(section_count=1, section_length_std=0.0, drop_position=0.0)
+
     n_frames = len(onset_env)
     drop_position = float(np.argmax(onset_env)) / max(n_frames, 1)
 
-    window = max(int(n_frames * 0.05), 10)
-    hop_frames = max(1, window // 2)
-    local_rms = np.array(
-        [
-            float(np.sqrt(np.mean(onset_env[max(0, i - window) : i + window] ** 2)))
-            for i in range(0, n_frames, hop_frames)
-        ],
-        dtype=np.float32,
+    fps = float(ctx.sr) / 512.0
+    block_sec = 2.0 if duration_sec >= 16.0 else max(0.5, duration_sec / 16.0)
+    block_frames = max(1, int(round(block_sec * fps)))
+    n_blocks = max(1, int(round(n_frames / float(block_frames))))
+    if n_blocks < 4:
+        return SectionFeatures(section_count=1, section_length_std=0.0, drop_position=drop_position)
+
+    # 100% 全フレームを等分割してブロック RMS 輪郭を構築し、ガウス平滑化するわ
+    edges = np.linspace(0, n_frames, n_blocks + 1, dtype=np.int64)
+    sq = np.asarray(onset_env, dtype=np.float64) ** 2
+    local_rms = np.sqrt(np.add.reduceat(sq, edges[:-1]) / np.maximum(1, np.diff(edges)))
+    smooth_rms = gaussian_filter1d(local_rms, sigma=1.0)
+
+    diffs = np.abs(np.diff(smooth_rms))
+    rms_scale = float(np.mean(smooth_rms))
+    if rms_scale <= 1e-6 or float(np.max(diffs)) <= max(rms_scale * 0.08, 1e-5):
+        return SectionFeatures(section_count=1, section_length_std=0.0, drop_position=drop_position)
+
+    diff_med = float(np.median(diffs))
+    diff_std = float(np.std(diffs))
+    min_section_sec = min(15.0, max(4.0, duration_sec * 0.12))
+    min_dist_blocks = max(1, int(round(min_section_sec / block_sec)))
+    height_thresh = max(diff_med + 1.2 * diff_std, rms_scale * 0.12)
+    prom_thresh = max(0.8 * diff_std, rms_scale * 0.08)
+
+    peaks, props = find_peaks(
+        diffs,
+        height=height_thresh,
+        prominence=prom_thresh,
+        distance=min_dist_blocks,
     )
+    if len(peaks) == 0:
+        return SectionFeatures(section_count=1, section_length_std=0.0, drop_position=drop_position)
 
-    duration_sec = float(len(ctx.y) / ctx.sr) if (ctx.y is not None and ctx.sr > 0) else 0.0
-    if len(local_rms) < 3 or duration_sec <= 0.0:
-        return SectionFeatures(
-            section_count=1,
-            section_length_std=0.0,
-            drop_position=drop_position,
-        )
+    max_boundaries = max(1, int(duration_sec / 20.0))
+    if len(peaks) > max_boundaries:
+        top_idx = np.argsort(props["prominences"])[-max_boundaries:]
+        peaks = np.sort(peaks[top_idx])
 
-    diffs = np.abs(np.diff(local_rms))
-    max_sections = max(1, int(duration_sec / 20.0))
-    k = min(max_sections, len(diffs))
-    if k < 1:
-        return SectionFeatures(
-            section_count=1,
-            section_length_std=0.0,
-            drop_position=drop_position,
-        )
-
-    boundary_indices = np.sort(np.argsort(diffs)[-k:])
-    sec_per_frame = hop_frames * 512.0 / float(ctx.sr)
     boundary_secs = [
-        float(b * sec_per_frame)
-        for b in boundary_indices
-        if 0.0 < float(b * sec_per_frame) < duration_sec
+        float((int(p) + 1) * (duration_sec / float(n_blocks)))
+        for p in peaks
+    ]
+    edge_guard = min_section_sec * 0.5
+    boundary_secs = [
+        b for b in boundary_secs if edge_guard < b < (duration_sec - edge_guard)
     ]
 
     times = [0.0] + boundary_secs + [duration_sec]

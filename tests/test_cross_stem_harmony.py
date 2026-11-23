@@ -119,29 +119,59 @@ class TestCrossStemHarmony(unittest.TestCase):
         nov = compute_novelty_curve(ssm, kernel_size=16)
         self.assertGreater(float(np.max(nov[256:])), 0.0)
 
-    def test_extract_section_restores_mix_section_metrics_and_skips_stems(self) -> None:
+    def test_extract_section_semantic_silence_and_75min_stationary(self) -> None:
+        from analyzer.core import AudioContext
+        from analyzer.librosa_dsp import extract_section
+
+        sr = 44100
+        # 1. 完全無音 (30秒) -> 1セクション・標準偏差 0.0
+        silent = AudioContext(y=np.zeros(sr * 30, dtype=np.float32), sr=sr, source="mix")
+        sec_silent = extract_section(silent)
+        self.assertEqual(sec_silent.section_count, 1)
+        self.assertEqual(sec_silent.section_length_std, 0.0)
+
+        # 2. 75分相当 (388,000フレーム) の定常 Onset 列でも 40分割に崩壊せず 1セクションのまま保たれること
+        ctx_75m = AudioContext(y=np.zeros(sr, dtype=np.float32), sr=sr, source="mix")
+        ctx_75m.y = np.broadcast_to(np.float32(0.1), sr * 4500)
+        ctx_75m._onset_env = np.full(388000, 1.5, dtype=np.float32)
+        sec_75m = extract_section(ctx_75m)
+        self.assertEqual(sec_75m.section_count, 1)
+        self.assertEqual(sec_75m.section_length_std, 0.0)
+
+    def test_extract_section_semantic_known_symmetric_and_asymmetric_transitions(self) -> None:
         from analyzer.core import AudioContext
         from analyzer.librosa_dsp import extract_section
 
         sr = 22050
-        dur = 25.0
-        n = int(sr * dur)
-        t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-        env = np.where((t >= 8.0) & (t < 16.0), 0.9, 0.2).astype(np.float32)
-        # 周期的アタックを含めて onset_env の緩急を作るわ
-        pulse = (0.5 + 0.5 * np.sin(2.0 * np.pi * 2.0 * t)).astype(np.float32)
-        y = env * pulse * np.sin(2.0 * np.pi * 220.0 * t).astype(np.float32)
+        # 1. 対称3区間: [0..15s] 低活動, [15..30s] 強いアタック連打, [30..45s] 低活動 -> section_count == 3
+        dur_sym = 45.0
+        t_sym = np.linspace(0.0, dur_sym, int(sr * dur_sym), endpoint=False, dtype=np.float32)
+        env_sym = np.where((t_sym >= 15.0) & (t_sym < 30.0), 0.9, 0.05).astype(np.float32)
+        pulse_sym = np.maximum(0.0, np.sin(2.0 * np.pi * 4.0 * t_sym)) ** 4
+        y_sym = env_sym * pulse_sym * np.sin(2.0 * np.pi * 220.0 * t_sym).astype(np.float32)
+        sec_sym = extract_section(AudioContext(y=y_sym, sr=sr, source="mix"))
+        self.assertEqual(sec_sym.section_count, 3)
+        self.assertLess(sec_sym.section_length_std, 4.0)
 
-        mix_ctx = AudioContext(y=y, sr=sr, source="mix")
-        sec = extract_section(mix_ctx)
-        self.assertGreaterEqual(sec.section_count, 1)
-        self.assertGreaterEqual(sec.drop_position, 0.0)
-        self.assertLessEqual(sec.drop_position, 1.0)
-        self.assertGreaterEqual(sec.section_length_std, 0.0)
+        # 2. 非対称3区間: [0..10s] 低, [10..45s] 高, [45..60s] 低 (真の長さ [10, 35, 15], std ≈ 10.8s)
+        dur_asym = 60.0
+        t_asym = np.linspace(0.0, dur_asym, int(sr * dur_asym), endpoint=False, dtype=np.float32)
+        env_asym = np.where((t_asym >= 10.0) & (t_asym < 45.0), 0.9, 0.05).astype(np.float32)
+        pulse_asym = np.maximum(0.0, np.sin(2.0 * np.pi * 4.0 * t_asym)) ** 4
+        y_asym = env_asym * pulse_asym * np.sin(2.0 * np.pi * 220.0 * t_asym).astype(np.float32)
+        sec_asym = extract_section(AudioContext(y=y_asym, sr=sr, source="mix"))
+        self.assertEqual(sec_asym.section_count, 3)
+        self.assertGreater(sec_asym.section_length_std, 6.0)
 
-        drum_ctx = AudioContext(y=y, sr=sr, source="drums")
-        drum_sec = extract_section(drum_ctx)
+    def test_extract_section_skips_non_mix_stems(self) -> None:
+        from analyzer.core import AudioContext
+        from analyzer.librosa_dsp import extract_section
+
+        sr = 22050
+        y = np.random.default_rng(0).normal(0.0, 0.2, sr * 10).astype(np.float32)
+        drum_sec = extract_section(AudioContext(y=y, sr=sr, source="drums"))
         self.assertEqual(drum_sec.section_count, 0)
+        self.assertEqual(drum_sec.section_length_std, 0.0)
         self.assertEqual(drum_sec.drop_position, 0.0)
 
 
