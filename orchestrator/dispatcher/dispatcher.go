@@ -57,6 +57,7 @@ type Dispatcher struct {
 	ramAdmissionSequence   uint64
 	admissionMu            sync.Mutex
 	admission              *AdmissionController
+	volumeBudget           *VolumeBudgetLedger
 	taskLeases             map[string]AdmissionLease
 	reserveTaskFn          func(TaskPayload) (AdmissionLease, error)
 	prepareAnalysisFn      func(context.Context, []TaskPayload) ([]TaskPayload, error)

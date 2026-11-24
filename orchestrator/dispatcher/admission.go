@@ -65,6 +65,8 @@ type AdmissionLease struct {
 	GPULanes           int
 	DemucsSlots        int
 	DiskTempBytes      uint64
+	DiskTargetDir      string
+	VolumeLease        VolumeLease
 }
 
 // AdmissionUsage is a read-only snapshot of currently reserved resources.
@@ -88,10 +90,12 @@ type admissionLeaseState struct {
 // beside the lease because the pipeline must not re-observe memory and choose
 // a different backing store after admission.
 type taskAdmissionPlan struct {
-	request     AdmissionPlan
-	storageMode StorageMode
-	totalPhys   uint64
-	maxRamRatio float64
+	request           AdmissionPlan
+	storageMode       StorageMode
+	totalPhys         uint64
+	maxRamRatio       float64
+	diskTargetDir     string
+	minAvailDiskBytes uint64
 }
 
 type MemoryPressureState struct {
@@ -488,7 +492,7 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 		taskRAM, diskBytes = estimate.DiskModeRamBytes, estimate.DiskBytes
 	}
 
-	availDisk, diskKnown := availableTaskDisk(cfg, task)
+	availDisk, diskKnown := availableTaskDisk(cfg, task, d.getVolumeBudget(), VolumeLease{})
 	if !diskKnown {
 		availDisk = math.MaxUint64
 	}
@@ -592,9 +596,11 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 			DiskTempBytes:    diskBytes,
 			DownstreamTracks: 1,
 		},
-		storageMode: storageMode,
-		totalPhys:   memInfo.TotalPhys,
-		maxRamRatio: cfg.MaxRamRatio,
+		storageMode:       storageMode,
+		totalPhys:         memInfo.TotalPhys,
+		maxRamRatio:       cfg.MaxRamRatio,
+		diskTargetDir:     cfgDiskTempTargetDir(cfg),
+		minAvailDiskBytes: gigabytesToBytes(cfg.MinAvailDiskGB),
 	}, nil
 }
 
@@ -761,33 +767,52 @@ func (d *Dispatcher) reserveTaskAdmission(task TaskPayload) (AdmissionLease, err
 	if controller == nil {
 		return AdmissionLease{}, fmt.Errorf("admission controller unavailable")
 	}
+	budgetLedger := d.getVolumeBudget()
 	lease, err := controller.ReserveTier(AdmissionTierDownstream, planned.request)
 	if err != nil {
 		return AdmissionLease{}, err
 	}
 	lease.StorageMode = planned.storageMode
 	lease.DiskTempBytes = planned.request.DiskTempBytes
+	lease.DiskTargetDir = planned.diskTargetDir
+	if planned.request.DiskTempBytes > 0 {
+		volLease, volErr := budgetLedger.Reserve(planned.diskTargetDir, planned.request.DiskTempBytes, planned.minAvailDiskBytes)
+		if volErr != nil {
+			controller.Release(lease)
+			return AdmissionLease{}, volErr
+		}
+		lease.VolumeLease = volLease
+	}
 	ramLease, ok := d.reserveRamAdmission(task, ramAdmission{
 		storageMode: planned.storageMode,
 		ramBytes:    planned.request.HostRAMBytes,
 	}, planned.totalPhys, planned.maxRamRatio)
 	if !ok {
+		if lease.VolumeLease.Token != 0 {
+			budgetLedger.Release(lease.VolumeLease)
+		}
 		controller.Release(lease)
 		return AdmissionLease{}, ErrAdmissionUnavailable
 	}
 
 	d.admissionMu.Lock()
-	defer d.admissionMu.Unlock()
 	if d.taskLeases == nil {
 		d.taskLeases = make(map[string]AdmissionLease)
 	}
 	key := admissionKey(task)
-	if _, exists := d.taskLeases[key]; exists {
+	_, exists := d.taskLeases[key]
+	if !exists {
+		d.taskLeases[key] = lease
+	}
+	d.admissionMu.Unlock()
+	if exists {
 		d.releaseRamAdmission(task, ramLease)
+		if lease.VolumeLease.Token != 0 {
+			budgetLedger.Release(lease.VolumeLease)
+		}
 		controller.Release(lease)
 		return AdmissionLease{}, fmt.Errorf("task already has an admission lease")
 	}
-	d.taskLeases[key] = lease
 	return lease, nil
 }
 
@@ -808,7 +833,18 @@ func (d *Dispatcher) recheckTaskAdmissionBeforeDispatch(task TaskPayload, lease 
 	if err := validateSharedGPUMemoryObservation(gpu, time.Now()); err != nil {
 		return err
 	}
-	availDisk, diskKnown := availableTaskDisk(cfg, task)
+	if lease.VolumeLease.Token != 0 && lease.VolumeLease.VolumeKey != "" {
+		curKey, errCur := VolumeKeyE(cfgDiskTempTargetDir(cfg))
+		if errCur != nil || curKey != lease.VolumeLease.VolumeKey {
+			return fmt.Errorf("last-mile admission NOGO: disk cache target volume changed or became unresolvable after reservation")
+		}
+	}
+	availDisk, diskKnown := availableTaskDisk(cfg, task, d.getVolumeBudget(), lease.VolumeLease)
+	if (lease.StorageMode == StorageModeDisk || lease.DiskTempBytes > 0) && lease.DiskTargetDir != "" {
+		if _, _, _, errTarget := d.getVolumeBudget().probePath(lease.DiskTargetDir, lease.VolumeLease); errTarget != nil {
+			return fmt.Errorf("last-mile disk target validation failed: %w", errTarget)
+		}
+	}
 	if err := validateDiskModeCapacityPure(lease.StorageMode, diskKnown, availDisk, lease.DiskTempBytes, gigabytesToBytes(cfg.MinAvailDiskGB)); err != nil {
 		return fmt.Errorf("last-mile disk validation failed: %w", err)
 	}
@@ -878,10 +914,32 @@ func (d *Dispatcher) releaseTaskAdmission(task TaskPayload, lease AdmissionLease
 	if controller != nil {
 		controller.Release(lease)
 	}
+	if lease.VolumeLease.Token != 0 {
+		d.getVolumeBudget().Release(lease.VolumeLease)
+	}
 }
 
-func availableTaskDisk(cfg Config, task TaskPayload) (uint64, bool) {
-	paths := []string{cfg.QueueDir, os.TempDir()}
+func cfgDiskTempTargetDir(cfg Config) string {
+	if cfg.DiskCacheDir != "" {
+		return cfg.DiskCacheDir
+	}
+	return os.TempDir()
+}
+
+func (d *Dispatcher) getVolumeBudget() *VolumeBudgetLedger {
+	if d == nil {
+		return NewVolumeBudgetLedger(nil)
+	}
+	d.admissionMu.Lock()
+	defer d.admissionMu.Unlock()
+	if d.volumeBudget == nil {
+		d.volumeBudget = NewVolumeBudgetLedger(nil)
+	}
+	return d.volumeBudget
+}
+
+func availableTaskDisk(cfg Config, task TaskPayload, ledger *VolumeBudgetLedger, exclude VolumeLease) (uint64, bool) {
+	paths := []string{cfg.QueueDir, os.TempDir(), cfg.DiskCacheDir, cfg.SpectroCacheDir}
 	if task.FlacPath != "" {
 		paths = append(paths, filepath.Dir(task.FlacPath))
 	}
@@ -891,13 +949,34 @@ func availableTaskDisk(cfg Config, task TaskPayload) (uint64, bool) {
 		if path == "" {
 			continue
 		}
-		info, err := sysinfo.GetDiskFreeSpace(path)
-		if err != nil || info == nil {
+		var (
+			effectiveFree uint64
+			probeErr      error
+		)
+		if ledger != nil {
+			var reserved uint64
+			var rawAvail uint64
+			_, rawAvail, reserved, probeErr = ledger.probePath(path, exclude)
+			if probeErr == nil {
+				effectiveFree = safeSub(rawAvail, reserved)
+			}
+		} else {
+			anchor, ancErr := resolveAnchorPath(path)
+			if ancErr != nil {
+				continue
+			}
+			info, err := sysinfo.GetDiskFreeSpace(anchor)
+			if err != nil || info == nil {
+				continue
+			}
+			effectiveFree = info.FreeBytesAvailable
+		}
+		if probeErr != nil {
 			continue
 		}
 		known = true
-		if info.FreeBytesAvailable < min {
-			min = info.FreeBytesAvailable
+		if effectiveFree < min {
+			min = effectiveFree
 		}
 	}
 	return min, known
