@@ -10,14 +10,16 @@ Spectral Centroid/Rolloff/Flatness/Bandwidth/ZCR/RMS/Flux/PSD/Key/Chord など�
 音響物理指標を数学的精度（命題1）を厳格に保持しながら GPU 完全並列計算いたしますの。
 """
 
+import gc
 import math
 import os
+import tempfile
 from typing import Any
 import numpy as np
 import torch
 
 from constants import CHORDS_DIC, KEY_PROFILES, NOTES
-from .core import AudioContext, FIXED_SEQ_FRAMES, FeatureExtractor, _resample_to_fixed_frames
+from .core import AudioContext, FIXED_SEQ_FRAMES, FeatureExtractor, _resample_to_fixed_frames, downmix_to_mono_f32
 from .types import TensorFeatures
 
 
@@ -375,19 +377,16 @@ def extract_tensor_features_Large(
         features["nap"] = nap_val
         features["hnr_db"] = hnr_db
 
-        if spectro_path and os.path.exists(spectro_path):
-            f_mean, f_std, freqs, psd = _extract_spectro_streaming(spectro_path, sr, device)
-            features["spectral_flux_mean"] = f_mean
-            features["spectral_flux_std"] = f_std
-        else:
-            window_1024 = torch.hann_window(1024, device=device)
-            stft_mag = torch.stft(
-                y_dev, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
-            ).abs()
-            flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
-            freqs, psd = welch_psd(y_dev, sr=sr)
-            features["spectral_flux_mean"] = float(flux.mean().item())
-            features["spectral_flux_std"] = float(flux.std().item())
+        # Keep extract_tensor_features strictly on 1024-reflect STFT + Welch PSD regardless of CPU spectro_path cache.
+        _ = spectro_path
+        window_1024 = torch.hann_window(1024, device=device)
+        stft_mag = torch.stft(
+            y_dev, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
+        ).abs()
+        flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
+        freqs, psd = welch_psd(y_dev, sr=sr)
+        features["spectral_flux_mean"] = float(flux.mean().item())
+        features["spectral_flux_std"] = float(flux.std().item())
 
         psd_1d = psd.mean(dim=list(range(psd.ndim - 1))) if psd.ndim > 1 else psd
         peak_idx = psd_1d.argmax()
@@ -412,56 +411,44 @@ def extract_tensor_features_Large(
     sub_sum = 0.0
     sub_count = 0
 
-    if spectro_path and os.path.exists(spectro_path):
-        f_mean, f_std, freqs, psd = _extract_spectro_streaming(spectro_path, sr, device)
-        features["spectral_flux_mean"] = f_mean
-        features["spectral_flux_std"] = f_std
+    window_1024 = torch.hann_window(1024, device=device)
+    flux_sum = 0.0
+    flux_sq_sum = 0.0
+    flux_count = 0
+    psd_acc: torch.Tensor | None = None
+    psd_weight_total = 0.0
+    freqs = torch.zeros(0, device=device)
+
+    for start in range(0, n_samples, chunk_len):
+        end = min(n_samples, start + chunk_len)
+        c_dev = y[..., start:end].to(device)
+        if c_dev.shape[-1] >= 1024:
+            stft_mag = torch.stft(
+                c_dev, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
+            ).abs()
+            if stft_mag.shape[-1] > 1:
+                flux_c = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
+                flux_sum += float(flux_c.sum().item())
+                flux_sq_sum += float(flux_c.pow(2).sum().item())
+                flux_count += flux_c.numel()
+        if c_dev.shape[-1] >= 2048:
+            freqs, psd_c = welch_psd(c_dev, sr=sr, n_fft=2048)
+            w = float(c_dev.shape[-1])
+            psd_acc = psd_c * w if psd_acc is None else (psd_acc + psd_c * w)
+            psd_weight_total += w
         if compute_subbass:
-            for start in range(0, n_samples, chunk_len):
-                c_dev = y[..., start : min(n_samples, start + chunk_len)].to(device)
-                sub_c = fft_bandpass_envelope(c_dev, sr, 20.0, 60.0)
-                sub_sum += float(sub_c.sum().item())
-                sub_count += sub_c.numel()
-                del c_dev, sub_c
-    else:
-        window_1024 = torch.hann_window(1024, device=device)
-        flux_sum = 0.0
-        flux_sq_sum = 0.0
-        flux_count = 0
-        psd_acc: torch.Tensor | None = None
-        psd_weight_total = 0.0
-        freqs = torch.zeros(0, device=device)
+            sub_c = fft_bandpass_envelope(c_dev, sr, 20.0, 60.0)
+            sub_sum += float(sub_c.sum().item())
+            sub_count += sub_c.numel()
+        del c_dev
 
-        for start in range(0, n_samples, chunk_len):
-            end = min(n_samples, start + chunk_len)
-            c_dev = y[..., start:end].to(device)
-            if c_dev.shape[-1] >= 1024:
-                stft_mag = torch.stft(
-                    c_dev, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
-                ).abs()
-                if stft_mag.shape[-1] > 1:
-                    flux_c = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
-                    flux_sum += float(flux_c.sum().item())
-                    flux_sq_sum += float(flux_c.pow(2).sum().item())
-                    flux_count += flux_c.numel()
-            if c_dev.shape[-1] >= 2048:
-                freqs, psd_c = welch_psd(c_dev, sr=sr, n_fft=2048)
-                w = float(c_dev.shape[-1])
-                psd_acc = psd_c * w if psd_acc is None else (psd_acc + psd_c * w)
-                psd_weight_total += w
-            if compute_subbass:
-                sub_c = fft_bandpass_envelope(c_dev, sr, 20.0, 60.0)
-                sub_sum += float(sub_c.sum().item())
-                sub_count += sub_c.numel()
-            del c_dev
-
-        f_mean = flux_sum / float(flux_count) if flux_count > 0 else 0.0
-        f_var = max(0.0, (flux_sq_sum / float(flux_count)) - f_mean * f_mean) if flux_count > 0 else 0.0
-        if flux_count > 1:
-            f_var *= float(flux_count) / float(flux_count - 1)
-        features["spectral_flux_mean"] = f_mean
-        features["spectral_flux_std"] = math.sqrt(f_var)
-        psd = psd_acc / psd_weight_total if (psd_acc is not None and psd_weight_total > 0.0) else torch.zeros(0, device=device)
+    f_mean = flux_sum / float(flux_count) if flux_count > 0 else 0.0
+    f_var = max(0.0, (flux_sq_sum / float(flux_count)) - f_mean * f_mean) if flux_count > 0 else 0.0
+    if flux_count > 1:
+        f_var *= float(flux_count) / float(flux_count - 1)
+    features["spectral_flux_mean"] = f_mean
+    features["spectral_flux_std"] = math.sqrt(f_var)
+    psd = psd_acc / psd_weight_total if (psd_acc is not None and psd_weight_total > 0.0) else torch.zeros(0, device=device)
 
     psd_1d = psd.mean(dim=list(range(psd.ndim - 1))) if psd.ndim > 1 else psd
     if psd_1d.numel() > 0 and freqs.numel() > 0:
@@ -485,6 +472,163 @@ def extract_tensor_features(
 ) -> dict[str, Any]:
     """公開シンボル名を保つ純粋委譲ラッパーですわ！ Mor(Tensor -> TensorMetrics)"""
     return extract_tensor_features_Large(y, sr, device, spectro_path=spectro_path, stem_name=stem_name)
+
+
+def _is_cuda_oom_error(exc: BaseException) -> bool:
+    if isinstance(exc, torch.cuda.OutOfMemoryError):
+        return True
+    return "out of memory" in str(exc).lower()
+
+
+def _compute_spectro_chunk_pass(
+    y_1d: torch.Tensor,
+    mm: np.memmap,
+    window: torch.Tensor,
+    device: torch.device,
+    n_fft: int,
+    hop_length: int,
+    cur_chunk: int,
+    pad: int,
+    n_samples: int,
+    n_frames: int,
+) -> None:
+    for f0 in range(0, n_frames, cur_chunk):
+        f1 = min(n_frames, f0 + cur_chunk)
+        p_start = f0 * hop_length
+        p_end = (f1 - 1) * hop_length + n_fft
+        chunk_buf = torch.zeros(p_end - p_start, dtype=torch.float32)
+        orig_p_start = max(p_start, pad)
+        orig_p_end = min(p_end, pad + n_samples)
+        if orig_p_end > orig_p_start:
+            chunk_buf[orig_p_start - p_start : orig_p_end - p_start] = y_1d[
+                orig_p_start - pad : orig_p_end - pad
+            ]
+        c_dev = stft_c = mag_c = None
+        try:
+            c_dev = chunk_buf.to(device)
+            stft_c = torch.stft(
+                c_dev,
+                n_fft=n_fft,
+                hop_length=hop_length,
+                window=window,
+                return_complex=True,
+                center=False,
+            )
+            mag_c = stft_c.abs().detach().cpu().numpy()
+            mm[:, f0:f1] = mag_c
+        finally:
+            del c_dev, stft_c, mag_c
+
+
+def compute_and_save_spectro_chunked_Large(
+    y: torch.Tensor,
+    spectro_path: str,
+    device: torch.device,
+    n_fft: int = 2048,
+    hop_length: int = 512,
+    chunk_frames: int = 2048,
+) -> tuple[int, int]:
+    """
+    librosa.stft(n_fft=2048, hop_length=512, center=True, pad_mode='constant') と
+    数値等価な (1025, 1 + N // 512) float32 振幅スペクトログラムをチャンク単位で GPU 計算し、
+    原子リネーム (open_memmap + flush + close -> os.replace) で *.spectro.npy へ書き出しますわ。
+    """
+    if not spectro_path:
+        raise ValueError("spectro_path must be non-empty")
+    if n_fft <= 0 or hop_length <= 0 or chunk_frames <= 0:
+        raise ValueError("n_fft, hop_length, and chunk_frames must be positive")
+
+    y_cpu = y.detach().to(device="cpu")
+    y_mono = downmix_to_mono_f32(y_cpu.numpy())
+    y_1d = torch.from_numpy(y_mono).contiguous().view(-1)
+
+    n_samples = int(y_1d.shape[0])
+    n_bins = n_fft // 2 + 1
+    n_frames = 1 + n_samples // hop_length
+    pad = n_fft // 2
+
+    parent_dir = os.path.dirname(os.path.abspath(spectro_path))
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+    attempts = [chunk_frames]
+    half_chunk = max(1, chunk_frames // 2)
+    if half_chunk < chunk_frames:
+        attempts.append(half_chunk)
+
+    mm = None
+    pending_mmap = None
+    window = None
+    tmp_path = None
+    primary_exc: BaseException | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=parent_dir or ".",
+            prefix=f"{os.path.basename(spectro_path)}.",
+            suffix=".tmp.npy",
+            delete=False,
+        ) as tmp_f:
+            tmp_path = tmp_f.name
+
+        mm = np.lib.format.open_memmap(
+            tmp_path, mode="w+", dtype=np.float32, shape=(n_bins, n_frames)
+        )
+        window = torch.hann_window(n_fft, periodic=True, device=device, dtype=torch.float32)
+
+        for idx, cur_chunk in enumerate(attempts):
+            oom_retry = False
+            try:
+                _compute_spectro_chunk_pass(
+                    y_1d, mm, window, device, n_fft, hop_length, cur_chunk, pad, n_samples, n_frames
+                )
+                break
+            except Exception as exc:
+                if not _is_cuda_oom_error(exc) or idx == len(attempts) - 1:
+                    raise
+                oom_retry = True
+            if oom_retry:
+                gc.collect()
+                if device.type == "cuda" and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+        mm.flush()
+        pending_mmap = getattr(mm, "_mmap", None)
+        del mm
+        mm = None
+        if pending_mmap is not None:
+            pending_mmap.close()
+            pending_mmap = None
+        os.replace(tmp_path, spectro_path)
+        tmp_path = None
+        return (n_bins, n_frames)
+    except BaseException as exc:
+        primary_exc = exc
+        raise
+    finally:
+        del window
+        cleanup_errors: list[BaseException] = []
+        if mm is not None:
+            if pending_mmap is None:
+                pending_mmap = getattr(mm, "_mmap", None)
+            del mm
+            mm = None
+        if pending_mmap is not None:
+            try:
+                pending_mmap.close()
+                pending_mmap = None
+            except Exception as close_exc:
+                cleanup_errors.append(close_exc)
+        if tmp_path is not None and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception as unlink_exc:
+                cleanup_errors.append(unlink_exc)
+        if cleanup_errors:
+            if primary_exc is not None:
+                for ce in cleanup_errors:
+                    primary_exc.add_note(f"cleanup failed (tmp_path={tmp_path}): {ce}")
+            else:
+                raise cleanup_errors[0]
 
 
 def extract_tensor_obj(

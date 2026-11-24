@@ -8,6 +8,7 @@ AudioContext, StemContext, FeatureExtractor (Reader Applicative)
 import hashlib
 import logging
 import math
+import os
 import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Generic, TypeVar
@@ -40,6 +41,19 @@ def _resample_to_fixed_frames(
     return np.interp(x_new, x_old, seq).tolist()
 
 
+def downmix_to_mono_f32(y: np.ndarray) -> np.ndarray:
+    """任意次元の波形配列を AudioContext と同一規則でモノラル float32 へ正規化しますわ。"""
+    arr = np.asarray(y)
+    if arr.ndim > 1:
+        if arr.shape[0] == 2:  # channels-first (e.g. from Demucs)
+            arr = np.mean(arr, axis=0)
+        elif arr.shape[-1] == 2:  # channels-last (e.g. from soundfile)
+            arr = np.mean(arr, axis=-1)
+        else:
+            arr = np.mean(arr, axis=0)  # フォールバック
+    return np.ascontiguousarray(arr, dtype=np.float32)
+
+
 # ─────────────────────────────────────────────
 # AudioContext
 # ─────────────────────────────────────────────
@@ -59,16 +73,7 @@ class AudioContext:
         stereo_meta: dict[str, Any] | None = None,
         cross_stem_meta: dict[str, Any] | None = None,
     ):
-        # 多次元波形（ステレオ等）の場合は、チャンネル次元を平均化してモノラル（1次元）にするの
-        if y.ndim > 1:
-            if y.shape[0] == 2:  # channels-first (e.g. from Demucs)
-                y = np.mean(y, axis=0)
-            elif y.shape[-1] == 2:  # channels-last (e.g. from soundfile)
-                y = np.mean(y, axis=-1)
-            else:
-                y = np.mean(y, axis=0)  # フォールバック
-
-        self.y = np.ascontiguousarray(y, dtype=np.float32)
+        self.y = downmix_to_mono_f32(y)
         self.sr = sr
         self.source = source
         self._snr_val = snr
@@ -78,6 +83,9 @@ class AudioContext:
         # キャッシュバッファ
         self._stft: np.ndarray | None = None
         self._spectro: np.ndarray | None = None
+        self._spectro_mmap: Any = None
+        self._spectro_lock = threading.Lock()
+        self._closed: bool = False
         self._power: np.ndarray | None = None
         self._mel: np.ndarray | None = None
         self._chroma: np.ndarray | None = None
@@ -108,50 +116,112 @@ class AudioContext:
 
     @property
     def stft(self) -> np.ndarray:
-        if self._stft is None:
+        stft_arr = self._stft
+        if stft_arr is None:
             logging.debug(f"    [CSE Cache Miss] stft 計算開始 (source: {self.source})")
             with LIBROSA_LOCK:
-                self._stft = librosa.stft(
+                stft_arr = librosa.stft(
                     self.y.astype(np.float32, copy=False),
                     n_fft=2048,
                     hop_length=512,
                     dtype=np.complex64,
                 )
+            self._stft = stft_arr
         else:
             logging.debug(f"    [CSE Cache Hit] stft 再利用 (source: {self.source})")
-        return self._stft
+        return stft_arr
 
     @property
     def spectro(self) -> np.ndarray:
-        if self._spectro is None:
-            if self._spectro_path is not None:
+        with self._spectro_lock:
+            if self._closed:
+                raise RuntimeError("AudioContext is closed")
+            if self._spectro_mmap is not None:
+                raise RuntimeError("Previous spectro mmap close failed; refusing to open another mapping")
+            if self._spectro is not None:
+                return self._spectro
+
+            if self._spectro_path is not None and os.path.exists(self._spectro_path):
                 logging.debug(f"    [CSE Cache Hit] spectro ディスクキャッシュロード (source: {self.source})")
-                import os
-                if os.path.exists(self._spectro_path):
-                    self._spectro = np.load(self._spectro_path, mmap_mode='r')
-                else:
-                    self._spectro = np.abs(self.stft).astype(np.float32, copy=False)
-                    self._stft = None
-            else:
-                self._spectro = np.abs(self.stft).astype(np.float32, copy=False)
+                arr = None
+                mmap_handle = None
+                try:
+                    arr = np.load(self._spectro_path, mmap_mode="r")
+                    mmap_handle = getattr(arr, "_mmap", None)
+                    expected_frames = 1 + len(self.y) // 512
+                    if (
+                        isinstance(arr, np.ndarray)
+                        and arr.ndim == 2
+                        and arr.dtype == np.float32
+                        and arr.shape == (1025, expected_frames)
+                    ):
+                        # Copy into an owned ndarray under the lock and close the file mapping
+                        # deterministically so close() can never invalidate an active reader.
+                        owned = np.array(arr, dtype=np.float32, copy=True)
+                        del arr
+                        arr = None
+                        if mmap_handle is not None:
+                            try:
+                                mmap_handle.close()
+                            except Exception:
+                                self._spectro_mmap = mmap_handle
+                                raise
+                        self._spectro = owned
+                        return self._spectro
+                    logging.warning(
+                        "Invalid spectro cache for %s (shape=%s dtype=%s, expected=(1025, %d) float32); falling back to CPU STFT",
+                        self._spectro_path,
+                        getattr(arr, "shape", None),
+                        getattr(arr, "dtype", None),
+                        expected_frames,
+                    )
+                except Exception as exc:
+                    if self._spectro_mmap is not None:
+                        raise
+                    logging.warning("Failed to load spectro cache %s: %s; falling back to CPU STFT", self._spectro_path, exc)
+                finally:
+                    if arr is not None:
+                        del arr
+                        if mmap_handle is not None:
+                            try:
+                                mmap_handle.close()
+                            except Exception as close_exc:
+                                self._spectro_mmap = mmap_handle
+                                logging.warning("Failed to close rejected spectro mmap handle: %s", close_exc)
+                                raise
+
+        # Compute CPU fallback outside _spectro_lock to preserve lock ordering (_spectro_lock -> never LIBROSA_LOCK).
+        fallback = np.abs(self.stft).astype(np.float32, copy=False)
+        with self._spectro_lock:
+            if self._closed:
+                raise RuntimeError("AudioContext is closed")
+            if self._spectro_mmap is not None:
+                raise RuntimeError("Previous spectro mmap close failed; refusing to open another mapping")
+            if self._spectro is None:
+                self._spectro = fallback
                 self._stft = None
-        return self._spectro
+            return self._spectro
 
     @property
     def power(self) -> np.ndarray:
-        if self._power is None:
-            self._power = np.square(self.spectro, out=self.spectro.copy())
-        return self._power
+        power_arr = self._power
+        if power_arr is None:
+            spec = self.spectro
+            power_arr = np.square(spec, out=spec.copy())
+            self._power = power_arr
+        return power_arr
 
     @property
     def mel(self) -> np.ndarray:
         if self._mel is None:
             logging.debug(f"    [CSE Cache Miss] mel 計算開始 (source: {self.source})")
+            power_arr = self.power
+            spec_frames = self.spectro.shape[1]
             with LIBROSA_LOCK:
                 self._mel = librosa.feature.melspectrogram(
-                    S=self.power, sr=self.sr, n_mels=128
+                    S=power_arr, sr=self.sr, n_mels=128
                 )
-            if self.spectro.shape[1] > 16384:
+            if spec_frames > 16384:
                 self._power = None
         else:
             logging.debug(f"    [CSE Cache Hit] mel 再利用 (source: {self.source})")
@@ -163,8 +233,9 @@ class AudioContext:
             logging.debug(
                 f"    [CSE Cache Miss] chroma 計算開始 (source: {self.source})"
             )
+            spectro_arr = self.spectro
             with LIBROSA_LOCK:
-                self._chroma = librosa.feature.chroma_stft(S=self.spectro, sr=self.sr)
+                self._chroma = librosa.feature.chroma_stft(S=spectro_arr, sr=self.sr)
         else:
             logging.debug(f"    [CSE Cache Hit] chroma 再利用 (source: {self.source})")
         return self._chroma
@@ -325,11 +396,34 @@ class AudioContext:
         """後方互換性のためのプロパティですわ (真の dB 値 hnr_db を返却します)"""
         return self.hnr_db
 
+    def close(self) -> None:
+        """保持している spectro mmap ハンドルを確定的にクローズしますわ！"""
+        with self._spectro_lock:
+            self._closed = True
+            mmap_handle = self._spectro_mmap
+            if self._spectro is not None and mmap_handle is None:
+                mmap_handle = getattr(self._spectro, "_mmap", None)
+            self._spectro = None
+            if mmap_handle is not None:
+                try:
+                    mmap_handle.close()
+                except Exception as exc:
+                    self._spectro_mmap = mmap_handle
+                    logging.warning("Failed to close spectro mmap handle: %s", exc)
+                    raise
+            self._spectro_mmap = None
+
+    def __enter__(self) -> "AudioContext":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.close()
+
     def clear(self):
         """メモリを早期解放するために、保持している配列の参照をすべて破棄しますわ！"""
+        self.close()
         self.y = None
         self._stft = None
-        self._spectro = None
         self._power = None
         self._mel = None
         self._chroma = None

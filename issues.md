@@ -394,8 +394,17 @@ GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`（1件のみ）。3�
 
 1. `WaitFirstGPUFeatureQueued` (`pipeline_demucs.go:230`): `case <-ctx.Done():` 分岐にも `firstGPUQueued` の非ブロッキング最終確認を追加する指摘 — 実装は修正済み (`go vet` / `go test -count=1 ./...` PASS) だが、**修正後の Verifier 再検証は未実施**。
 
+#### PC-S1 未解決事項
+
+GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`。3ラウンド上限に達したため条件付き完了とし、`PD-S2` の統合検証で再点検する。
+
+1. `AudioContext.stft` / `power` (`analyzer/core.py:118-130, 192-206`): 並行破棄時に `None` を返さぬようローカル参照を返す修正を適用済み（修正後 Verifier 未再検証）。
+2. `AudioContext.spectro` (`analyzer/core.py:185-199`): CPU フォールバックの再ロック時に `_spectro_mmap` 未解放ガードを再確認する修正を適用済み（修正後 Verifier 未再検証）。
+3. `compute_and_save_spectro_chunked_Large` (`analyzer/tensor_dsp.py:594-627`): 一次例外中の `finally` クリーンアップ失敗を `add_note()` で付加する修正を適用済み（構造的リトライ用ハンドル保持および修正後 Verifier は `PD-S2` で再点検）。
+4. `test_multichannel_3ch_float64_downmix_matches_audiocontext_roundtrip` (`tests/test_spectro_cache_parity.py:46-63`): 保存 `.npy` の直接読込・dtype検証を追加済み（修正後 Verifier 未再検証）。
+
 #### Phase C (中目標): Feature #2 (CPU専用 GPU チャンク STFT `*.spectro.npy`・Per-Volume 容量台帳・2段 Wavefront)
-- [ ] **PC-S1**: CPU 専用チャンク化 GPU STFT と決定的 `mmap` クローズ (`analyzer/tensor_dsp.py`, `worker_gpu_daemon.py`, `analyzer/core.py`, `tests/test_spectro_cache_parity.py`) — `T = 1 + N // 512`, `center=False`, `periodic=True` Hann 窓、`open_memmap` flush+close→`os.replace`、2048→1024 OOM リトライ、`extract_tensor_features` 1024-reflect 不変性維持、`AudioContext` の形状/dtype検証と `mmap` 完全解放
+- [x] **PC-S1** (**条件付き完了: Verifier 3R 未 PASS、R3 指摘修正済・修正後未再検証。残件は下記「PC-S1 未解決事項」に記録**): CPU 専用チャンク化 GPU STFT と決定的 `mmap` クローズ (`analyzer/tensor_dsp.py`, `worker_gpu_daemon.py`, `analyzer/core.py`, `tests/test_spectro_cache_parity.py`) — `T = 1 + N // 512`, `center=False`, `periodic=True` Hann 窓、`open_memmap` flush+close→`os.replace`、2048→1024 OOM リトライ、`extract_tensor_features` 1024-reflect 不変性維持、`AudioContext` の形状/dtype検証と `mmap` 完全解放
 - [ ] **PC-S2**: Per-Volume バイト予約台帳とキャッシュ掃除連動 (`orchestrator/dispatcher/volume_budget.go`, `volume_budget_test.go`, `admission.go`) — `DiskCacheDir` / `SpectroCacheDir` の原子予約・解放・残量ガード
 - [ ] **PC-S3**: `SpectroCacheOutcome` と 2段 Wavefront (`gpuJobs` -> `cpuJobs`) 統合 (`orchestrator/dispatcher/daemon.go`, `pipeline_demucs.go`, `pipeline_demucs_test.go`) — 単一クローズ所有者、`mix -> vocals` 順序保証、CPU STFT 自動フォールバック、`Wait()` 後のキャッシュ削除
 

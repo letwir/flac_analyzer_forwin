@@ -15,6 +15,7 @@ import torch
 
 import shm_interop
 from analyzer import extract_tensor_features
+from analyzer.tensor_dsp import compute_and_save_spectro_chunked_Large
 
 
 def _open_stem_samples(info: dict[str, Any]) -> tuple[Any, np.ndarray]:
@@ -56,9 +57,11 @@ def handle_extract_gpu(payload: dict[str, Any], device: torch.device) -> dict[st
                     y_tensor,
                     payload["sr"],
                     device,
-                    spectro_path=info.get("spectro_path"),
                     stem_name=stem_name,
                 )
+                spectro_path = info.get("spectro_path")
+                if spectro_path:
+                    compute_and_save_spectro_chunked_Large(y_tensor, spectro_path, device)
             tensor_sec += time.perf_counter() - step
         finally:
             del y_tensor
