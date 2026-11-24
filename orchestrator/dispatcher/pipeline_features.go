@@ -407,7 +407,7 @@ func (d *Dispatcher) executeFeatureLane(
 		if d.gpuArbiter == nil {
 			return nil, fmt.Errorf("GPU arbiter is unavailable")
 		}
-		if err := d.gpuArbiter.Acquire(ctxAcquire); err != nil {
+		if err := d.gpuArbiter.AcquireFeatureBatch(ctxAcquire); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				return nil, fmt.Errorf("%w: failed to acquire GPU arbiter: %w", ErrRetryableTimeout, err)
 			}

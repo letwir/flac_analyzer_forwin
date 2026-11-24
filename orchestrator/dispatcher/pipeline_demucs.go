@@ -27,8 +27,12 @@ type stemWavefront struct {
 	run       func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)
 	cpuJobs   chan stemWavefrontJob
 	gpuJobs   chan stemWavefrontJob
-	closeOnce sync.Once
-	wg        sync.WaitGroup
+	closeOnce           sync.Once
+	wg                  sync.WaitGroup
+	firstGPUQueued      chan struct{}
+	firstGPUQueuedOnce  sync.Once
+	gpuConsumerDone     chan struct{}
+	gpuConsumerDoneOnce sync.Once
 
 	mu        sync.Mutex
 	err       error
@@ -51,14 +55,16 @@ func newStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycl
 		cpuConsumers = 1
 	}
 	w := &stemWavefront{
-		ctx:       ctx,
-		lifecycle: lifecycle,
-		run:       run,
-		cpuJobs:   make(chan stemWavefrontJob, numStems),
-		gpuJobs:   make(chan stemWavefrontJob, numStems),
-		published: make(map[string]struct{}),
-		cpu:       &DaemonResponse{Librosa: make(map[string]interface{}), Essentia: make(map[string]interface{})},
-		gpu:       &DaemonResponse{Tensor: make(map[string]interface{})},
+		ctx:             ctx,
+		lifecycle:       lifecycle,
+		run:             run,
+		cpuJobs:         make(chan stemWavefrontJob, numStems),
+		gpuJobs:         make(chan stemWavefrontJob, numStems),
+		firstGPUQueued:  make(chan struct{}),
+		gpuConsumerDone: make(chan struct{}),
+		published:       make(map[string]struct{}),
+		cpu:             &DaemonResponse{Librosa: make(map[string]interface{}), Essentia: make(map[string]interface{})},
+		gpu:             &DaemonResponse{Tensor: make(map[string]interface{})},
 	}
 	w.wg.Add(1 + cpuConsumers)
 	for i := 0; i < cpuConsumers; i++ {
@@ -176,8 +182,66 @@ func (w *stemWavefront) Wait() (*DaemonResponse, *DaemonResponse, string, int, e
 	return w.cpu, w.gpu, w.trackHash, w.sr, nil
 }
 
+func (w *stemWavefront) markFirstGPUQueued() {
+	if w != nil && w.firstGPUQueued != nil {
+		w.firstGPUQueuedOnce.Do(func() {
+			close(w.firstGPUQueued)
+		})
+	}
+}
+
+func (w *stemWavefront) markGPUConsumerDone() {
+	if w != nil && w.gpuConsumerDone != nil {
+		w.gpuConsumerDoneOnce.Do(func() {
+			close(w.gpuConsumerDone)
+		})
+	}
+}
+
+func (w *stemWavefront) WaitFirstGPUFeatureQueued(ctx context.Context) bool {
+	if w == nil || w.firstGPUQueued == nil {
+		return false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-w.firstGPUQueued:
+		return true
+	default:
+	}
+	select {
+	case <-w.firstGPUQueued:
+		return true
+	case <-w.gpuConsumerDone:
+		select {
+		case <-w.firstGPUQueued:
+			return true
+		default:
+			return false
+		}
+	case <-w.ctx.Done():
+		select {
+		case <-w.firstGPUQueued:
+			return true
+		default:
+			return false
+		}
+	case <-ctx.Done():
+		select {
+		case <-w.firstGPUQueued:
+			return true
+		default:
+			return false
+		}
+	}
+}
+
 func (w *stemWavefront) consume(lane FeatureLane, jobs <-chan stemWavefrontJob) {
 	defer w.wg.Done()
+	if lane == FeatureLaneGPU {
+		defer w.markGPUConsumerDone()
+	}
 	for {
 		select {
 		case <-w.ctx.Done():
@@ -195,7 +259,11 @@ func (w *stemWavefront) consume(lane FeatureLane, jobs <-chan stemWavefrontJob) 
 				TrackHash: job.event.AudioHash,
 				Stems:     map[string]StemInfo{job.event.Stem: job.event.Info},
 			}
-			response, runErr := w.run(w.ctx, lane, payload)
+			runCtx := w.ctx
+			if lane == FeatureLaneGPU {
+				runCtx = withGPUArbiterQueuedHook(w.ctx, w.markFirstGPUQueued)
+			}
+			response, runErr := w.run(runCtx, lane, payload)
 			releaseErr := w.lifecycle.Release(job.event.Generation, job.event.Stem)
 			if runErr != nil || releaseErr != nil {
 				w.fail(errors.Join(wrapFeatureLaneError(lane, runErr), releaseErr))
@@ -505,7 +573,7 @@ func (d *Dispatcher) executeDemucsStage(
 		return "", 0, nil, nil, nil, joinWavefrontCause(arbiterErr, waveErr)
 	}
 	gpuArbiterReleased := false
-	if err := d.gpuArbiter.Acquire(ctxDemucs); err != nil {
+	if err := d.gpuArbiter.AcquireDemucs(ctxDemucs); err != nil {
 		finishWavefront(err)
 		closeArenaOnError()
 		// Preserve context cancellation versus our own internal timeouts.
@@ -552,6 +620,11 @@ func (d *Dispatcher) executeDemucsStage(
 	}
 
 	if !gpuArbiterReleased {
+		if sepErr == nil && downstreamLogged {
+			if wavefront.WaitFirstGPUFeatureQueued(ctxDemucs) {
+				d.gpuArbiter.RegisterPostDemucsFeatureTurn()
+			}
+		}
 		d.gpuArbiter.Release()
 		gpuArbiterReleased = true
 	}
