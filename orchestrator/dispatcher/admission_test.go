@@ -737,3 +737,424 @@ func TestPromotedDiskTaskLeasePreservesDiskTempBytesOnLastMileRecheck(t *testing
 		t.Fatalf("expected last-mile recheck to reject promoted Disk task at 6 GiB avail (< 5 GiB floor + %d B DiskTempBytes), got GO", lease.DiskTempBytes)
 	}
 }
+
+func TestResolveDownstreamTracksCapPure(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	cases := []struct {
+		name          string
+		configuredMax int
+		numWorkers    int
+		ramBudget     uint64
+		perTrackRAM   uint64
+		want          int
+	}{
+		{"explicit_1", 1, 16, 64 * gib, 4 * gib, 1},
+		{"explicit_4", 4, 2, 16 * gib, 4 * gib, 4},
+		{"auto_high_ram_16_workers", 0, 16, 64 * gib, 4 * gib, 4},
+		{"auto_low_ram_2_tracks", 0, 16, 9 * gib, 4 * gib, 2},
+		{"auto_single_worker", 0, 1, 64 * gib, 4 * gib, 1},
+		{"auto_zero_workers_clamps_to_1", 0, 0, 64 * gib, 4 * gib, 1},
+		{"auto_insufficient_ram_clamps_to_1", 0, 8, 2 * gib, 4 * gib, 1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ResolveDownstreamTracksCapPure(tc.configuredMax, tc.numWorkers, tc.ramBudget, tc.perTrackRAM)
+			if got != tc.want {
+				t.Fatalf("ResolveDownstreamTracksCapPure(%d, %d, %d, %d) = %d, want %d",
+					tc.configuredMax, tc.numWorkers, tc.ramBudget, tc.perTrackRAM, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAdmissionControllerThreeTierLedgerSeparation(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	controller, err := NewAdmissionController(AdmissionCapacity{
+		HostRAMBytes:       32 * gib,
+		DedicatedVRAMBytes: 12 * gib,
+		DownstreamTracks:   4,
+		CPULanes:           8,
+		GPULanes:           1,
+		DemucsSlots:        1,
+		DiskTempBytes:      64 * gib,
+	})
+	if err != nil {
+		t.Fatalf("NewAdmissionController failed: %v", err)
+	}
+
+	downLease, err := controller.ReserveTier(AdmissionTierDownstream, AdmissionPlan{
+		HostRAMBytes:     4 * gib,
+		DownstreamTracks: 1,
+		DiskTempBytes:    2 * gib,
+	})
+	if err != nil {
+		t.Fatalf("ReserveTier(Downstream) failed: %v", err)
+	}
+	if downLease.Tier != AdmissionTierDownstream {
+		t.Fatalf("expected tier Downstream, got %v", downLease.Tier)
+	}
+
+	gpuLease, err := controller.ReserveTier(AdmissionTierGPUExecution, AdmissionPlan{
+		DedicatedVRAMBytes: 4 * gib,
+		CPULanes:           1,
+		GPULanes:           1,
+		DemucsSlots:        1,
+	})
+	if err != nil {
+		t.Fatalf("ReserveTier(GPUExecution) failed: %v", err)
+	}
+	if gpuLease.Tier != AdmissionTierGPUExecution {
+		t.Fatalf("expected tier GPUExecution, got %v", gpuLease.Tier)
+	}
+
+	retainedLease, err := controller.ReserveTier(AdmissionTierRetainedResidency, AdmissionPlan{
+		DedicatedVRAMBytes: 2 * gib,
+	})
+	if err != nil {
+		t.Fatalf("ReserveTier(RetainedResidency) failed: %v", err)
+	}
+	if retainedLease.Tier != AdmissionTierRetainedResidency {
+		t.Fatalf("expected tier RetainedResidency, got %v", retainedLease.Tier)
+	}
+
+	if got := controller.ActiveLeasesByTier(AdmissionTierDownstream); got != 1 {
+		t.Fatalf("Downstream active leases = %d, want 1", got)
+	}
+	if got := controller.ActiveLeasesByTier(AdmissionTierGPUExecution); got != 1 {
+		t.Fatalf("GPUExecution active leases = %d, want 1", got)
+	}
+	if got := controller.ActiveLeasesByTier(AdmissionTierRetainedResidency); got != 1 {
+		t.Fatalf("RetainedResidency active leases = %d, want 1", got)
+	}
+
+	// Releasing GPUExecution must not disturb Downstream or RetainedResidency.
+	if !controller.Release(gpuLease) {
+		t.Fatal("expected Release(gpuLease) to succeed")
+	}
+	if got := controller.UsageByTier(AdmissionTierGPUExecution).DedicatedVRAMBytes; got != 0 {
+		t.Fatalf("GPUExecution VRAM after release = %d, want 0", got)
+	}
+	if got := controller.UsageByTier(AdmissionTierDownstream).HostRAMBytes; got != 4*gib {
+		t.Fatalf("Downstream HostRAM after GPU release = %d, want %d", got, 4*gib)
+	}
+	if got := controller.UsageByTier(AdmissionTierRetainedResidency).DedicatedVRAMBytes; got != 2*gib {
+		t.Fatalf("RetainedResidency VRAM after GPU release = %d, want %d", got, 2*gib)
+	}
+
+	// Drain remaining tiers.
+	if !controller.Release(downLease) || !controller.Release(retainedLease) {
+		t.Fatal("expected remaining tier releases to succeed")
+	}
+	for _, tier := range []AdmissionTier{AdmissionTierDownstream, AdmissionTierGPUExecution, AdmissionTierRetainedResidency} {
+		if got := controller.ActiveLeasesByTier(tier); got != 0 {
+			t.Fatalf("tier %v active leases after drain = %d, want 0", tier, got)
+		}
+		if u := controller.UsageByTier(tier); u != (AdmissionUsage{}) {
+			t.Fatalf("tier %v usage after drain = %+v, want zero", tier, u)
+		}
+	}
+	if u := controller.Usage(); u != (AdmissionUsage{}) {
+		t.Fatalf("aggregate usage after drain = %+v, want zero", u)
+	}
+}
+
+func TestAdmissionQueueVsGPULaunchSeparation(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	in := GatekeeperInput{
+		StorageMode:         StorageModeSHM,
+		AvailPhys:           32 * gib,
+		EstimatedTaskRam:    4 * gib,
+		MinAvailRam:         2 * gib,
+		MemoryLoad:          40,
+		AvailDisk:           50 * gib,
+		MinAvailDisk:        5 * gib,
+		GpuUtilization:      95.0,
+		AvailVram:           0,
+		MinAvailVram:        1 * gib,
+		EstimatedTaskVram:   2 * gib,
+		GPURequired:         true,
+		DedicatedVramKnown:  false,
+		DedicatedVramStatus: "busy",
+		MaxGpuUtilization:   0.85,
+		EnableGpuThrottle:   true,
+		RetryDelay:          5 * time.Second,
+	}
+
+	queueDec := EvaluateQueueAdmissionPure(in)
+	if !queueDec.IsGo {
+		t.Fatalf("expected EvaluateQueueAdmissionPure to admit when host RAM/disk are healthy despite busy GPU, got reason=%s", queueDec.Reason)
+	}
+
+	gpuDec := EvaluateGPULaunchPure(in)
+	if gpuDec.IsGo || !gpuDec.IsGpuBlock {
+		t.Fatalf("expected EvaluateGPULaunchPure to block on busy/unknown GPU, got IsGo=%v IsGpuBlock=%v reason=%s", gpuDec.IsGo, gpuDec.IsGpuBlock, gpuDec.Reason)
+	}
+}
+
+func TestAdmissionDownstreamTracks4AndDrain(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	controller, err := NewAdmissionController(AdmissionCapacity{
+		HostRAMBytes:     32 * gib,
+		DownstreamTracks: 4,
+		DiskTempBytes:    32 * gib,
+	})
+	if err != nil {
+		t.Fatalf("NewAdmissionController failed: %v", err)
+	}
+
+	var leases []AdmissionLease
+	for i := 0; i < 4; i++ {
+		lease, reserveErr := controller.ReserveTier(AdmissionTierDownstream, AdmissionPlan{
+			HostRAMBytes:     4 * gib,
+			DownstreamTracks: 1,
+		})
+		if reserveErr != nil {
+			t.Fatalf("expected downstream track %d to reserve, got %v", i+1, reserveErr)
+		}
+		leases = append(leases, lease)
+	}
+
+	if _, fifthErr := controller.ReserveTier(AdmissionTierDownstream, AdmissionPlan{
+		HostRAMBytes:     4 * gib,
+		DownstreamTracks: 1,
+	}); !errors.Is(fifthErr, ErrAdmissionUnavailable) {
+		t.Fatalf("expected 5th downstream track to fail with ErrAdmissionUnavailable, got %v", fifthErr)
+	}
+
+	for _, lease := range leases {
+		if !controller.Release(lease) {
+			t.Fatalf("expected release of lease token %d to succeed", lease.Token)
+		}
+	}
+	if got := controller.Usage().DownstreamTracks; got != 0 {
+		t.Fatalf("DownstreamTracks after drain = %d, want 0", got)
+	}
+	if got := controller.ActiveLeasesByTier(AdmissionTierDownstream); got != 0 {
+		t.Fatalf("ActiveLeasesByTier(Downstream) after drain = %d, want 0", got)
+	}
+}
+
+func TestEvaluateExecutionGPULaunchPure_InsufficientFreeVRAM(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	controller, err := NewAdmissionController(AdmissionCapacity{
+		DedicatedVRAMBytes: 8 * gib,
+		CPULanes:           4,
+		GPULanes:           1,
+		DemucsSlots:        1,
+	})
+	if err != nil {
+		t.Fatalf("NewAdmissionController failed: %v", err)
+	}
+
+	d := &Dispatcher{
+		config: Config{
+			MinAvailVramGB:         1.0,
+			EstimatedDemucsVramGB:  1.5,
+			MaxGpuUtilizationRatio: 0.85,
+			EnableGpuThrottle:      true,
+			GatekeeperRetryDelaySec: 5,
+		},
+		admission: controller,
+	}
+
+	now := time.Now()
+	lowFreeGPU := &sysinfo.GpuMetrics{
+		DedicatedTotalBytes:     8 * gib,
+		AvailableVramBytes:      2 * gib, // Known free VRAM < 1.5 GiB task + 1.0 GiB floor = 2.5 GiB
+		DedicatedCapacityValid:  true,
+		DedicatedAvailableValid: true,
+		SharedUsageValid:        true,
+		UtilizationPercent:      20.0,
+		CollectedAt:             now,
+	}
+	if _, err := d.reserveExecutionAdmissionWithGPU(lowFreeGPU, now); err == nil {
+		t.Fatal("expected reserveExecutionAdmissionWithGPU to reject known insufficient free VRAM")
+	}
+	if got := controller.ActiveLeasesByTier(AdmissionTierGPUExecution); got != 0 {
+		t.Fatalf("expected 0 GPUExecution leases on rejected launch, got %d", got)
+	}
+
+	// Even with EnableGpuThrottle=false, known insufficient free VRAM must reject launch.
+	d.config.EnableGpuThrottle = false
+	zeroFreeGPU := &sysinfo.GpuMetrics{
+		DedicatedTotalBytes:     8 * gib,
+		AvailableVramBytes:      0,
+		DedicatedCapacityValid:  true,
+		DedicatedAvailableValid: true,
+		SharedUsageValid:        true,
+		UtilizationPercent:      10.0,
+		CollectedAt:             now,
+	}
+	if _, err := d.reserveExecutionAdmissionWithGPU(zeroFreeGPU, now); err == nil {
+		t.Fatal("expected reserveExecutionAdmissionWithGPU to reject 0 free VRAM even when EnableGpuThrottle=false")
+	}
+	if _, err := d.reserveExecutionAdmissionWithGPU(lowFreeGPU, now); err == nil {
+		t.Fatal("expected reserveExecutionAdmissionWithGPU to reject insufficient free VRAM even when EnableGpuThrottle=false")
+	}
+	d.config.EnableGpuThrottle = true
+
+	healthyGPU := &sysinfo.GpuMetrics{
+		DedicatedTotalBytes:     8 * gib,
+		AvailableVramBytes:      4 * gib,
+		DedicatedCapacityValid:  true,
+		DedicatedAvailableValid: true,
+		SharedUsageValid:        true,
+		UtilizationPercent:      20.0,
+		CollectedAt:             now,
+	}
+	lease, err := d.reserveExecutionAdmissionWithGPU(healthyGPU, now)
+	if err != nil {
+		t.Fatalf("expected healthy GPU launch to succeed, got %v", err)
+	}
+	if got := controller.ActiveLeasesByTier(AdmissionTierGPUExecution); got != 1 {
+		t.Fatalf("expected 1 GPUExecution lease, got %d", got)
+	}
+	d.releaseExecutionAdmission(lease)
+	if got := controller.ActiveLeasesByTier(AdmissionTierGPUExecution); got != 0 {
+		t.Fatalf("expected 0 GPUExecution leases after release, got %d", got)
+	}
+}
+
+func TestAdmissionMixedSizeCandidatePreservesSharedCap(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	budget := 32 * gib
+	stableTrackRAM := 2 * gib
+	sharedCap := ResolveDownstreamTracksCapPure(0, 4, budget, stableTrackRAM)
+	if sharedCap != 4 {
+		t.Fatalf("expected sharedCap=4, got %d", sharedCap)
+	}
+
+	controller, err := NewAdmissionController(AdmissionCapacity{
+		HostRAMBytes:     budget,
+		DownstreamTracks: sharedCap,
+		DiskTempBytes:    64 * gib,
+	})
+	if err != nil {
+		t.Fatalf("NewAdmissionController failed: %v", err)
+	}
+
+	lease1, err := controller.ReserveTier(AdmissionTierDownstream, AdmissionPlan{HostRAMBytes: 8 * gib, DownstreamTracks: 1})
+	if err != nil {
+		t.Fatalf("lease1 failed: %v", err)
+	}
+	defer controller.Release(lease1)
+	lease2, err := controller.ReserveTier(AdmissionTierDownstream, AdmissionPlan{HostRAMBytes: 8 * gib, DownstreamTracks: 1})
+	if err != nil {
+		t.Fatalf("lease2 failed: %v", err)
+	}
+	defer controller.Release(lease2)
+
+	// Large 20 GiB candidate uses the same stable cap (4) and is rejected without shrinking Capacity().DownstreamTracks.
+	if err := controller.UpdateCapacity(AdmissionCapacity{
+		HostRAMBytes:     budget,
+		DownstreamTracks: ResolveDownstreamTracksCapPure(0, 4, budget, stableTrackRAM),
+		DiskTempBytes:    64 * gib,
+	}); err != nil {
+		t.Fatalf("UpdateCapacity failed: %v", err)
+	}
+	if _, err := controller.ReserveTier(AdmissionTierDownstream, AdmissionPlan{HostRAMBytes: 20 * gib, DownstreamTracks: 1}); !errors.Is(err, ErrAdmissionUnavailable) {
+		t.Fatalf("expected 20 GiB candidate to fail with ErrAdmissionUnavailable, got %v", err)
+	}
+	if got := controller.Capacity().DownstreamTracks; got != 4 {
+		t.Fatalf("expected shared DownstreamTracks cap to remain 4 after rejected candidate, got %d", got)
+	}
+	if got := controller.ActiveLeasesByTier(AdmissionTierDownstream); got != 2 {
+		t.Fatalf("expected 2 active downstream leases preserved, got %d", got)
+	}
+}
+
+func TestDispatcherRetainedGPUResidencyLifecycle(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	controller, err := NewAdmissionController(AdmissionCapacity{
+		DedicatedVRAMBytes: 8 * gib,
+		DownstreamTracks:   4,
+		CPULanes:           4,
+		GPULanes:           1,
+		DemucsSlots:        1,
+	})
+	if err != nil {
+		t.Fatalf("NewAdmissionController failed: %v", err)
+	}
+
+	d := &Dispatcher{
+		config: Config{
+			EstimatedDemucsVramGB: 2.0,
+		},
+		admission: controller,
+	}
+	client := &WorkerDaemonClient{}
+
+	if err := d.reserveRetainedGPUResidency(client); err != nil {
+		t.Fatalf("reserveRetainedGPUResidency failed: %v", err)
+	}
+	if err := d.reserveRetainedGPUResidency(client); err != nil { // idempotent for same client
+		t.Fatalf("idempotent reserveRetainedGPUResidency failed: %v", err)
+	}
+	if got := controller.ActiveLeasesByTier(AdmissionTierRetainedResidency); got != 1 {
+		t.Fatalf("expected 1 retained residency lease, got %d", got)
+	}
+	if got := controller.UsageByTier(AdmissionTierRetainedResidency).DedicatedVRAMBytes; got != 2*gib {
+		t.Fatalf("expected retained VRAM = %d, got %d", 2*gib, got)
+	}
+
+	// Second client fails when remaining VRAM capacity is exhausted, surfacing the error.
+	if err := controller.UpdateCapacity(AdmissionCapacity{
+		DedicatedVRAMBytes: 2 * gib,
+		DownstreamTracks:   4,
+		CPULanes:           4,
+		GPULanes:           1,
+		DemucsSlots:        1,
+	}); err != nil {
+		t.Fatalf("UpdateCapacity failed: %v", err)
+	}
+	client2 := &WorkerDaemonClient{}
+	if err := d.reserveRetainedGPUResidency(client2); !errors.Is(err, ErrAdmissionUnavailable) {
+		t.Fatalf("expected ErrAdmissionUnavailable when VRAM ledger is full, got %v", err)
+	}
+
+	d.releaseRetainedGPUResidency(client)
+	if got := controller.ActiveLeasesByTier(AdmissionTierRetainedResidency); got != 0 {
+		t.Fatalf("expected 0 retained residency leases after teardown, got %d", got)
+	}
+	if got := controller.UsageByTier(AdmissionTierRetainedResidency).DedicatedVRAMBytes; got != 0 {
+		t.Fatalf("expected retained VRAM = 0 after teardown, got %d", got)
+	}
+}
+
+func TestAdmissionQueueSplitAtCap1WithBusyGPU(t *testing.T) {
+	const gib = uint64(1024 * 1024 * 1024)
+	cap1 := ResolveDownstreamTracksCapPure(1, 8, 32*gib, 2*gib)
+	if cap1 != 1 {
+		t.Fatalf("expected cap=1, got %d", cap1)
+	}
+
+	in := GatekeeperInput{
+		StorageMode:         StorageModeSHM,
+		AvailPhys:           16 * gib,
+		EstimatedTaskRam:    4 * gib,
+		MinAvailRam:         2 * gib,
+		MemoryLoad:          40,
+		AvailDisk:           40 * gib,
+		MinAvailDisk:        5 * gib,
+		GpuUtilization:      99.0,
+		AvailVram:           0,
+		MinAvailVram:        1 * gib,
+		EstimatedTaskVram:   2 * gib,
+		GPURequired:         true,
+		DedicatedVramKnown:  true,
+		DedicatedVramStatus: "busy",
+		MaxGpuUtilization:   0.85,
+		EnableGpuThrottle:   true,
+		RetryDelay:          5 * time.Second,
+	}
+
+	// Queue admission at cap=1 succeeds when host RAM & disk are healthy, even while GPU is busy.
+	if q := EvaluateQueueAdmissionPure(in); !q.IsGo {
+		t.Fatalf("expected EvaluateQueueAdmissionPure GO at cap=1 with healthy host resources, got %s", q.Reason)
+	}
+	// GPU launch check still rejects the busy GPU.
+	if g := EvaluateGPULaunchPure(in); g.IsGo || !g.IsGpuBlock {
+		t.Fatalf("expected EvaluateGPULaunchPure NOGO on busy GPU, got IsGo=%v IsGpuBlock=%v", g.IsGo, g.IsGpuBlock)
+	}
+}

@@ -38,10 +38,25 @@ type AdmissionDecision struct {
 	Reason     string
 }
 
-// AdmissionLease is the ownership receipt returned by AtomicReserve. Token
-// identifies the reservation; Release accepts a lease at most once.
+// AdmissionTier separates lifetime accounting for downstream track leases,
+// GPU execution grants, and retained GPU daemon residency.
+type AdmissionTier uint8
+
+const (
+	AdmissionTierDownstream AdmissionTier = iota
+	AdmissionTierGPUExecution
+	AdmissionTierRetainedResidency
+)
+
+func (t AdmissionTier) valid() bool {
+	return t <= AdmissionTierRetainedResidency
+}
+
+// AdmissionLease is the ownership receipt returned by AtomicReserve / ReserveTier.
+// Token identifies the reservation; Release accepts a lease at most once.
 type AdmissionLease struct {
 	Token              uint64
+	Tier               AdmissionTier
 	StorageMode        StorageMode
 	HostRAMBytes       uint64
 	DedicatedVRAMBytes uint64
@@ -65,6 +80,7 @@ var (
 )
 
 type admissionLeaseState struct {
+	tier AdmissionTier
 	plan AdmissionPlan
 }
 
@@ -139,14 +155,16 @@ func (d *Dispatcher) evaluateMemoryPressure(load uint32, diskFallback bool) Memo
 }
 
 // AdmissionController owns all resource reservations for a dispatch domain.
-// It intentionally has no worker, queue, or OS-resource knowledge; those are
-// supplied by the later integration phase.
+// It tracks aggregate usage alongside three independent lifetime tiers:
+// downstream track leases, GPU execution grants, and retained GPU residency.
 type AdmissionController struct {
-	mu       sync.Mutex
-	capacity AdmissionCapacity
-	used     AdmissionUsage
-	nextID   uint64
-	leases   map[uint64]admissionLeaseState
+	mu         sync.Mutex
+	capacity   AdmissionCapacity
+	used       AdmissionUsage
+	tierUsed   map[AdmissionTier]AdmissionUsage
+	tierCounts map[AdmissionTier]int
+	nextID     uint64
+	leases     map[uint64]admissionLeaseState
 }
 
 func NewAdmissionController(capacity AdmissionCapacity) (*AdmissionController, error) {
@@ -154,8 +172,10 @@ func NewAdmissionController(capacity AdmissionCapacity) (*AdmissionController, e
 		return nil, fmt.Errorf("create admission controller: %w", err)
 	}
 	return &AdmissionController{
-		capacity: capacity,
-		leases:   make(map[uint64]admissionLeaseState),
+		capacity:   capacity,
+		tierUsed:   make(map[AdmissionTier]AdmissionUsage),
+		tierCounts: make(map[AdmissionTier]int),
+		leases:     make(map[uint64]admissionLeaseState),
 	}, nil
 }
 
@@ -190,10 +210,15 @@ func (c *AdmissionController) Plan(request AdmissionPlan) AdmissionDecision {
 	return AdmissionDecision{Request: request, Available: available, Reason: "one or more resource budgets are exhausted"}
 }
 
-// AtomicReserve rechecks the plan and records one token while holding the
-// controller lock. A stale Plan result therefore cannot overcommit capacity.
+// AtomicReserve rechecks the plan and records a downstream-tier token while
+// holding the controller lock. A stale Plan result therefore cannot overcommit.
 func (c *AdmissionController) AtomicReserve(plan AdmissionPlan) (AdmissionLease, error) {
-	if c == nil {
+	return c.ReserveTier(AdmissionTierDownstream, plan)
+}
+
+// ReserveTier atomically reserves resources attributed to an explicit lifetime tier.
+func (c *AdmissionController) ReserveTier(tier AdmissionTier, plan AdmissionPlan) (AdmissionLease, error) {
+	if c == nil || !tier.valid() {
 		return AdmissionLease{}, fmt.Errorf("reserve admission lease: %w", ErrInvalidAdmissionPlan)
 	}
 	if err := validateAdmissionPlan(plan); err != nil {
@@ -215,8 +240,18 @@ func (c *AdmissionController) AtomicReserve(plan AdmissionPlan) (AdmissionLease,
 		return AdmissionLease{}, fmt.Errorf("reserve admission lease: %w", ErrAdmissionUnavailable)
 	}
 	c.used = addAdmissionPlan(c.used, plan)
-	c.leases[c.nextID] = admissionLeaseState{plan: plan}
-	return leaseFromPlan(c.nextID, plan), nil
+	if c.tierUsed == nil {
+		c.tierUsed = make(map[AdmissionTier]AdmissionUsage)
+	}
+	if c.tierCounts == nil {
+		c.tierCounts = make(map[AdmissionTier]int)
+	}
+	c.tierUsed[tier] = addAdmissionPlan(c.tierUsed[tier], plan)
+	c.tierCounts[tier]++
+	c.leases[c.nextID] = admissionLeaseState{tier: tier, plan: plan}
+	lease := leaseFromPlan(c.nextID, plan)
+	lease.Tier = tier
+	return lease, nil
 }
 
 func exceedsFixedAdmissionCapacity(request, capacity AdmissionCapacity) bool {
@@ -273,6 +308,12 @@ func (c *AdmissionController) Release(lease AdmissionLease) bool {
 		return false
 	}
 	c.used = subtractAdmissionPlan(c.used, state.plan)
+	if cur, exists := c.tierUsed[state.tier]; exists {
+		c.tierUsed[state.tier] = subtractAdmissionPlan(cur, state.plan)
+	}
+	if c.tierCounts[state.tier] > 0 {
+		c.tierCounts[state.tier]--
+	}
 	delete(c.leases, lease.Token)
 	return true
 }
@@ -284,6 +325,60 @@ func (c *AdmissionController) Usage() AdmissionUsage {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.used
+}
+
+// Capacity returns a consistent snapshot of the controller's configured capacity.
+func (c *AdmissionController) Capacity() AdmissionCapacity {
+	if c == nil {
+		return AdmissionCapacity{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.capacity
+}
+
+// UsageByTier returns the currently reserved resources for a single lifetime tier.
+func (c *AdmissionController) UsageByTier(tier AdmissionTier) AdmissionUsage {
+	if c == nil || !tier.valid() {
+		return AdmissionUsage{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tierUsed[tier]
+}
+
+// ActiveLeasesByTier returns the number of active leases held in a lifetime tier.
+func (c *AdmissionController) ActiveLeasesByTier(tier AdmissionTier) int {
+	if c == nil || !tier.valid() {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tierCounts[tier]
+}
+
+// ResolveDownstreamTracksCapPure deterministically resolves the maximum concurrent
+// downstream track leases from config, worker pool size, and per-track RAM cost.
+// PureMorph: (configuredMax, numWorkers, hostRAMBudgetBytes, perTrackRAMBytes) -> cap
+func ResolveDownstreamTracksCapPure(configuredMax, numWorkers int, hostRAMBudgetBytes, perTrackRAMBytes uint64) int {
+	if configuredMax > 0 {
+		return configuredMax
+	}
+	ramCap := 1
+	if perTrackRAMBytes > 0 && hostRAMBudgetBytes >= perTrackRAMBytes {
+		computed := hostRAMBudgetBytes / perTrackRAMBytes
+		if computed > 4 {
+			ramCap = 4
+		} else {
+			ramCap = int(computed)
+		}
+	}
+	workerCap := max(numWorkers, 1)
+	capVal := min(ramCap, min(workerCap, 4))
+	if capVal < 1 {
+		return 1
+	}
+	return capVal
 }
 
 func cleanupThenRelease(cleanup func() error, release func()) error {
@@ -437,8 +532,10 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 		return taskAdmissionPlan{}, err
 	}
 
+	stableTrackRAM := max(gigabytesToBytes(cfg.EstimatedWorkerRamGB), 1024*1024*1024)
+	downstreamCap := ResolveDownstreamTracksCapPure(cfg.MaxDownstreamTracks, cfg.NumWorkers, budget, stableTrackRAM)
 	retryDelay := secondsToDuration(cfg.GatekeeperRetryDelaySec)
-	decision := EvaluateGoNoGoPure(GatekeeperInput{
+	gkIn := GatekeeperInput{
 		StorageMode:         storageMode,
 		EstimatedTaskDisk:   diskBytes,
 		AvailPhys:           memInfo.AvailPhys,
@@ -458,17 +555,22 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 		EnableGpuThrottle:   cfg.EnableGpuThrottle,
 		AllowHighMemoryDisk: pressure.ForceDisk,
 		RetryDelay:          retryDelay,
-	})
+	}
+	decision := EvaluateQueueAdmissionPure(gkIn)
 	if !decision.IsGo {
 		return taskAdmissionPlan{}, fmt.Errorf("gatekeeper NOGO: %s", decision.Reason)
 	}
 
 	d.admissionMu.Lock()
 	defer d.admissionMu.Unlock()
+	dedicatedTotal := gpu.DedicatedTotalBytes
+	if (!dedicatedKnown || dedicatedTotal == 0) && d.admission != nil {
+		dedicatedTotal = d.admission.Capacity().DedicatedVRAMBytes
+	}
 	capacity := AdmissionCapacity{
 		HostRAMBytes:       ramBudget(memInfo.TotalPhys, cfg.MaxRamRatio),
-		DedicatedVRAMBytes: gpu.DedicatedTotalBytes,
-		DownstreamTracks:   1,
+		DedicatedVRAMBytes: dedicatedTotal,
+		DownstreamTracks:   downstreamCap,
 		CPULanes:           max(cfg.NumWorkers, 1),
 		GPULanes:           1,
 		DemucsSlots:        1,
@@ -496,8 +598,44 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 	}, nil
 }
 
+func evaluateExecutionGPULaunchPure(cfg Config, gpu *sysinfo.GpuMetrics, now time.Time) error {
+	if gpu == nil || gpu.IsStale(now, sysinfo.DefaultGpuStaleThreshold) {
+		return fmt.Errorf("GPU launch telemetry unavailable")
+	}
+	estimatedVRAM := gigabytesToBytes(cfg.EstimatedDemucsVramGB)
+	if estimatedVRAM == 0 {
+		estimatedVRAM = 1024 * 1024 * 1024
+	}
+	dec := EvaluateGPULaunchPure(GatekeeperInput{
+		StorageMode:         StorageModeSHM,
+		AvailPhys:           math.MaxUint64,
+		AvailDisk:           math.MaxUint64,
+		GpuUtilization:      gpu.UtilizationPercent,
+		AvailVram:           gpu.AvailableVramBytes,
+		MinAvailVram:        gigabytesToBytes(cfg.MinAvailVramGB),
+		EstimatedTaskVram:   estimatedVRAM,
+		GPURequired:         true,
+		DedicatedVramKnown:  gpu.IsDedicatedAvailable() && gpu.DedicatedCapacityValid && gpu.DedicatedTotalBytes > 0,
+		DedicatedVramStatus: gpu.StatusDetail,
+		MaxGpuUtilization:   cfg.MaxGpuUtilizationRatio,
+		EnableGpuThrottle:   cfg.EnableGpuThrottle,
+		RetryDelay:          secondsToDuration(cfg.GatekeeperRetryDelaySec),
+	})
+	if !dec.IsGo {
+		return fmt.Errorf("GPU launch NOGO: %s", dec.Reason)
+	}
+	return nil
+}
+
 func (d *Dispatcher) reserveExecutionAdmission() (AdmissionLease, error) {
+	return d.reserveExecutionAdmissionWithGPU(sysinfo.GetLatestGpuMetrics(), time.Now())
+}
+
+func (d *Dispatcher) reserveExecutionAdmissionWithGPU(gpu *sysinfo.GpuMetrics, now time.Time) (AdmissionLease, error) {
 	cfg := d.GetConfig()
+	if err := evaluateExecutionGPULaunchPure(cfg, gpu, now); err != nil {
+		return AdmissionLease{}, err
+	}
 	vram := gigabytesToBytes(cfg.EstimatedDemucsVramGB)
 	if vram == 0 {
 		vram = 1024 * 1024 * 1024
@@ -508,12 +646,99 @@ func (d *Dispatcher) reserveExecutionAdmission() (AdmissionLease, error) {
 	if controller == nil {
 		return AdmissionLease{}, ErrAdmissionUnavailable
 	}
-	return controller.AtomicReserve(AdmissionPlan{
+	return controller.ReserveTier(AdmissionTierGPUExecution, AdmissionPlan{
 		DedicatedVRAMBytes: vram,
 		CPULanes:           1,
 		GPULanes:           1,
 		DemucsSlots:        1,
 	})
+}
+
+func (d *Dispatcher) reserveRetainedGPUResidency(client *WorkerDaemonClient) error {
+	if d == nil || client == nil {
+		return nil
+	}
+	d.admissionMu.Lock()
+	controller := d.admission
+	if controller == nil {
+		d.admissionMu.Unlock()
+		return nil
+	}
+	if d.retainedGPULeases != nil {
+		if existing, ok := d.retainedGPULeases[client]; ok && existing.Token != 0 {
+			d.admissionMu.Unlock()
+			return nil
+		}
+	}
+	d.admissionMu.Unlock()
+
+	vram := max(gigabytesToBytes(d.GetConfig().EstimatedDemucsVramGB), 1024*1024*1024)
+	lease, err := controller.ReserveTier(AdmissionTierRetainedResidency, AdmissionPlan{
+		DedicatedVRAMBytes: vram,
+	})
+	if err != nil {
+		return err
+	}
+
+	d.admissionMu.Lock()
+	if d.admission == controller {
+		if d.retainedGPULeases == nil {
+			d.retainedGPULeases = make(map[*WorkerDaemonClient]AdmissionLease)
+		}
+		if existing, ok := d.retainedGPULeases[client]; !ok || existing.Token == 0 {
+			d.retainedGPULeases[client] = lease
+			d.admissionMu.Unlock()
+			return nil
+		}
+	}
+	d.admissionMu.Unlock()
+	controller.Release(lease)
+	return nil
+}
+
+func (d *Dispatcher) releaseRetainedGPUResidency(client *WorkerDaemonClient) {
+	if d == nil || client == nil {
+		return
+	}
+	d.admissionMu.Lock()
+	controller := d.admission
+	var lease AdmissionLease
+	var ok bool
+	if d.retainedGPULeases != nil {
+		lease, ok = d.retainedGPULeases[client]
+		if ok {
+			delete(d.retainedGPULeases, client)
+		}
+	}
+	d.admissionMu.Unlock()
+	if controller != nil && ok && lease.Token != 0 {
+		controller.Release(lease)
+	}
+}
+
+func (d *Dispatcher) releaseAllRetainedGPUResidency() {
+	if d == nil {
+		return
+	}
+	d.admissionMu.Lock()
+	controller := d.admission
+	if len(d.retainedGPULeases) == 0 {
+		d.admissionMu.Unlock()
+		return
+	}
+	leases := make([]AdmissionLease, 0, len(d.retainedGPULeases))
+	for c, lease := range d.retainedGPULeases {
+		if lease.Token != 0 {
+			leases = append(leases, lease)
+		}
+		delete(d.retainedGPULeases, c)
+	}
+	d.admissionMu.Unlock()
+	if controller != nil {
+		for _, lease := range leases {
+			controller.Release(lease)
+		}
+	}
 }
 
 func (d *Dispatcher) releaseExecutionAdmission(lease AdmissionLease) {
@@ -536,7 +761,7 @@ func (d *Dispatcher) reserveTaskAdmission(task TaskPayload) (AdmissionLease, err
 	if controller == nil {
 		return AdmissionLease{}, fmt.Errorf("admission controller unavailable")
 	}
-	lease, err := controller.AtomicReserve(planned.request)
+	lease, err := controller.ReserveTier(AdmissionTierDownstream, planned.request)
 	if err != nil {
 		return AdmissionLease{}, err
 	}
@@ -591,7 +816,8 @@ func (d *Dispatcher) recheckTaskAdmissionBeforeDispatch(task TaskPayload, lease 
 		availDisk = math.MaxUint64
 	}
 	pressure := d.evaluateMemoryPressure(memInfo.MemoryLoad, cfg.EnableDiskModeFallback)
-	decision := EvaluateGoNoGoPure(buildLastMileGatekeeperInputPure(cfg, memInfo, gpu, availDisk, diskKnown, pressure, lease))
+	gkIn := buildLastMileGatekeeperInputPure(cfg, memInfo, gpu, availDisk, diskKnown, pressure, lease)
+	decision := EvaluateQueueAdmissionPure(gkIn)
 	if !decision.IsGo {
 		return fmt.Errorf("last-mile admission NOGO: %s", decision.Reason)
 	}

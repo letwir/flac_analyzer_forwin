@@ -66,6 +66,7 @@ type Dispatcher struct {
 	parkLogMu              sync.Mutex
 	parkLogReasons         map[string]time.Time
 	arenaPool              *ShmArenaPool
+	retainedGPULeases      map[*WorkerDaemonClient]AdmissionLease
 	statsTracker           *StatsTracker
 	cpuDaemonPool          *WorkerDaemonPool
 	gpuDaemonPool          *WorkerDaemonPool
@@ -447,7 +448,11 @@ func (d *Dispatcher) Stop() {
 	if d.gpuDaemonPool != nil {
 		if err := d.gpuDaemonPool.Close(); err != nil {
 			d.LogError("[Dispatcher] Failed to close GPU daemon pool during shutdown: %v", err)
+		} else {
+			d.releaseAllRetainedGPUResidency()
 		}
+	} else {
+		d.releaseAllRetainedGPUResidency()
 	}
 	if d.demucsPool != nil {
 		if err := d.demucsPool.Close(); err != nil {

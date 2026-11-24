@@ -265,6 +265,49 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 	}
 }
 
+// EvaluateQueueAdmissionPure checks host RAM, memory load, and disk capacity for
+// admitting a task into the downstream pipeline without blocking on live GPU busyness.
+// PureMorph: GatekeeperInput -> GatekeeperDecision
+func EvaluateQueueAdmissionPure(in GatekeeperInput) GatekeeperDecision {
+	in.GPURequired = false
+	in.EnableGpuThrottle = false
+	return EvaluateGoNoGoPure(in)
+}
+
+// EvaluateGPULaunchPure checks full resource safety including dedicated GPU VRAM
+// and utilization thresholds immediately before launching GPU work.
+// PureMorph: GatekeeperInput -> GatekeeperDecision
+func EvaluateGPULaunchPure(in GatekeeperInput) GatekeeperDecision {
+	in.GPURequired = true
+	dec := EvaluateGoNoGoPure(in)
+	if !dec.IsGo {
+		return dec
+	}
+	if !in.EnableGpuThrottle {
+		requiredVram, ok := checkedAddUint64(in.EstimatedTaskVram, in.MinAvailVram)
+		if !ok {
+			return GatekeeperDecision{Reason: "required VRAM estimate overflow", StorageMode: in.StorageMode, IsGpuBlock: true}
+		}
+		if requiredVram > 0 && in.AvailVram < requiredVram {
+			retryDelay := in.RetryDelay
+			if retryDelay <= 0 {
+				retryDelay = 20 * time.Second
+			}
+			return GatekeeperDecision{
+				IsGo:              false,
+				WaitDuration:      retryDelay,
+				Reason:            fmt.Sprintf("Available VRAM (%.2f GB) < Required (%.2f GB = Task %.2f GB + MinAvail %.2f GB)", float64(in.AvailVram)/(1024*1024*1024), float64(requiredVram)/(1024*1024*1024), float64(in.EstimatedTaskVram)/(1024*1024*1024), float64(in.MinAvailVram)/(1024*1024*1024)),
+				StorageMode:       in.StorageMode,
+				GpuUtilization:    in.GpuUtilization,
+				AvailVramBytes:    in.AvailVram,
+				RequiredVramBytes: requiredVram,
+				IsGpuBlock:        true,
+			}
+		}
+	}
+	return dec
+}
+
 // EvaluateGoNoGo queries live system memory, disk, and GPU status and delegates the preflight decision to EvaluateGoNoGoPure.
 // SideEffectFn: EvaluateGoNoGo (IO Monad)
 func (d *Dispatcher) EvaluateGoNoGo(workerID int, task TaskPayload) (bool, time.Duration) {

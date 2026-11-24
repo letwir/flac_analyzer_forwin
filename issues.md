@@ -376,8 +376,17 @@ GPT-6.2 Sol Verifier は第3ラウンド（`task-2781`）で `STATUS: FAIL`。3�
 
 #### Phase B (中目標): Feature #1 (`DownstreamTracks` 動的拡大・3層 Admission 台帳・有界ターン `GPUArbiter`)
 - [x] **PB-S1**: 設定項目追加・1 GiB VRAM 下限統一・単一ファイル強制 cap=1 (`orchestrator/config/config.go`, `loader.go`, `loader_test.go`, `dispatcher/reload.go`) — `MaxDownstreamTracks`, `RetainGpuDaemonIdle`, `DiskCacheDir`, `SpectroCacheDir`, `SpectroCacheMinFreeGB` 追加およびホットリロード整合
-- [ ] **PB-S2**: `AdmissionController` 決定論的 cap 解決と3層ライフタイム台帳分離 (`orchestrator/dispatcher/admission.go`, `gatekeeper.go`, `admission_test.go`) — (1) Downstream Track Lease, (2) GPU Execution Grant, (3) Retained Residency の完全分離、キュー受理と起動時 GPU 空き判定の分離、`DownstreamTracks=4` ＆ ドレインテスト
+- [x] **PB-S2** (**条件付き完了: Verifier 未 PASS、残件は下記「PB-S2 未解決事項」に記録**): `AdmissionController` 決定論的 cap 解決と3層ライフタイム台帳分離 (`orchestrator/dispatcher/admission.go`, `gatekeeper.go`, `admission_test.go`) — (1) Downstream Track Lease, (2) GPU Execution Grant, (3) Retained Residency の完全分離、キュー受理と起動時 GPU 空き判定の分離、`DownstreamTracks=4` ＆ ドレインテスト
 - [ ] **PB-S3**: 有界ターン `GPUArbiter` による Demucs/Feature GPU 調停 (`orchestrator/dispatcher/gpu_arbiter.go`, `gpu_arbiter_test.go`, `pipeline_demucs.go`, `pipeline_features.go`) — `AcquireDemucs`, `AcquireFeatureBatch`, `RegisterPostDemucsFeatureTurn` 実装により最古の Demucs 待機前に Feature を最大1ターンだけ優先し自己デッドロックを根絶
+
+#### PB-S2 未解決事項
+
+GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`。3ラウンド上限に達したため、以下を未解決のまま条件付き完了とし、`PD-S2` の統合検証で再点検・解消する。
+
+1. `EvaluateGPULaunchPure` / `EvaluateGoNoGoPure` (`gatekeeper.go:226, 280`): `EnableGpuThrottle=true` かつ `MinAvailVram == 0` の場合、`EvaluateGoNoGoPure` 側の VRAM チェックがスキップされ、既知の空き VRAM 0 バイト・正の `EstimatedTaskVram` で通過し得る。スロットル設定有無にかかわらず `EstimatedTaskVram + MinAvailVram` のチェック加算を強制すること。
+2. 初回 `admissionPlanForTask` (`admission.go:564, 634`): 初回サンプルで専用 VRAM 計測値が無効（`DedicatedTotalBytes == 0`）だと台帳の `DedicatedVRAMBytes` が 0 で初期化され、後続の有効サンプルによる起動予約が失敗し得る。有効計測時のみ更新し、有効な起動サンプルで未初期化容量を補完すること。
+3. `executeFeatureLane` (`pipeline_features.go:498, 550`): 抽出完了後の `CleanupGPU`/retire 分岐と `defer` で `shouldRetainGpuDaemonIdle()` を2回読んでおり、間のホットリロードで判定が食い違い得る。1回だけ取得して一貫使用すること。
+4. `runGpuTrimLoop` / `AcquireTracked` 失敗経路 (`pipeline_features.go:353, 372, 449`): `releaseAllRetainedGPUResidency()` ではなく各 watcher に対象クライアントを紐付け、終了確認済みの該当クライアントのみ解放すること。
 
 #### Phase C (中目標): Feature #2 (CPU専用 GPU チャンク STFT `*.spectro.npy`・Per-Volume 容量台帳・2段 Wavefront)
 - [ ] **PC-S1**: CPU 専用チャンク化 GPU STFT と決定的 `mmap` クローズ (`analyzer/tensor_dsp.py`, `worker_gpu_daemon.py`, `analyzer/core.py`, `tests/test_spectro_cache_parity.py`) — `T = 1 + N // 512`, `center=False`, `periodic=True` Hann 窓、`open_memmap` flush+close→`os.replace`、2048→1024 OOM リトライ、`extract_tensor_features` 1024-reflect 不変性維持、`AudioContext` の形状/dtype検証と `mmap` 完全解放

@@ -356,6 +356,9 @@ func (d *Dispatcher) runIdleGPUDaemonTrimLoop() {
 			_, watchers = d.gpuDaemonPool.TrimIdleWithWatchers(0)
 		}
 		if len(watchers) == 0 {
+			if !d.shouldRetainGpuDaemonIdle() {
+				d.releaseAllRetainedGPUResidency()
+			}
 			d.gpuArbiter.Release()
 			continue
 		}
@@ -368,12 +371,14 @@ func (d *Dispatcher) runIdleGPUDaemonTrimLoop() {
 		}(watchers)
 		select {
 		case <-waitDone:
+			d.releaseAllRetainedGPUResidency()
 			d.gpuArbiter.Release()
 		case <-trimCtx.Done():
-			// Shutdown cancellation: keep gpuArbiter fenced until retired workers exit,
+			// Shutdown cancellation: keep gpuArbiter fenced and residency leased until retired workers exit,
 			// but return so Stop() can proceed to bounded gpuDaemonPool.Close().
 			go func() {
 				<-waitDone
+				d.releaseAllRetainedGPUResidency()
 				d.gpuArbiter.Release()
 			}()
 			d.gpuTrimMu.Lock()
@@ -447,8 +452,11 @@ func (d *Dispatcher) executeFeatureLane(
 				for _, w := range ws {
 					<-w
 				}
+				d.releaseAllRetainedGPUResidency()
 				d.gpuArbiter.Release()
 			}(gpuWaiters)
+		} else if lane == FeatureLaneGPU && !d.shouldRetainGpuDaemonIdle() {
+			d.releaseAllRetainedGPUResidency()
 		}
 		return nil, fmt.Errorf("acquire %s worker daemon: %w", lane, err)
 	}
@@ -476,6 +484,9 @@ func (d *Dispatcher) executeFeatureLane(
 			<-ch
 			if d != nil {
 				d.untrackRetiringClient(c)
+				if lane == FeatureLaneGPU {
+					d.releaseRetainedGPUResidency(c)
+				}
 			}
 			if relArb {
 				d.gpuArbiter.Release()
@@ -483,14 +494,24 @@ func (d *Dispatcher) executeFeatureLane(
 		}(client, watchCh, releaseArbiter)
 	}
 	defer func() {
-		// Enforce non-retention disposition on EVERY exit path after checkout (including early cancel).
-		if lane == FeatureLaneGPU && !d.shouldRetainGpuDaemonIdle() {
+		// Read retention decision once on exit to keep pool disposition and ledger consistent.
+		retainNow := d.shouldRetainGpuDaemonIdle()
+		if lane == FeatureLaneGPU && !retainNow {
 			retireClient = true
+		}
+		if !retireClient && lane == FeatureLaneGPU {
+			if resErr := d.reserveRetainedGPUResidency(client); resErr != nil {
+				retireClient = true
+				retErr = errors.Join(retErr, fmt.Errorf("reserve retained GPU residency: %w", resErr))
+			}
 		}
 		if retireClient {
 			watchCh, retireErr := ops.deferRetire(pool, client)
 			if retireErr != nil {
 				retErr = errors.Join(retErr, fmt.Errorf("retire %s worker daemon: %w", lane, retireErr))
+			}
+			if lane == FeatureLaneGPU && watchCh == nil {
+				d.releaseRetainedGPUResidency(client)
 			}
 			fenceRetirementWatcher(watchCh)
 			return
@@ -499,7 +520,12 @@ func (d *Dispatcher) executeFeatureLane(
 			retErr = errors.Join(retErr, fmt.Errorf("retire %s worker daemon: %w", lane, retireErr))
 			// Pool watcher lookup is atomic with membership check: non-nil means exit & removal are pending,
 			// while nil means the client has already been confirmed exited and removed from allDaemons.
-			fenceRetirementWatcher(ops.retireWatcher(pool, client))
+			watchCh := ops.retireWatcher(pool, client)
+			if lane == FeatureLaneGPU && watchCh == nil {
+				d.releaseRetainedGPUResidency(client)
+			}
+			fenceRetirementWatcher(watchCh)
+			return
 		}
 	}()
 
