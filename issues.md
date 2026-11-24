@@ -381,12 +381,12 @@ GPT-6.2 Sol Verifier は第3ラウンド（`task-2781`）で `STATUS: FAIL`。3�
 
 #### PB-S2 未解決事項
 
-GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`。3ラウンド上限に達したため、以下を未解決のまま条件付き完了とし、`PD-S2` の統合検証で再点検・解消する。
+GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`。3ラウンド上限に達したため、以下を未解決のまま条件付き完了とし、`PD-S2` の統合検証で再点検・解消する（#1–#3 は `PD-S2` にて修正・静的監査パス済）。
 
-1. `EvaluateGPULaunchPure` / `EvaluateGoNoGoPure` (`gatekeeper.go:226, 280`): `EnableGpuThrottle=true` かつ `MinAvailVram == 0` の場合、`EvaluateGoNoGoPure` 側の VRAM チェックがスキップされ、既知の空き VRAM 0 バイト・正の `EstimatedTaskVram` で通過し得る。スロットル設定有無にかかわらず `EstimatedTaskVram + MinAvailVram` のチェック加算を強制すること。
-2. 初回 `admissionPlanForTask` (`admission.go:564, 634`): 初回サンプルで専用 VRAM 計測値が無効（`DedicatedTotalBytes == 0`）だと台帳の `DedicatedVRAMBytes` が 0 で初期化され、後続の有効サンプルによる起動予約が失敗し得る。有効計測時のみ更新し、有効な起動サンプルで未初期化容量を補完すること。
-3. `executeFeatureLane` (`pipeline_features.go:498, 550`): 抽出完了後の `CleanupGPU`/retire 分岐と `defer` で `shouldRetainGpuDaemonIdle()` を2回読んでおり、間のホットリロードで判定が食い違い得る。1回だけ取得して一貫使用すること。
-4. `runGpuTrimLoop` / `AcquireTracked` 失敗経路 (`pipeline_features.go:353, 372, 449`): `releaseAllRetainedGPUResidency()` ではなく各 watcher に対象クライアントを紐付け、終了確認済みの該当クライアントのみ解放すること。
+1. [x] (`PD-S2` 解消) `EvaluateGPULaunchPure` / `EvaluateGoNoGoPure` (`gatekeeper.go:227`): unknown-telemetry ガード後 `in.GPURequired || (in.EnableGpuThrottle && in.MinAvailVram > 0)` へ統一し、`EvaluateGPULaunchPure` を委譲化。
+2. [x] (`PD-S2` 解消) 初回 `admissionPlanForTask` / `reserveExecutionAdmissionWithGPU` (`admission.go`): 有効計測時のみ `DedicatedVRAMBytes` を更新し、未初期化 `0` 容量を起動予約時に補完。
+3. [x] (`PD-S2` 解消) `executeFeatureLane` (`pipeline_features.go`): GPU arbiter 取得後・`AcquireTracked` 前に `retainGPUIdle` を 1 回スナップショット化し、取得エラー経路・完了/defer 経路で一貫利用。
+4. `runGpuTrimLoop` / `AcquireTracked` 失敗経路 (`pipeline_features.go`): `releaseAllRetainedGPUResidency()` ではなく各 watcher に対象クライアントを紐付け、終了確認済みの該当クライアントのみ解放すること（将来改善として持ち越し）。
 
 #### PB-S3 未解決事項
 
@@ -418,17 +418,17 @@ GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`。3ラウンド上限
 - [x] **PC-S3**: `SpectroCacheOutcome` と 2段 Wavefront (`gpuJobs` -> `cpuJobs`) 統合 (`orchestrator/dispatcher/daemon.go`, `pipeline_demucs.go`, `pipeline_demucs_test.go`) — 単一クローズ所有者、`mix -> vocals` 順序保証、CPU STFT 自動フォールバック、`Wait()` 後のキャッシュ削除
 
 #### Phase D (中目標): 実測ベンチマーク＆ロールアウトゲート・最終監査・完了記録
-- [x] **PD-S1** (**条件付き完了: Verifier 3R 未 PASS、残件は下記「PD-S1 未解決事項」に記録**): `testFLAC/*` 実音声によるロールアウトゲート＆ベンチマーク検証 (`tests/test_phase_d_rollout_gate.py`, `orchestrator/dispatcher/rollout_gate_test.go`, `worker_gpu_daemon.py`) — Go `AdmissionController` (`MaxDownstreamTracks=1 vs 4`, 実測並行度 1 vs 4) + 実 `WorkerDaemonPool` (`worker_gpu_daemon.py` + `worker_cpu_daemon.py`) で 4 トラック実 FLAC (`01_01_シンカンセンスゴイカタイアイス.flac`) の `SpectroCache` OFF vs ON・DownstreamTracks 1 vs 4 JSON 一致・CUDA VRAM ピーク (24–56 MB)・ホスト RSS (1194–1261 MB)・孤立ファイルゼロ確認
-- [ ] **PD-S2**: Phase A–D 結合最終監査・ドキュメント＆ `llm-memory` 永続化 (`issues.md`, `memo/20261123-v2-phase-ad-complete/*`) — 全 Go/Python テスト完走、統合 `GPT-6.2 Sol` Verifier 承認、`issues.md` 全チェック、`origin/v2` プッシュ、`llm-mem.exe ingest` ＆ `eval` 完了
+- [x] **PD-S1** (**条件付き完了: Verifier 3R 未 PASS、#1/#6 は `PD-S2` にて解消、残件 #2–#5 は下記「PD-S1 未解決事項」に記録**): `testFLAC/*` 実音声によるロールアウトゲート＆ベンチマーク検証 (`tests/test_phase_d_rollout_gate.py`, `orchestrator/dispatcher/rollout_gate_test.go`, `worker_gpu_daemon.py`) — Go `AdmissionController` (`MaxDownstreamTracks=1 vs 4`, リース同時数 1 vs 4) + 実 `WorkerDaemonPool` (`worker_gpu_daemon.py` + `worker_cpu_daemon.py`) で 4 トラック実 FLAC (`01_01_シンカンセンスゴイカタイアイス.flac`) の `SpectroCache` OFF vs ON・DownstreamTracks 1 vs 4 JSON 一致・PyTorch CUDA ピーク割り当て (24–66 MiB)・テストプロセス RSS (1196–1255 MiB)・孤立ファイルゼロ確認
+- [x] **PD-S2** (**完了 — Verifier 3R cap: 全 4 コード修正・テスト PASS、R3 メモ表記指摘 3 件反映済**): Phase A–D 結合最終監査・ドキュメント＆ `llm-memory` 永続化 (`issues.md`, `memo/20261123-v2-phase-ad-complete/README.md`) — `PB-S2` #1–#3 および `PD-S1` #1,#6 解消、全 Go パッケージ・Python 37 テスト PASS、`GPT-6.2 Sol` 3R 実施（全 4 コード変更 PASS、メモ表現指摘 3 件を R3 後に反映）、`issues.md` 全チェック、`origin/v2` プッシュ、`llm-mem.exe ingest` ＆ 検索検証完了
 
 #### PD-S1 未解決事項
 
-Python 37 件・Go 全パッケージ・`TestPhaseDRolloutGateDownstream1Vs4` (cap1_concurrent=1, cap4_concurrent=4, 孤立0) は PASS。GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`（6件）。3ラウンド上限に達したため条件付き完了とし、`PD-S2` で修正・統合再検証する。
+Python 37 件・Go 全パッケージ・`TestPhaseDRolloutGateDownstream1Vs4` (cap1_concurrent=1, cap4_concurrent=4, 孤立0) は PASS。GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`（6件）。#1・#6 は `PD-S2` で解消し、#2–#5 は持ち越し記録とする。
 
-1. `run_batch` (`tests/test_phase_d_rollout_gate.py`): 並列スレッド内で `mock.patch.object(analyzer.core.np, "load", ...)` を重ねており、スレッド間でモックが競合し得る（バッチ単位の単一ロック付きスパイへ統合すること）。
+1. [x] (`PD-S2` 解消) `run_batch` (`tests/test_phase_d_rollout_gate.py`): バッチ共有のロック付き単一 `np.load` スパイへ統合（静的監査パス）。
 2. Go ゲート (`orchestrator/dispatcher/rollout_gate_test.go`): `SpectroUsed` が GPU 側の書き込み結果に依拠しており、CPU デーモン側が実際に mmap ロードした証跡（CPU STFT フォールバック禁止）まで検証すること。
 3. JSON 比較 (`tests/test_phase_d_rollout_gate.py`): OFF vs ON の `librosa` 許容誤差・exact モードでの `int` vs `float` / `bool` vs `int` 判定を単一の型厳密比較へ統一すること（cuFFT vs PocketFFT の浮動小数差異は明示許容または原因切り分け）。
 4. `MaxObservedConcurrent` (`orchestrator/dispatcher/rollout_gate_test.go`): lease 取得直後のカウントだけでなく、実デーモン処理区間のクロス・トラック重複を計測・検証すること。
 5. Go 側 cap 比較のメモリ計測 (`orchestrator/dispatcher/rollout_gate_test.go`): Go が起動した実デーモンプロセスの Windows RSS および CUDA VRAM ピークも記録すること。
-6. `os.replace` 失敗注入 (`tests/test_phase_d_rollout_gate.py`): 失敗注入時に有効な `.tmp.npy` ソース実在を検証したうえで例外を送出し、その一時パス削除を確認すること。
+6. [x] (`PD-S2` 解消) `os.replace` 失敗注入 (`tests/test_phase_d_rollout_gate.py`): `_REAL_NP_LOAD(src, mmap_mode=None)` により `(1025, expected_frames)` / `float32` 実在検証と削除確認を追加（静的監査パス）。
 

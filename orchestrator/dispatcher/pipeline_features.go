@@ -422,6 +422,7 @@ func (d *Dispatcher) executeFeatureLane(
 	if pool == nil {
 		return nil, fmt.Errorf("%s worker daemon pool is unavailable", lane)
 	}
+	retainGPUIdle := lane == FeatureLaneGPU && d.shouldRetainGpuDaemonIdle()
 	client, spawnDone, err := pool.AcquireTracked(ctxAcquire)
 	if err != nil {
 		tracker := retirementTrackerFromContext(ctx)
@@ -435,7 +436,7 @@ func (d *Dispatcher) executeFeatureLane(
 				gpuWaiters = append(gpuWaiters, spawnDone)
 			}
 		}
-		if lane == FeatureLaneGPU && !d.shouldRetainGpuDaemonIdle() {
+		if lane == FeatureLaneGPU && !retainGPUIdle {
 			// Dispose of any idle GPU daemon synchronously under the current GPU arbiter grant
 			// before returning so no competing Demucs task can start while VRAM is still occupied.
 			_, trimWatchers := pool.TrimIdleWithWatchers(0)
@@ -455,7 +456,7 @@ func (d *Dispatcher) executeFeatureLane(
 				d.releaseAllRetainedGPUResidency()
 				d.gpuArbiter.Release()
 			}(gpuWaiters)
-		} else if lane == FeatureLaneGPU && !d.shouldRetainGpuDaemonIdle() {
+		} else if lane == FeatureLaneGPU && !retainGPUIdle {
 			d.releaseAllRetainedGPUResidency()
 		}
 		return nil, fmt.Errorf("acquire %s worker daemon: %w", lane, err)
@@ -494,9 +495,7 @@ func (d *Dispatcher) executeFeatureLane(
 		}(client, watchCh, releaseArbiter)
 	}
 	defer func() {
-		// Read retention decision once on exit to keep pool disposition and ledger consistent.
-		retainNow := d.shouldRetainGpuDaemonIdle()
-		if lane == FeatureLaneGPU && !retainNow {
+		if lane == FeatureLaneGPU && !retainGPUIdle {
 			retireClient = true
 		}
 		if !retireClient && lane == FeatureLaneGPU {
@@ -547,7 +546,7 @@ func (d *Dispatcher) executeFeatureLane(
 			retireClient = true
 			return nil, extractErr
 		}
-		if !d.shouldRetainGpuDaemonIdle() {
+		if !retainGPUIdle {
 			// Skip CleanupGPU for non-retained GPU daemons: retire the checked-out client via
 			// DeferRetire while keeping gpuArbiter and any SHM lease fenced until exit completes.
 			retireClient = true

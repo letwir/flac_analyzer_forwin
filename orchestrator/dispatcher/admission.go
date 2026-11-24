@@ -567,8 +567,10 @@ func (d *Dispatcher) admissionPlanForTask(task TaskPayload) (taskAdmissionPlan, 
 
 	d.admissionMu.Lock()
 	defer d.admissionMu.Unlock()
-	dedicatedTotal := gpu.DedicatedTotalBytes
-	if (!dedicatedKnown || dedicatedTotal == 0) && d.admission != nil {
+	var dedicatedTotal uint64
+	if dedicatedKnown && gpu != nil {
+		dedicatedTotal = gpu.DedicatedTotalBytes
+	} else if d.admission != nil {
 		dedicatedTotal = d.admission.Capacity().DedicatedVRAMBytes
 	}
 	capacity := AdmissionCapacity{
@@ -648,6 +650,11 @@ func (d *Dispatcher) reserveExecutionAdmissionWithGPU(gpu *sysinfo.GpuMetrics, n
 	}
 	d.admissionMu.Lock()
 	controller := d.admission
+	if controller != nil && controller.Capacity().DedicatedVRAMBytes == 0 && gpu != nil && gpu.DedicatedCapacityValid && gpu.DedicatedTotalBytes > 0 {
+		capCopy := controller.Capacity()
+		capCopy.DedicatedVRAMBytes = gpu.DedicatedTotalBytes
+		_ = controller.UpdateCapacity(capCopy)
+	}
 	d.admissionMu.Unlock()
 	if controller == nil {
 		return AdmissionLease{}, ErrAdmissionUnavailable

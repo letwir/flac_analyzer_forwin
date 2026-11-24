@@ -6,12 +6,15 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
 import numpy as np
 import soundfile as sf
 import torch
+
+_REAL_NP_LOAD = np.load
 
 import analyzer.core
 import analyzer.tensor_dsp
@@ -145,28 +148,39 @@ def _extract_track_json(
     track_id: str,
     spectro_path: str | None = None,
     tc: unittest.TestCase | None = None,
+    external_load_log: tuple[threading.Lock, dict[str, list[tuple[tuple, dict]]]] | None = None,
 ) -> tuple[dict, dict]:
     y_tensor = torch.from_numpy(y)
     tensor_feats = extract_tensor_features(y_tensor, sr, device, stem_name="mix")
     if spectro_path is not None:
         compute_and_save_spectro_chunked_Large(y_tensor, spectro_path, device)
-    real_np_load = np.load
-    load_calls: list[tuple[tuple, dict]] = []
+    real_np_load = _REAL_NP_LOAD
+    local_calls: list[tuple[tuple, dict]] = []
     loaded_spectro: np.ndarray | None = None
 
-    def spying_load(*args, **kwargs):
-        load_calls.append((args, kwargs))
-        return real_np_load(*args, **kwargs)
+    if external_load_log is None:
+        def spying_load(*args, **kwargs):
+            local_calls.append((args, kwargs))
+            return real_np_load(*args, **kwargs)
 
-    with mock.patch.object(analyzer.core.np, "load", side_effect=spying_load):
+        with mock.patch.object(analyzer.core.np, "load", side_effect=spying_load):
+            with AudioContext(y=y, sr=sr, source="mix", spectro_path=spectro_path) as ctx:
+                raw = librosa_extractor.run(ctx)
+                librosa_json = json.loads(json.dumps(raw.to_postgres_dict(track_id=track_id)))
+                if ctx._spectro is not None:
+                    loaded_spectro = ctx._spectro.copy()
+    else:
         with AudioContext(y=y, sr=sr, source="mix", spectro_path=spectro_path) as ctx:
             raw = librosa_extractor.run(ctx)
             librosa_json = json.loads(json.dumps(raw.to_postgres_dict(track_id=track_id)))
             if ctx._spectro is not None:
                 loaded_spectro = ctx._spectro.copy()
+        lock, recorded = external_load_log
+        with lock:
+            local_calls = list(recorded.get(spectro_path or "", []))
 
     if spectro_path is not None and tc is not None:
-        tc.assertIn(((spectro_path,), {"mmap_mode": "r"}), load_calls, "AudioContext did not load spectro cache")
+        tc.assertIn(((spectro_path,), {"mmap_mode": "r"}), local_calls, "AudioContext did not load spectro cache")
         tc.assertIsNotNone(loaded_spectro, "AudioContext did not retain loaded spectrogram")
         disk_spectro = real_np_load(spectro_path)
         np.testing.assert_array_equal(loaded_spectro, disk_spectro)
@@ -289,17 +303,35 @@ class TestPhaseDRolloutGate(unittest.TestCase):
             os.remove(written_path)
             self.assertEqual(sorted(os.listdir(tmp_dir)), ["wave.npy"])
 
-            # Inject failure AFTER real NamedTemporaryFile/open_memmap writes .tmp.npy
+            # Inject failure AFTER real NamedTemporaryFile/open_memmap writes valid .tmp.npy
             fallback_path = os.path.join(tmp_dir, "fallback.spectro.npy")
+            expected_frames = 1 + len(y) // 512
+            captured_tmp_srcs: list[str] = []
+
+            def fail_after_real_tmp_write(src: str, dst: str) -> None:
+                self.assertEqual(dst, fallback_path)
+                self.assertTrue(os.path.isfile(src), f"expected real temp file before os.replace, got {src}")
+                self.assertTrue(src.endswith(".tmp.npy"), f"unexpected temp file suffix: {src}")
+                tmp_arr = _REAL_NP_LOAD(src, mmap_mode=None)
+                try:
+                    self.assertEqual(tmp_arr.shape, (1025, expected_frames))
+                    self.assertEqual(tmp_arr.dtype, np.float32)
+                finally:
+                    del tmp_arr
+                captured_tmp_srcs.append(src)
+                raise OSError("simulated replace failure")
+
             with mock.patch.object(
                 analyzer.tensor_dsp.os,
                 "replace",
-                side_effect=OSError("simulated replace failure"),
+                side_effect=fail_after_real_tmp_write,
             ):
                 resp_fallback = worker_gpu_daemon.handle_extract_gpu(
                     {"sr": sr, "stems": {"mix": {**base_stem, "spectro_path": fallback_path}}},
                     device,
                 )
+            self.assertEqual(len(captured_tmp_srcs), 1)
+            self.assertFalse(os.path.exists(captured_tmp_srcs[0]), "temp file was not cleaned up after replace error")
             self.assertEqual(resp_fallback["status"], "success")
             self.assertEqual(resp_fallback["tensor"]["mix"], resp_written["tensor"]["mix"])
             self.assertEqual(resp_fallback["spectro_cache"]["mix"]["status"], "fallback")
@@ -327,12 +359,28 @@ class TestPhaseDRolloutGate(unittest.TestCase):
 
         def run_batch(max_workers: int) -> list[tuple[dict, dict]]:
             with tempfile.TemporaryDirectory() as tmp_dir:
+                real_np_load = _REAL_NP_LOAD
+                load_lock = threading.Lock()
+                recorded_loads: dict[str, list[tuple[tuple, dict]]] = {}
+
+                def batch_spying_load(*args, **kwargs):
+                    key = str(args[0]) if args else ""
+                    with load_lock:
+                        recorded_loads.setdefault(key, []).append((args, kwargs))
+                    return real_np_load(*args, **kwargs)
+
                 def worker(idx: int) -> tuple[dict, dict]:
                     y_seg, sr_seg = segments[idx]
                     spec_path = os.path.join(tmp_dir, f"track_{idx}.spectro.npy")
                     try:
                         return _extract_track_json(
-                            y_seg, sr_seg, device, track_id=f"track-{idx}", spectro_path=spec_path, tc=self
+                            y_seg,
+                            sr_seg,
+                            device,
+                            track_id=f"track-{idx}",
+                            spectro_path=spec_path,
+                            tc=self,
+                            external_load_log=(load_lock, recorded_loads),
                         )
                     finally:
                         if os.path.exists(spec_path):
@@ -340,8 +388,9 @@ class TestPhaseDRolloutGate(unittest.TestCase):
 
                 batch_err: BaseException | None = None
                 try:
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-                        results = list(pool.map(worker, range(4)))
+                    with mock.patch.object(analyzer.core.np, "load", side_effect=batch_spying_load):
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+                            results = list(pool.map(worker, range(4)))
                     return results
                 except BaseException as exc:
                     batch_err = exc

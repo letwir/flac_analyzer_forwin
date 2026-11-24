@@ -221,30 +221,30 @@ func EvaluateGoNoGoPure(in GatekeeperInput) GatekeeperDecision {
 				IsGpuBlock:          true,
 			}
 		}
+	}
 
-		// VRAM 空き容量判定
-		if in.MinAvailVram > 0 && (!in.GPURequired || in.DedicatedVramKnown) {
-			requiredVram, ok := checkedAddUint64(in.EstimatedTaskVram, in.MinAvailVram)
-			if !ok {
-				return GatekeeperDecision{Reason: "required VRAM estimate overflow", StorageMode: in.StorageMode}
-			}
-			if in.AvailVram < requiredVram {
-				return GatekeeperDecision{
-					IsGo:                false,
-					WaitDuration:        retryDelay,
-					Reason:              fmt.Sprintf("Available VRAM (%.2f GB) < Required (%.2f GB = Task %.2f GB + MinAvail %.2f GB)", float64(in.AvailVram)/(1024*1024*1024), float64(requiredVram)/(1024*1024*1024), float64(in.EstimatedTaskVram)/(1024*1024*1024), float64(in.MinAvailVram)/(1024*1024*1024)),
-					StorageMode:         in.StorageMode,
-					EstimatedRamBytes:   in.EstimatedTaskRam,
-					EffectiveAvailBytes: effectiveAvailBytes,
-					RequiredBytes:       requiredBytes,
-					MemoryLoad:          in.MemoryLoad,
-					AvailDiskBytes:      in.AvailDisk,
-					MinAvailDiskBytes:   in.MinAvailDisk,
-					GpuUtilization:      in.GpuUtilization,
-					AvailVramBytes:      in.AvailVram,
-					RequiredVramBytes:   requiredVram,
-					IsGpuBlock:          true,
-				}
+	// VRAM 空き容量判定: unknown-telemetry guard通過後、GPU必須時またはスロットル+下限>0時に判定する
+	if in.GPURequired || (in.EnableGpuThrottle && in.MinAvailVram > 0) {
+		requiredVram, ok := checkedAddUint64(in.EstimatedTaskVram, in.MinAvailVram)
+		if !ok {
+			return GatekeeperDecision{Reason: "required VRAM estimate overflow", StorageMode: in.StorageMode, IsGpuBlock: true}
+		}
+		if requiredVram > 0 && in.AvailVram < requiredVram {
+			return GatekeeperDecision{
+				IsGo:                false,
+				WaitDuration:        retryDelay,
+				Reason:              fmt.Sprintf("Available VRAM (%.2f GB) < Required (%.2f GB = Task %.2f GB + MinAvail %.2f GB)", float64(in.AvailVram)/(1024*1024*1024), float64(requiredVram)/(1024*1024*1024), float64(in.EstimatedTaskVram)/(1024*1024*1024), float64(in.MinAvailVram)/(1024*1024*1024)),
+				StorageMode:         in.StorageMode,
+				EstimatedRamBytes:   in.EstimatedTaskRam,
+				EffectiveAvailBytes: effectiveAvailBytes,
+				RequiredBytes:       requiredBytes,
+				MemoryLoad:          in.MemoryLoad,
+				AvailDiskBytes:      in.AvailDisk,
+				MinAvailDiskBytes:   in.MinAvailDisk,
+				GpuUtilization:      in.GpuUtilization,
+				AvailVramBytes:      in.AvailVram,
+				RequiredVramBytes:   requiredVram,
+				IsGpuBlock:          true,
 			}
 		}
 	}
@@ -279,33 +279,7 @@ func EvaluateQueueAdmissionPure(in GatekeeperInput) GatekeeperDecision {
 // PureMorph: GatekeeperInput -> GatekeeperDecision
 func EvaluateGPULaunchPure(in GatekeeperInput) GatekeeperDecision {
 	in.GPURequired = true
-	dec := EvaluateGoNoGoPure(in)
-	if !dec.IsGo {
-		return dec
-	}
-	if !in.EnableGpuThrottle {
-		requiredVram, ok := checkedAddUint64(in.EstimatedTaskVram, in.MinAvailVram)
-		if !ok {
-			return GatekeeperDecision{Reason: "required VRAM estimate overflow", StorageMode: in.StorageMode, IsGpuBlock: true}
-		}
-		if requiredVram > 0 && in.AvailVram < requiredVram {
-			retryDelay := in.RetryDelay
-			if retryDelay <= 0 {
-				retryDelay = 20 * time.Second
-			}
-			return GatekeeperDecision{
-				IsGo:              false,
-				WaitDuration:      retryDelay,
-				Reason:            fmt.Sprintf("Available VRAM (%.2f GB) < Required (%.2f GB = Task %.2f GB + MinAvail %.2f GB)", float64(in.AvailVram)/(1024*1024*1024), float64(requiredVram)/(1024*1024*1024), float64(in.EstimatedTaskVram)/(1024*1024*1024), float64(in.MinAvailVram)/(1024*1024*1024)),
-				StorageMode:       in.StorageMode,
-				GpuUtilization:    in.GpuUtilization,
-				AvailVramBytes:    in.AvailVram,
-				RequiredVramBytes: requiredVram,
-				IsGpuBlock:        true,
-			}
-		}
-	}
-	return dec
+	return EvaluateGoNoGoPure(in)
 }
 
 // EvaluateGoNoGo queries live system memory, disk, and GPU status and delegates the preflight decision to EvaluateGoNoGoPure.
