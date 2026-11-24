@@ -83,16 +83,33 @@ type ExtractAllPayload struct {
 	Stems     map[string]StemInfo `json:"stems"`
 }
 
+// SpectroCacheStatus describes the GPU worker's per-stem spectrogram cache outcome.
+type SpectroCacheStatus string
+
+const (
+	SpectroCacheStatusWritten  SpectroCacheStatus = "written"
+	SpectroCacheStatusFallback SpectroCacheStatus = "fallback"
+	SpectroCacheStatusSkipped  SpectroCacheStatus = "skipped"
+)
+
+// SpectroCacheOutcome reports whether a stem's *.spectro.npy cache was written on GPU.
+type SpectroCacheOutcome struct {
+	Status      SpectroCacheStatus `json:"status"`
+	SpectroPath string             `json:"spectro_path,omitempty"`
+	Error       string             `json:"error,omitempty"`
+}
+
 // DaemonResponse represents an NDJSON response returned by worker_daemon.py
 type DaemonResponse struct {
-	ID        string                 `json:"id"`
-	Status    string                 `json:"status"`
-	Error     string                 `json:"error,omitempty"`
-	Traceback string                 `json:"traceback,omitempty"`
-	Librosa   map[string]interface{} `json:"librosa,omitempty"`
-	Tensor    map[string]interface{} `json:"tensor,omitempty"`
-	Essentia  map[string]interface{} `json:"essentia,omitempty"`
-	Profile   map[string]float64     `json:"profile,omitempty"`
+	ID           string                         `json:"id"`
+	Status       string                         `json:"status"`
+	Error        string                         `json:"error,omitempty"`
+	Traceback    string                         `json:"traceback,omitempty"`
+	Librosa      map[string]interface{}         `json:"librosa,omitempty"`
+	Tensor       map[string]interface{}         `json:"tensor,omitempty"`
+	Essentia     map[string]interface{}         `json:"essentia,omitempty"`
+	SpectroCache map[string]SpectroCacheOutcome `json:"spectro_cache,omitempty"`
+	Profile      map[string]float64             `json:"profile,omitempty"`
 }
 
 // WorkerDaemonClient manages a persistent worker_daemon.py child process over stdin/stdout NDJSON IPC.

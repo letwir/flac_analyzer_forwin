@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,25 +24,33 @@ type stemWavefrontJob struct {
 // the first published stem is being analyzed. It intentionally sits after
 // Demucs inference and does not affect model execution or its output order.
 type stemWavefront struct {
-	ctx       context.Context
-	lifecycle *StemLifecycle
-	run       func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)
-	cpuJobs   chan stemWavefrontJob
-	gpuJobs   chan stemWavefrontJob
+	ctx                 context.Context
+	lifecycle           *StemLifecycle
+	run                 func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)
+	cpuJobs             chan stemWavefrontJob
+	gpuJobs             chan stemWavefrontJob
 	closeOnce           sync.Once
+	cpuCloseOnce        sync.Once
 	wg                  sync.WaitGroup
 	firstGPUQueued      chan struct{}
 	firstGPUQueuedOnce  sync.Once
 	gpuConsumerDone     chan struct{}
 	gpuConsumerDoneOnce sync.Once
 
-	mu        sync.Mutex
-	err       error
-	trackHash string
-	sr        int
-	published map[string]struct{}
-	cpu       *DaemonResponse
-	gpu       *DaemonResponse
+	twoStage        bool
+	spectroCacheDir string
+	hasMix          bool
+	mixDone         chan struct{}
+	mixDoneOnce     sync.Once
+
+	mu           sync.Mutex
+	err          error
+	trackHash    string
+	sr           int
+	published    map[string]struct{}
+	spectroFiles []string
+	cpu          *DaemonResponse
+	gpu          *DaemonResponse
 
 	// parent is the caller-owned context whose cancellation cause must survive even when a
 	// local failure cancels the lifecycle child first. Optional.
@@ -48,6 +58,14 @@ type stemWavefront struct {
 }
 
 func newStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycle, cpuConsumers int, run func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)) (*stemWavefront, error) {
+	return newConfiguredStemWavefront(ctx, numStems, lifecycle, cpuConsumers, false, "", false, run)
+}
+
+func newTwoStageStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycle, cpuConsumers int, spectroCacheDir string, hasMix bool, run func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)) (*stemWavefront, error) {
+	return newConfiguredStemWavefront(ctx, numStems, lifecycle, cpuConsumers, true, spectroCacheDir, hasMix, run)
+}
+
+func newConfiguredStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycle, cpuConsumers int, twoStage bool, spectroCacheDir string, hasMix bool, run func(context.Context, FeatureLane, ExtractAllPayload) (*DaemonResponse, error)) (*stemWavefront, error) {
 	if ctx == nil || lifecycle == nil || run == nil {
 		return nil, fmt.Errorf("stem wavefront requires context, lifecycle, and lane runner")
 	}
@@ -62,6 +80,10 @@ func newStemWavefront(ctx context.Context, numStems int, lifecycle *StemLifecycl
 		gpuJobs:         make(chan stemWavefrontJob, numStems),
 		firstGPUQueued:  make(chan struct{}),
 		gpuConsumerDone: make(chan struct{}),
+		twoStage:        twoStage,
+		spectroCacheDir: spectroCacheDir,
+		hasMix:          hasMix,
+		mixDone:         make(chan struct{}),
 		published:       make(map[string]struct{}),
 		cpu:             &DaemonResponse{Librosa: make(map[string]interface{}), Essentia: make(map[string]interface{})},
 		gpu:             &DaemonResponse{Tensor: make(map[string]interface{})},
@@ -101,7 +123,18 @@ func (w *stemWavefront) Publish(event DemucsStemReadyEvent) error {
 	w.published[event.Stem] = struct{}{}
 	w.mu.Unlock()
 
+	if w.twoStage && w.spectroCacheDir != "" {
+		event.Info.SpectroPath = filepath.Join(w.spectroCacheDir, fmt.Sprintf("%s-%s.spectro.npy", event.RequestID, event.Stem))
+	}
 	job := stemWavefrontJob{event: event}
+	if w.twoStage {
+		select {
+		case w.gpuJobs <- job:
+			return nil
+		case <-w.ctx.Done():
+			return context.Cause(w.ctx)
+		}
+	}
 	for _, jobs := range []chan stemWavefrontJob{w.cpuJobs, w.gpuJobs} {
 		select {
 		case jobs <- job:
@@ -128,11 +161,50 @@ func (w *stemWavefront) ValidateFinalStems(stems map[string]StemInfo) error {
 	return nil
 }
 
+func (w *stemWavefront) closeCPUJobs() {
+	w.cpuCloseOnce.Do(func() {
+		close(w.cpuJobs)
+	})
+}
+
+func (w *stemWavefront) markMixDone() {
+	if w != nil && w.mixDone != nil {
+		w.mixDoneOnce.Do(func() {
+			close(w.mixDone)
+		})
+	}
+}
+
 func (w *stemWavefront) CloseInput() {
 	w.closeOnce.Do(func() {
-		close(w.cpuJobs)
+		if !w.twoStage {
+			w.closeCPUJobs()
+		}
 		close(w.gpuJobs)
 	})
+}
+
+// CleanupSpectroCache removes any temporary *.spectro.npy files produced during
+// a two-stage wavefront. Must be called only after Wait() completes.
+func (w *stemWavefront) CleanupSpectroCache() error {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	files := append([]string(nil), w.spectroFiles...)
+	w.spectroFiles = nil
+	w.mu.Unlock()
+
+	var firstErr error
+	for _, path := range files {
+		if path == "" {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func (w *stemWavefront) Fail(err error) {
@@ -237,10 +309,29 @@ func (w *stemWavefront) WaitFirstGPUFeatureQueued(ctx context.Context) bool {
 	}
 }
 
+func (w *stemWavefront) forwardToCPU(job stemWavefrontJob) bool {
+	select {
+	case w.cpuJobs <- job:
+		return true
+	case <-w.ctx.Done():
+		return false
+	}
+}
+
 func (w *stemWavefront) consume(lane FeatureLane, jobs <-chan stemWavefrontJob) {
 	defer w.wg.Done()
+	mixForwardedToCPU := false
+	var deferredVocals *stemWavefrontJob
 	if lane == FeatureLaneGPU {
 		defer w.markGPUConsumerDone()
+		if w.twoStage {
+			defer func() {
+				if !mixForwardedToCPU {
+					w.markMixDone()
+				}
+			}()
+			defer w.closeCPUJobs()
+		}
 	}
 	for {
 		select {
@@ -248,9 +339,28 @@ func (w *stemWavefront) consume(lane FeatureLane, jobs <-chan stemWavefrontJob) 
 			return
 		case job, ok := <-jobs:
 			if !ok {
+				if w.twoStage && lane == FeatureLaneGPU && deferredVocals != nil {
+					if w.hasMix && !mixForwardedToCPU {
+						deferredVocals = nil
+						w.fail(fmt.Errorf("two-stage wavefront closed without mix stem before deferred vocals"))
+						return
+					}
+					w.forwardToCPU(*deferredVocals)
+					deferredVocals = nil
+				}
 				return
 			}
+			if w.twoStage && lane == FeatureLaneCPU && w.hasMix && job.event.Stem == "vocals" {
+				select {
+				case <-w.mixDone:
+				case <-w.ctx.Done():
+					return
+				}
+			}
 			if err := w.lifecycle.Acquire(job.event.Generation, job.event.Stem); err != nil {
+				if w.twoStage && lane == FeatureLaneCPU && job.event.Stem == "mix" {
+					w.markMixDone()
+				}
 				w.fail(fmt.Errorf("acquire %s stem %q: %w", lane, job.event.Stem, err))
 				return
 			}
@@ -266,14 +376,53 @@ func (w *stemWavefront) consume(lane FeatureLane, jobs <-chan stemWavefrontJob) 
 			response, runErr := w.run(runCtx, lane, payload)
 			releaseErr := w.lifecycle.Release(job.event.Generation, job.event.Stem)
 			if runErr != nil || releaseErr != nil {
+				if w.twoStage && lane == FeatureLaneCPU && job.event.Stem == "mix" {
+					w.markMixDone()
+				}
 				w.fail(errors.Join(wrapFeatureLaneError(lane, runErr), releaseErr))
 				return
 			}
 			if response == nil {
+				if w.twoStage && lane == FeatureLaneCPU && job.event.Stem == "mix" {
+					w.markMixDone()
+				}
 				w.fail(fmt.Errorf("%s feature lane returned no response", lane))
 				return
 			}
 			w.merge(lane, response)
+			if w.twoStage && lane == FeatureLaneCPU && job.event.Stem == "mix" {
+				w.markMixDone()
+			}
+			if w.twoStage && lane == FeatureLaneGPU {
+				allocatedPath := job.event.Info.SpectroPath
+				if allocatedPath != "" {
+					w.mu.Lock()
+					w.spectroFiles = append(w.spectroFiles, allocatedPath)
+					w.mu.Unlock()
+				}
+				forwarded := job
+				forwarded.event.Info.SpectroPath = ""
+				if outcome, ok := response.SpectroCache[job.event.Stem]; ok && outcome.Status == SpectroCacheStatusWritten && allocatedPath != "" && outcome.SpectroPath == allocatedPath {
+					forwarded.event.Info.SpectroPath = allocatedPath
+				}
+				if w.hasMix && forwarded.event.Stem == "vocals" && !mixForwardedToCPU {
+					held := forwarded
+					deferredVocals = &held
+					continue
+				}
+				if !w.forwardToCPU(forwarded) {
+					return
+				}
+				if forwarded.event.Stem == "mix" {
+					mixForwardedToCPU = true
+					if deferredVocals != nil {
+						if !w.forwardToCPU(*deferredVocals) {
+							return
+						}
+						deferredVocals = nil
+					}
+				}
+			}
 		}
 	}
 }
@@ -539,10 +688,37 @@ func (d *Dispatcher) executeDemucsStage(
 	defer lifecycle.Close()
 	cpuConsumers := GetCPUConsumerCount(task, d.GetConfig().NumWorkers, len(stems))
 	wavefrontCtx := withLiveRetirementTracker(waveCtx, retireTracker)
-	wavefront, err := newStemWavefront(wavefrontCtx, len(stems), lifecycle, cpuConsumers, func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
+	spectroBaseDir := d.GetConfig().SpectroCacheDir
+	var spectroReqDir string
+	useTwoStage := false
+	if spectroBaseDir != "" {
+		if reqDir, dirErr := CreateRequestCacheDir(spectroBaseDir, requestID); dirErr == nil {
+			spectroReqDir = reqDir
+			useTwoStage = true
+		} else {
+			d.LogWarn("[W-%d] SpectroCache disabled for %s (create request dir failed: %v); falling back to 1-stage wavefront", id, requestID, dirErr)
+		}
+	}
+	hasMix := false
+	for _, s := range stems {
+		if s == "mix" {
+			hasMix = true
+			break
+		}
+	}
+	laneRunner := func(ctx context.Context, lane FeatureLane, payload ExtractAllPayload) (*DaemonResponse, error) {
 		return d.executeFeatureLane(ctx, lane, payload)
-	})
+	}
+	var wavefront *stemWavefront
+	if useTwoStage {
+		wavefront, err = newTwoStageStemWavefront(wavefrontCtx, len(stems), lifecycle, cpuConsumers, spectroReqDir, hasMix, laneRunner)
+	} else {
+		wavefront, err = newStemWavefront(wavefrontCtx, len(stems), lifecycle, cpuConsumers, laneRunner)
+	}
 	if err != nil {
+		if spectroReqDir != "" {
+			_ = RemoveRequestCacheDir(spectroBaseDir, spectroReqDir)
+		}
 		closeArenaOnError()
 		return "", 0, nil, nil, nil, err
 	}
@@ -560,6 +736,14 @@ func (d *Dispatcher) executeDemucsStage(
 			}
 			wavefront.CloseInput()
 			cpuResp, gpuResp, waveHash, waveSR, waveErr = wavefront.Wait()
+			if cleanErr := wavefront.CleanupSpectroCache(); cleanErr != nil {
+				d.LogWarn("[W-%d] SpectroCache cleanup warning for %s: %v", id, requestID, cleanErr)
+			}
+			if spectroReqDir != "" {
+				if rmErr := RemoveRequestCacheDir(spectroBaseDir, spectroReqDir); rmErr != nil {
+					d.LogWarn("[W-%d] SpectroCache dir removal warning for %s: %v", id, requestID, rmErr)
+				}
+			}
 		})
 	}
 	defer func() {
