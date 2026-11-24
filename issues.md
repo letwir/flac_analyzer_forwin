@@ -418,6 +418,17 @@ GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`。3ラウンド上限
 - [x] **PC-S3**: `SpectroCacheOutcome` と 2段 Wavefront (`gpuJobs` -> `cpuJobs`) 統合 (`orchestrator/dispatcher/daemon.go`, `pipeline_demucs.go`, `pipeline_demucs_test.go`) — 単一クローズ所有者、`mix -> vocals` 順序保証、CPU STFT 自動フォールバック、`Wait()` 後のキャッシュ削除
 
 #### Phase D (中目標): 実測ベンチマーク＆ロールアウトゲート・最終監査・完了記録
-- [ ] **PD-S1**: `testFLAC/*` 実音声によるロールアウトゲート＆ベンチマーク検証 (`tests/test_phase_d_rollout_gate.py`) — `DownstreamTracks 1 vs 4` および `SpectroCache OFF vs ON` の JSON 特徴量完全一致・CUDA VRAM ピーク・ホスト RSS・孤立ファイルゼロ確認
+- [x] **PD-S1** (**条件付き完了: Verifier 3R 未 PASS、残件は下記「PD-S1 未解決事項」に記録**): `testFLAC/*` 実音声によるロールアウトゲート＆ベンチマーク検証 (`tests/test_phase_d_rollout_gate.py`, `orchestrator/dispatcher/rollout_gate_test.go`, `worker_gpu_daemon.py`) — Go `AdmissionController` (`MaxDownstreamTracks=1 vs 4`, 実測並行度 1 vs 4) + 実 `WorkerDaemonPool` (`worker_gpu_daemon.py` + `worker_cpu_daemon.py`) で 4 トラック実 FLAC (`01_01_シンカンセンスゴイカタイアイス.flac`) の `SpectroCache` OFF vs ON・DownstreamTracks 1 vs 4 JSON 一致・CUDA VRAM ピーク (24–56 MB)・ホスト RSS (1194–1261 MB)・孤立ファイルゼロ確認
 - [ ] **PD-S2**: Phase A–D 結合最終監査・ドキュメント＆ `llm-memory` 永続化 (`issues.md`, `memo/20261123-v2-phase-ad-complete/*`) — 全 Go/Python テスト完走、統合 `GPT-6.2 Sol` Verifier 承認、`issues.md` 全チェック、`origin/v2` プッシュ、`llm-mem.exe ingest` ＆ `eval` 完了
+
+#### PD-S1 未解決事項
+
+Python 37 件・Go 全パッケージ・`TestPhaseDRolloutGateDownstream1Vs4` (cap1_concurrent=1, cap4_concurrent=4, 孤立0) は PASS。GPT-6.2 Sol Verifier は第3ラウンドで `STATUS: FAIL`（6件）。3ラウンド上限に達したため条件付き完了とし、`PD-S2` で修正・統合再検証する。
+
+1. `run_batch` (`tests/test_phase_d_rollout_gate.py`): 並列スレッド内で `mock.patch.object(analyzer.core.np, "load", ...)` を重ねており、スレッド間でモックが競合し得る（バッチ単位の単一ロック付きスパイへ統合すること）。
+2. Go ゲート (`orchestrator/dispatcher/rollout_gate_test.go`): `SpectroUsed` が GPU 側の書き込み結果に依拠しており、CPU デーモン側が実際に mmap ロードした証跡（CPU STFT フォールバック禁止）まで検証すること。
+3. JSON 比較 (`tests/test_phase_d_rollout_gate.py`): OFF vs ON の `librosa` 許容誤差・exact モードでの `int` vs `float` / `bool` vs `int` 判定を単一の型厳密比較へ統一すること（cuFFT vs PocketFFT の浮動小数差異は明示許容または原因切り分け）。
+4. `MaxObservedConcurrent` (`orchestrator/dispatcher/rollout_gate_test.go`): lease 取得直後のカウントだけでなく、実デーモン処理区間のクロス・トラック重複を計測・検証すること。
+5. Go 側 cap 比較のメモリ計測 (`orchestrator/dispatcher/rollout_gate_test.go`): Go が起動した実デーモンプロセスの Windows RSS および CUDA VRAM ピークも記録すること。
+6. `os.replace` 失敗注入 (`tests/test_phase_d_rollout_gate.py`): 失敗注入時に有効な `.tmp.npy` ソース実在を検証したうえで例外を送出し、その一時パス削除を確認すること。
 

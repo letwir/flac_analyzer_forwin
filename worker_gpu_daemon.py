@@ -42,7 +42,7 @@ def _nest_stem_features(extracted: dict[str, Any]) -> dict[str, Any]:
 
 
 def handle_extract_gpu(payload: dict[str, Any], device: torch.device) -> dict[str, Any]:
-    started, extracted, tensor_sec = time.perf_counter(), {}, 0.0
+    started, extracted, spectro_cache, tensor_sec = time.perf_counter(), {}, {}, 0.0
     for stem_name, info in payload["stems"].items():
         shm, y_np = _open_stem_samples(info)
         y_tensor = None
@@ -61,12 +61,30 @@ def handle_extract_gpu(payload: dict[str, Any], device: torch.device) -> dict[st
                 )
                 spectro_path = info.get("spectro_path")
                 if spectro_path:
-                    compute_and_save_spectro_chunked_Large(y_tensor, spectro_path, device)
+                    try:
+                        compute_and_save_spectro_chunked_Large(y_tensor, spectro_path, device)
+                        spectro_cache[stem_name] = {
+                            "status": "written",
+                            "spectro_path": spectro_path,
+                        }
+                    except Exception as cache_exc:
+                        logging.warning("Spectro cache generation failed for %s (%s): %s", stem_name, spectro_path, cache_exc)
+                        spectro_cache[stem_name] = {
+                            "status": "fallback",
+                            "error": str(cache_exc),
+                        }
+                else:
+                    spectro_cache[stem_name] = {"status": "skipped"}
             tensor_sec += time.perf_counter() - step
         finally:
             del y_tensor
             _close_stem_samples(shm, y_np)
-    return {"status": "success", "tensor": _nest_stem_features(extracted), "profile": {"gpu_total_sec": time.perf_counter() - started, "tensor_sec": tensor_sec}}
+    return {
+        "status": "success",
+        "tensor": _nest_stem_features(extracted),
+        "spectro_cache": spectro_cache,
+        "profile": {"gpu_total_sec": time.perf_counter() - started, "tensor_sec": tensor_sec},
+    }
 
 
 def handle_cleanup_gpu(device: torch.device) -> dict[str, Any]:
