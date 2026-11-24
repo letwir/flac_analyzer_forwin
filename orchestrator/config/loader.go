@@ -126,8 +126,8 @@ func NormalizeConfig(
 	}
 
 	minAvailVramGB := raw.Orchestrator.MinAvailVramGB
-	if minAvailVramGB <= 0 {
-		minAvailVramGB = 0.5
+	if math.IsNaN(minAvailVramGB) || math.IsInf(minAvailVramGB, 0) || minAvailVramGB < 1.0 {
+		minAvailVramGB = 1.0
 	}
 
 	estimatedDemucsVramGB := raw.Orchestrator.EstimatedDemucsVramGB
@@ -200,6 +200,19 @@ func NormalizeConfig(
 		retainGpuDaemonIdle = *raw.Orchestrator.RetainGpuDaemonIdle
 	}
 
+	maxDownstreamTracks := raw.Orchestrator.MaxDownstreamTracks
+	if maxDownstreamTracks < 0 {
+		maxDownstreamTracks = 0
+	}
+
+	diskCacheDir := strings.TrimSpace(raw.Orchestrator.DiskCacheDir)
+	spectroCacheDir := strings.TrimSpace(raw.Orchestrator.SpectroCacheDir)
+
+	spectroCacheMinFreeGB := raw.Orchestrator.SpectroCacheMinFreeGB
+	if math.IsNaN(spectroCacheMinFreeGB) || math.IsInf(spectroCacheMinFreeGB, 0) || spectroCacheMinFreeGB <= 0 {
+		spectroCacheMinFreeGB = 2.0
+	}
+
 	resolvedPythonEnv := ResolvePythonEnv(raw.PythonEnv, numCPU, effectiveWorkers)
 
 	return &Config{
@@ -244,6 +257,10 @@ func NormalizeConfig(
 		AdaptiveTimeoutRatio:       adaptiveTimeoutRatio,
 		MaxAdaptiveTimeoutSec:      maxAdaptiveTimeoutSec,
 		RetainGpuDaemonIdle:        retainGpuDaemonIdle,
+		MaxDownstreamTracks:        maxDownstreamTracks,
+		DiskCacheDir:               diskCacheDir,
+		SpectroCacheDir:            spectroCacheDir,
+		SpectroCacheMinFreeGB:      spectroCacheMinFreeGB,
 	}
 }
 

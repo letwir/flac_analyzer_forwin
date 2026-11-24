@@ -195,6 +195,7 @@ func run() (exitCode int) {
 	if singleFile != "" {
 		dispConfig.NumWorkers = 1
 		dispConfig.DemucsConcurrentLimit = 1
+		dispConfig.MaxDownstreamTracks = 1
 		disp := dispatcher.NewDispatcher(*dispConfig, stateDB)
 		payload, err := dispatcher.NewSingleFilePayload(singleFile, forceSingle)
 		if err != nil {

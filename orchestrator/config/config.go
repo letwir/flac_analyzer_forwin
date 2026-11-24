@@ -60,6 +60,10 @@ type OrchestratorConfig struct {
 	AdaptiveTimeoutRatio       float64 `toml:"adaptive_timeout_ratio"`
 	MaxAdaptiveTimeoutSec      int     `toml:"max_adaptive_timeout_sec"`
 	RetainGpuDaemonIdle        *bool   `toml:"retain_gpu_daemon_idle"`
+	MaxDownstreamTracks        int     `toml:"max_downstream_tracks"`
+	DiskCacheDir               string  `toml:"disk_cache_dir"`
+	SpectroCacheDir            string  `toml:"spectro_cache_dir"`
+	SpectroCacheMinFreeGB      float64 `toml:"spectro_cache_min_free_gb"`
 }
 
 // Config represents the fully normalized, runtime-validated configuration domain object.
@@ -105,4 +109,8 @@ type Config struct {
 	AdaptiveTimeoutRatio       float64
 	MaxAdaptiveTimeoutSec      int
 	RetainGpuDaemonIdle        bool
+	MaxDownstreamTracks        int
+	DiskCacheDir               string
+	SpectroCacheDir            string
+	SpectroCacheMinFreeGB      float64
 }

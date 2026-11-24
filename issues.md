@@ -375,7 +375,7 @@ GPT-6.2 Sol Verifier は第3ラウンド（`task-2781`）で `STATUS: FAIL`。3�
 既知の持ち越し事項は、ディレクトリハンドルによる走査での TOCTOU 対策、プロセス間ロック、対象ディレクトリ外へのレシート永続化の3件。
 
 #### Phase B (中目標): Feature #1 (`DownstreamTracks` 動的拡大・3層 Admission 台帳・有界ターン `GPUArbiter`)
-- [ ] **PB-S1**: 設定項目追加・1 GiB VRAM 下限統一・単一ファイル強制 cap=1 (`orchestrator/config/config.go`, `loader.go`, `loader_test.go`, `dispatcher/reload.go`) — `MaxDownstreamTracks`, `RetainGpuDaemonIdle`, `DiskCacheDir`, `SpectroCacheDir`, `SpectroCacheMinFreeGB` 追加およびホットリロード整合
+- [x] **PB-S1**: 設定項目追加・1 GiB VRAM 下限統一・単一ファイル強制 cap=1 (`orchestrator/config/config.go`, `loader.go`, `loader_test.go`, `dispatcher/reload.go`) — `MaxDownstreamTracks`, `RetainGpuDaemonIdle`, `DiskCacheDir`, `SpectroCacheDir`, `SpectroCacheMinFreeGB` 追加およびホットリロード整合
 - [ ] **PB-S2**: `AdmissionController` 決定論的 cap 解決と3層ライフタイム台帳分離 (`orchestrator/dispatcher/admission.go`, `gatekeeper.go`, `admission_test.go`) — (1) Downstream Track Lease, (2) GPU Execution Grant, (3) Retained Residency の完全分離、キュー受理と起動時 GPU 空き判定の分離、`DownstreamTracks=4` ＆ ドレインテスト
 - [ ] **PB-S3**: 有界ターン `GPUArbiter` による Demucs/Feature GPU 調停 (`orchestrator/dispatcher/gpu_arbiter.go`, `gpu_arbiter_test.go`, `pipeline_demucs.go`, `pipeline_features.go`) — `AcquireDemucs`, `AcquireFeatureBatch`, `RegisterPostDemucsFeatureTurn` 実装により最古の Demucs 待機前に Feature を最大1ターンだけ優先し自己デッドロックを根絶
 

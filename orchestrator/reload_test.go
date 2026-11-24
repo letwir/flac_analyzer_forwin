@@ -84,9 +84,13 @@ log_level = "debug"
 skip_dup_by_hash = false
 enable_virtual_lock = false
 max_gpu_utilization_ratio = 0.90
-min_avail_vram_gb = 1.0
+min_avail_vram_gb = 2.0
 estimated_demucs_vram_gb = 1.5
 enable_gpu_throttle = false
+max_downstream_tracks = 4
+disk_cache_dir = "./disk_cache"
+spectro_cache_dir = "./spectro_cache"
+spectro_cache_min_free_gb = 3.5
 
 [python_env]
 omp_num_threads = "2"
@@ -119,8 +123,28 @@ omp_num_threads = "2"
 	if diff["max_gpu_utilization_ratio"] != "0.85 -> 0.90" {
 		t.Errorf("expected diff max_gpu_utilization_ratio '0.85 -> 0.90', got %q", diff["max_gpu_utilization_ratio"])
 	}
-	if diff["min_avail_vram_gb"] != "0.50 -> 1.00" {
-		t.Errorf("expected diff min_avail_vram_gb '0.50 -> 1.00', got %q", diff["min_avail_vram_gb"])
+	if diff["min_avail_vram_gb"] != "1.00 -> 2.00" {
+		t.Errorf("expected diff min_avail_vram_gb '1.00 -> 2.00', got %q", diff["min_avail_vram_gb"])
+	}
+	if diff["max_downstream_tracks"] != "0 -> 4" {
+		t.Errorf("expected diff max_downstream_tracks '0 -> 4', got %q", diff["max_downstream_tracks"])
+	}
+	if diff["disk_cache_dir"] != " -> ./disk_cache" {
+		t.Errorf("expected diff disk_cache_dir ' -> ./disk_cache', got %q", diff["disk_cache_dir"])
+	}
+	if diff["spectro_cache_dir"] != " -> ./spectro_cache" {
+		t.Errorf("expected diff spectro_cache_dir ' -> ./spectro_cache', got %q", diff["spectro_cache_dir"])
+	}
+	if diff["spectro_cache_min_free_gb"] != "2 -> 3.5" {
+		t.Errorf("expected diff spectro_cache_min_free_gb '2 -> 3.5', got %q", diff["spectro_cache_min_free_gb"])
+	}
+	subCentDiff := disp.UpdateConfig(func() dispatcher.Config {
+		c := disp.GetConfig()
+		c.SpectroCacheMinFreeGB = 3.501
+		return c
+	}())
+	if subCentDiff["spectro_cache_min_free_gb"] != "3.5 -> 3.501" {
+		t.Errorf("expected sub-0.01 diff spectro_cache_min_free_gb '3.5 -> 3.501', got %q", subCentDiff["spectro_cache_min_free_gb"])
 	}
 	if diff["estimated_demucs_vram_gb"] != "1.00 -> 1.50" {
 		t.Errorf("expected diff estimated_demucs_vram_gb '1.00 -> 1.50', got %q", diff["estimated_demucs_vram_gb"])

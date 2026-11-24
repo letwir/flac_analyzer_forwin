@@ -123,3 +123,91 @@ func TestNormalizeConfigPinsDemucsToOneDedicatedSlot(t *testing.T) {
 		t.Fatalf("Demucs config = concurrent:%d daemon:%d, want 1:1", cfg.DemucsConcurrentLimit, cfg.DemucsDaemonCapacity)
 	}
 }
+
+func TestNormalizeConfig_MinAvailVramGBFloor(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    float64
+		expected float64
+	}{
+		{"zero_default", 0.0, 1.0},
+		{"negative", -2.0, 1.0},
+		{"below_1gb", 0.5, 1.0},
+		{"exact_1gb", 1.0, 1.0},
+		{"above_1gb", 2.5, 2.5},
+		{"nan", math.NaN(), 1.0},
+		{"pos_inf", math.Inf(1), 1.0},
+		{"neg_inf", math.Inf(-1), 1.0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := &RawConfig{
+				Orchestrator: OrchestratorConfig{
+					MinAvailVramGB: tc.input,
+				},
+			}
+			cfg := NormalizeConfig(raw, 32.0, 8, "", nil)
+			if cfg.MinAvailVramGB != tc.expected {
+				t.Errorf("For input %v, expected MinAvailVramGB=%v, got %v", tc.input, tc.expected, cfg.MinAvailVramGB)
+			}
+		})
+	}
+}
+
+func TestNormalizeConfig_DownstreamAndCacheFields(t *testing.T) {
+	// Defaults & sanitization
+	rawDefault := &RawConfig{
+		Orchestrator: OrchestratorConfig{
+			MaxDownstreamTracks:   -3,
+			DiskCacheDir:          "  ",
+			SpectroCacheDir:       "  ",
+			SpectroCacheMinFreeGB: math.NaN(),
+		},
+	}
+	cfgDefault := NormalizeConfig(rawDefault, 32.0, 8, "", nil)
+	if cfgDefault.MaxDownstreamTracks != 0 {
+		t.Errorf("Expected MaxDownstreamTracks=0, got %d", cfgDefault.MaxDownstreamTracks)
+	}
+	if cfgDefault.DiskCacheDir != "" {
+		t.Errorf("Expected empty DiskCacheDir, got %q", cfgDefault.DiskCacheDir)
+	}
+	if cfgDefault.SpectroCacheDir != "" {
+		t.Errorf("Expected empty SpectroCacheDir, got %q", cfgDefault.SpectroCacheDir)
+	}
+	if cfgDefault.SpectroCacheMinFreeGB != 2.0 {
+		t.Errorf("Expected SpectroCacheMinFreeGB=2.0, got %v", cfgDefault.SpectroCacheMinFreeGB)
+	}
+
+	// Negative / Inf SpectroCacheMinFreeGB falls back to 2.0
+	for _, invalid := range []float64{0, -1.5, math.Inf(1), math.Inf(-1)} {
+		rawInvalid := &RawConfig{Orchestrator: OrchestratorConfig{SpectroCacheMinFreeGB: invalid}}
+		cfgInvalid := NormalizeConfig(rawInvalid, 32.0, 8, "", nil)
+		if cfgInvalid.SpectroCacheMinFreeGB != 2.0 {
+			t.Errorf("For SpectroCacheMinFreeGB=%v, expected 2.0, got %v", invalid, cfgInvalid.SpectroCacheMinFreeGB)
+		}
+	}
+
+	// Custom values & whitespace trimming
+	rawCustom := &RawConfig{
+		Orchestrator: OrchestratorConfig{
+			MaxDownstreamTracks:   4,
+			DiskCacheDir:          "  R:\\disk_cache  ",
+			SpectroCacheDir:       "\tR:\\spectro_cache\n",
+			SpectroCacheMinFreeGB: 4.5,
+		},
+	}
+	cfgCustom := NormalizeConfig(rawCustom, 32.0, 8, "", nil)
+	if cfgCustom.MaxDownstreamTracks != 4 {
+		t.Errorf("Expected MaxDownstreamTracks=4, got %d", cfgCustom.MaxDownstreamTracks)
+	}
+	if cfgCustom.DiskCacheDir != `R:\disk_cache` {
+		t.Errorf("Expected trimmed DiskCacheDir, got %q", cfgCustom.DiskCacheDir)
+	}
+	if cfgCustom.SpectroCacheDir != `R:\spectro_cache` {
+		t.Errorf("Expected trimmed SpectroCacheDir, got %q", cfgCustom.SpectroCacheDir)
+	}
+	if cfgCustom.SpectroCacheMinFreeGB != 4.5 {
+		t.Errorf("Expected SpectroCacheMinFreeGB=4.5, got %v", cfgCustom.SpectroCacheMinFreeGB)
+	}
+}

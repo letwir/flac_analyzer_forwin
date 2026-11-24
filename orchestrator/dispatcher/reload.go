@@ -117,6 +117,18 @@ func (d *Dispatcher) UpdateConfig(newCfg Config) map[string]string {
 	if oldCfg.RetainGpuDaemonIdle != newCfg.RetainGpuDaemonIdle {
 		diff["retain_gpu_daemon_idle"] = fmt.Sprintf("%v -> %v", oldCfg.RetainGpuDaemonIdle, newCfg.RetainGpuDaemonIdle)
 	}
+	if oldCfg.MaxDownstreamTracks != newCfg.MaxDownstreamTracks {
+		diff["max_downstream_tracks"] = fmt.Sprintf("%d -> %d", oldCfg.MaxDownstreamTracks, newCfg.MaxDownstreamTracks)
+	}
+	if oldCfg.DiskCacheDir != newCfg.DiskCacheDir {
+		diff["disk_cache_dir"] = fmt.Sprintf("%s -> %s", oldCfg.DiskCacheDir, newCfg.DiskCacheDir)
+	}
+	if oldCfg.SpectroCacheDir != newCfg.SpectroCacheDir {
+		diff["spectro_cache_dir"] = fmt.Sprintf("%s -> %s", oldCfg.SpectroCacheDir, newCfg.SpectroCacheDir)
+	}
+	if oldCfg.SpectroCacheMinFreeGB != newCfg.SpectroCacheMinFreeGB {
+		diff["spectro_cache_min_free_gb"] = fmt.Sprintf("%g -> %g", oldCfg.SpectroCacheMinFreeGB, newCfg.SpectroCacheMinFreeGB)
+	}
 
 	d.config = newCfg
 	if d.gpuDaemonPool != nil {
