@@ -103,8 +103,10 @@ def extract_tonality(ctx: AudioContext) -> float:
         return 0.0
     # ピークと周辺中央値の比率
     peak_val = float(np.max(spectro_mean))
+    if peak_val <= 0.0 or not math.isfinite(peak_val):
+        return 0.0
     med_val = float(np.median(spectro_mean)) + 1e-9
-    tonality = float(math.log10(peak_val / med_val))
+    tonality = float(math.log10(max(peak_val / med_val, 1e-12)))
     return float(np.clip(tonality, 0.0, 3.0))
 
 

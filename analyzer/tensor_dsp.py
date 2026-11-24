@@ -155,7 +155,7 @@ def welch_psd(
         n_fft=n_fft,
         window=window,
         return_complex=True,
-        hop_length=n_fft // 2,
+        hop_length=max(1, n_fft // 2),
         center=False,
     )
     psd = stft.abs().pow(2).mean(dim=-1)
@@ -381,12 +381,17 @@ def extract_tensor_features_Large(
         _ = spectro_path
         window_1024 = torch.hann_window(1024, device=device)
         stft_mag = torch.stft(
-            y_dev, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
+            y_dev,
+            n_fft=1024,
+            window=window_1024,
+            return_complex=True,
+            center=True,
+            pad_mode="reflect" if y_dev.shape[-1] > 512 else "constant",
         ).abs()
         flux = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()
         freqs, psd = welch_psd(y_dev, sr=sr)
-        features["spectral_flux_mean"] = float(flux.mean().item())
-        features["spectral_flux_std"] = float(flux.std().item())
+        features["spectral_flux_mean"] = float(flux.mean().item()) if flux.numel() > 0 else 0.0
+        features["spectral_flux_std"] = float(flux.std().item()) if flux.numel() > 1 else 0.0
 
         psd_1d = psd.mean(dim=list(range(psd.ndim - 1))) if psd.ndim > 1 else psd
         peak_idx = psd_1d.argmax()
@@ -424,7 +429,12 @@ def extract_tensor_features_Large(
         c_dev = y[..., start:end].to(device)
         if c_dev.shape[-1] >= 1024:
             stft_mag = torch.stft(
-                c_dev, n_fft=1024, window=window_1024, return_complex=True, center=True, pad_mode="reflect"
+                c_dev,
+                n_fft=1024,
+                window=window_1024,
+                return_complex=True,
+                center=True,
+                pad_mode="reflect" if c_dev.shape[-1] > 512 else "constant",
             ).abs()
             if stft_mag.shape[-1] > 1:
                 flux_c = torch.diff(stft_mag, dim=-1).pow(2).sum(dim=-2).sqrt()

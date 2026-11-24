@@ -1,3 +1,4 @@
+import math
 import os
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ import numpy as np
 import torch
 
 from analyzer.core import AudioContext
+from analyzer.librosa_dsp import librosa_extractor
 from analyzer.tensor_dsp import compute_and_save_spectro_chunked_Large, extract_tensor_features
 
 
@@ -178,6 +180,46 @@ class TestSpectroCacheParity(unittest.TestCase):
                 self.assertTrue(opened_mmaps[-1].closed)
                 ctx_bad_dtype.close()
             os.remove(bad_dtype_path)
+
+    def test_ultra_short_and_silent_signals_avoid_domain_and_pad_errors(self):
+        devices = [torch.device("cpu")]
+        if torch.cuda.is_available():
+            devices.append(torch.device("cuda"))
+        stems = ("mix", "vocals", "drums", "bass", "piano", "guitar", "other")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for dev in devices:
+                for n_samples in (1, 512):
+                    for amplitude in (0.0, 0.1):
+                        y = np.full((n_samples,), amplitude, dtype=np.float32)
+                        y_tensor = torch.from_numpy(y)
+                        spectro_path = os.path.join(
+                            tmp_dir, f"short_{dev.type}_{n_samples}_{amplitude}.spectro.npy"
+                        )
+                        try:
+                            t_feats = extract_tensor_features(y_tensor, 44100, dev, stem_name="mix")
+                            for key, val in t_feats.items():
+                                if isinstance(val, (int, float)):
+                                    self.assertTrue(
+                                        math.isfinite(float(val)),
+                                        f"non-finite tensor feature {key}={val} for len={n_samples}, amp={amplitude}",
+                                    )
+                            shape = compute_and_save_spectro_chunked_Large(y_tensor, spectro_path, dev)
+                            self.assertEqual(shape, (1025, 1 + n_samples // 512))
+
+                            if dev.type == "cpu":
+                                for src in stems:
+                                    with AudioContext(
+                                        y=y,
+                                        sr=44100,
+                                        source=src,
+                                        spectro_path=spectro_path if src == "mix" else None,
+                                    ) as ctx:
+                                        feats = librosa_extractor.run(ctx)
+                                        self.assertIsNotNone(feats)
+                        finally:
+                            if os.path.exists(spectro_path):
+                                os.remove(spectro_path)
 
 
 if __name__ == "__main__":
